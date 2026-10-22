@@ -1,0 +1,63 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build every example that has a package.json
+        run: |
+          for pkg in examples/*/package.json; do
+            dir=$(dirname "$pkg")
+            echo "::group::building $dir"
+            (cd "$dir" && npm ci && npm run build)
+            echo "::endgroup::"
+          done
+
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          cp index.html site/
+          for dir in examples/*/; do
+            name=$(basename "$dir")
+            mkdir -p "site/examples/$name"
+            if [ -f "$dir/dist/index.html" ]; then
+              # built project: serve its bundle (dist also carries public/ assets)
+              cp -r "$dir/dist/." "site/examples/$name/"
+            else
+              # static example: served as-is
+              cp -r "$dir/." "site/examples/$name/"
+            fi
+          done
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
