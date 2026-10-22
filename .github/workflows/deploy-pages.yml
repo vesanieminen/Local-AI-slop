@@ -46,6 +46,10 @@ jobs:
               # static example: served as-is
               cp -r "$dir/." "site/examples/$name/"
             fi
+            # example-level images (used by hub cards in both serving modes)
+            for img in "$dir"*.jpg "$dir"*.png; do
+              if [ -f "$img" ]; then cp "$img" "site/examples/$name/"; fi
+            done
           done
 
       - uses: actions/upload-pages-artifact@v3
