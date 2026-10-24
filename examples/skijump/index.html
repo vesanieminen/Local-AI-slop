@@ -282,15 +282,15 @@ function tune(silent) {
 // ve = exit speed (m/s). Hill landing surface is generated from the
 // trajectory of a perfect jump (physics below), so tangents match by design.
 var HILLS = [
-  { n: 'POIKETON BACKYARD 8m', K: 8, ve: 7.6, zoom: 18, tree: 1.6, crowd: 0.15, dusk: true, tower: 'wood', wind: 0.8, skis: 1.8 },
-  { n: 'JUNNUJARVI 15m', K: 15, ve: 10.3, zoom: 13, tree: 1.3, crowd: 0.35, dusk: false, tower: 'wood', wind: 1.0, skis: 2.0 },
-  { n: 'KESAMAKI 25m', K: 25, ve: 13.2, zoom: 10, tree: 1.0, crowd: 0.55, dusk: false, tower: 'wood', wind: 1.2, skis: 2.1 },
-  { n: 'TORNIO 38m', K: 38, ve: 17.0, zoom: 7.5, tree: 0.9, crowd: 0.7, dusk: false, tower: 'steel', wind: 1.4, skis: 2.2 },
-  { n: 'LAAJIS 70m', K: 70, ve: 21.7, zoom: 5.5, tree: 0.7, crowd: 0.9, dusk: false, tower: 'steel', wind: 1.6, skis: 2.3 },
-  { n: 'SALPAUSSELKA 90m', K: 90, ve: 25.0, zoom: 4.6, tree: 0.55, crowd: 1.2, dusk: false, tower: 'steel', wind: 1.8, skis: 2.4 },
-  { n: 'PUIJO 110m', K: 110, ve: 26.6, zoom: 4.1, tree: 0.5, crowd: 1.35, night: true, tower: 'steel', wind: 1.9, skis: 2.45 },
-  { n: 'OLYMPIAMAKI 125m', K: 125, ve: 27.6, zoom: 3.8, tree: 0.45, crowd: 1.5, dusk: true, tower: 'steel', wind: 2.0, skis: 2.5 },
-  { n: 'PLANICA THE WILD 190m', K: 190, ve: 29.2, zoom: 3.4, tree: 0.4, crowd: 1.8, dusk: false, tower: 'steel', wind: 2.2, skis: 2.5 },
+  { n: 'POIKETON BACKYARD 8m', K: 8, ve: 7.6, zoom: 24, tree: 1.6, crowd: 0.15, dusk: true, tower: 'wood', wind: 0.8, skis: 1.8 },
+  { n: 'JUNNUJARVI 15m', K: 15, ve: 10.3, zoom: 17, tree: 1.3, crowd: 0.35, dusk: false, tower: 'wood', wind: 1.0, skis: 2.0 },
+  { n: 'KESAMAKI 25m', K: 25, ve: 13.2, zoom: 13, tree: 1.0, crowd: 0.55, dusk: false, tower: 'wood', wind: 1.2, skis: 2.1 },
+  { n: 'TORNIO 38m', K: 38, ve: 17.0, zoom: 10, tree: 0.9, crowd: 0.7, dusk: false, tower: 'steel', wind: 1.4, skis: 2.2 },
+  { n: 'LAAJIS 70m', K: 70, ve: 21.7, zoom: 7.2, tree: 0.7, crowd: 0.9, dusk: false, tower: 'steel', wind: 1.6, skis: 2.3 },
+  { n: 'SALPAUSSELKA 90m', K: 90, ve: 25.0, zoom: 6.0, tree: 0.55, crowd: 1.2, dusk: false, tower: 'steel', wind: 1.8, skis: 2.4 },
+  { n: 'PUIJO 110m', K: 110, ve: 26.6, zoom: 5.4, tree: 0.5, crowd: 1.35, night: true, tower: 'steel', wind: 1.9, skis: 2.45 },
+  { n: 'OLYMPIAMAKI 125m', K: 125, ve: 27.6, zoom: 5.0, tree: 0.45, crowd: 1.5, dusk: true, tower: 'steel', wind: 2.0, skis: 2.5 },
+  { n: 'PLANICA THE WILD 190m', K: 190, ve: 29.2, zoom: 4.4, tree: 0.4, crowd: 1.8, dusk: false, tower: 'steel', wind: 2.2, skis: 2.5 },
 ];
 var C_AERO = 0.0130;
 function ClOf(l) {
@@ -597,20 +597,18 @@ function addDecal(x, y, r, alpha) {
     c: GORE_TINTS[(Math.random() * 4) | 0] });
 }
 function goreSplat(x, y, v, scale) {
-  var n = Math.floor(clamp(v * v * 0.05, 4, 40) * scale);
+  // a modest sprinkle of blood on ground contact — garnish, not an explosion
+  var n = Math.floor(clamp(v * 0.25, 2, 10) * scale);
   for (var i = 0; i < n; i++) {
-    var a = Math.PI * (0.15 + Math.random() * 0.7); // up-spray arc (forward+up)
-    var sp = (2 + Math.random() * 8) * clamp(v / 20, 0.4, 1.8);
+    var a = Math.PI * (0.2 + Math.random() * 0.6); // forward-up spray arc
+    var sp = (1 + Math.random() * 4) * clamp(v / 22, 0.4, 1.2);
     blood.push({ x: x, y: y, vx: Math.cos(a) * sp * (Math.random() < 0.7 ? 1 : -0.4),
-      vy: -Math.sin(a) * sp, r: 0.5 + Math.random() * 1.4, life: 3 });
+      vy: -Math.sin(a) * sp, r: 0.4 + Math.random() * 1, life: 2.5 });
   }
-  mist.push({ x: x, y: y, r: 0.6 + scale, grow: 3 * clamp(v / 22, 0.5, 1.5), life: 0.35, a: 0.22 * scale });
-  for (var d = 0; d < 1 + 3 * scale; d++)
-    addDecal(x + (Math.random() - 0.3) * 2.5 * (1 + scale), y - 0.05, (0.2 + Math.random() * 0.9) * (0.6 + scale) * splatScale(), 0.6);
-  sprayLines.push({ x: x, y: y, t: 0, pow: scale * clamp(v / 22, 0.4, 1.2) });
+  for (var d = 0; d < Math.max(1, 2 * scale); d++)
+    addDecal(x + (Math.random() - 0.3) * 2 * (1 + scale), y - 0.05, (0.15 + Math.random() * 0.5) * (0.6 + scale) * splatScale(), 0.5);
   state.goreCount += n;
-  state.shake = Math.min(6, state.shake + 2 * scale);
-  state.flash = Math.max(state.flash, 0.12 * scale);
+  state.shake = Math.min(4, state.shake + scale);
   splatSnd();
   if (navigator.vibrate) navigator.vibrate([40, 20, 60]);
 }
@@ -621,13 +619,12 @@ function crash(kind) {
   if (!state.landed && state.hill) state.dist = state.hill.gAt(state.px).arc;
   var v = Math.hypot(state.pvx, state.pvy);
   var px = state.px, py = state.py;
-  // blood burst (the good part) + a ragdoll body that tumbles and slides —
-  // no body-part fireworks, just one athlete wrecking, skis flying off
-  var n = Math.floor(clamp(v * v * 0.12, 30, 110));
+  // small spray of blood and a ragdoll tumble — NO explosion, the body stays whole
+  var n = Math.floor(clamp(v * 0.7, 8, 20));
   for (var i = 0; i < n; i++) {
-    var a = Math.random() * TAU, sp = (2 + Math.random() * 12) * clamp(v / 22, 0.5, 1.6);
-    blood.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: -Math.abs(Math.sin(a)) * sp - 1,
-      r: 0.5 + Math.random() * 1.8, life: 4 });
+    var a = Math.PI * (0.1 + Math.random() * 0.5), sp = (1 + Math.random() * 5) * clamp(v / 25, 0.5, 1.2);
+    blood.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: -Math.abs(Math.sin(a)) * sp - 0.5,
+      r: 0.4 + Math.random() * 1.1, life: 3 });
   }
   parts.push({
     x: px, y: py - 0.3, vx: state.pvx * 0.55 + 1, vy: clamp(-state.pvy * 0.2, 0.5, 4),
@@ -645,13 +642,10 @@ function crash(kind) {
     rest: false, settle: 0, col: '#20242a',
   });
   state.partCount = 3;
-  for (var d = 0; d < 6; d++) addDecal(px + (Math.random() - 0.4) * 4, py - 0.05, (0.4 + Math.random() * 1.6) * splatScale(), 0.7);
-  mist.push({ x: px, y: py - 0.5, r: 1, grow: 4, life: 0.45, a: 0.3 });
-  sprayLines.push({ x: px, y: py, t: 0, pow: 1.4 });
-  goreSplat(px, py, v, 0.5);
+  for (var d = 0; d < 3; d++) addDecal(px + (Math.random() - 0.4) * 3, py - 0.05, (0.2 + Math.random() * 0.7) * splatScale(), 0.5);
   setMsg(kind, 2.2);
-  state.shake = 7; state.flash = 0.4;
-  state.timeScale = 0.32;
+  state.shake = 4; state.flash = 0.15;
+  state.timeScale = 0.35;
   state.goreCount += n;
   state.goreTotal = (state.goreTotal || 0) + state.goreCount;
   save();
@@ -874,8 +868,8 @@ function update(dtReal) {
       state.px += state.pvx * dt;
     }
     state.py = state.hill.gAt(state.px).y;
-    // ski tracks carved behind + a smear of blood off the skis
-    if (Math.random() < 0.25) addDecal(state.px - 0.2, g.y - 0.03, 0.1 + Math.random() * 0.2, 0.35);
+    // ski tracks carved behind + a faint trickle off the skis
+    if (Math.random() < 0.2) addDecal(state.px - 0.2, g.y - 0.03, 0.08 + Math.random() * 0.15, 0.3);
     if (Math.random() < 0.7) snowP.push({ x: state.px, y: state.py, vx: -2 - Math.random() * 3, vy: -Math.random() * 2, life: 0.5, r: 0.1 + Math.random() * 0.15 });
     if (windNode) windNode.g.gain.value = clamp(v / 50, 0, 0.12);
     state.camX = lerp(state.camX, state.px + 11 / state.zoom, 0.1);
@@ -897,19 +891,19 @@ function update(dtReal) {
         var rest = pt.kind === 'body' ? 0.12 : 0.35; // the body thuds, it does not pogo
         if (Math.abs(pt.vy) > 1.2) {
           pt.vy = -pt.vy * rest; pt.vx *= pt.kind === 'body' ? 0.75 : 0.6; pt.vrot *= 0.5;
-          if (Math.random() < 0.4) addDecal(pt.x, pt.y - 0.05, 0.15 + Math.random() * 0.4, 0.5);
-          if (Math.random() < 0.3) blood.push({ x: pt.x, y: pt.y, vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4, r: 0.5 + Math.random(), life: 2 });
+          if (Math.random() < 0.5) addDecal(pt.x, pt.y - 0.05, 0.1 + Math.random() * 0.25, 0.4);
+          if (Math.random() < 0.25) blood.push({ x: pt.x, y: pt.y, vx: (Math.random() - 0.5) * 2, vy: -Math.random() * 2.5, r: 0.4 + Math.random() * 0.5, life: 2 });
         } else { pt.vy = 0; pt.vx *= 0.92; pt.vrot *= 0.9; pt.settle += dt; if (pt.settle > 0.7) pt.rest = true; }
       }
-      // blood drips off gibs
-      if (Math.random() < 0.08) blood.push({ x: pt.x, y: pt.y, vx: 0, vy: -0.5, r: 0.4, life: 1.5 });
+      // occasional drip off the ragdoll
+      if (Math.random() < 0.04) blood.push({ x: pt.x, y: pt.y, vx: 0, vy: -0.5, r: 0.4, life: 1.5 });
     }
     // continue body slide point
     var g3 = state.hill.gAt(state.px);
     if (state.px < state.hill.xs[state.hill.xs.length - 1]) {
       state.px += Math.max(0, state.pvx) * 0.5 * dt;
       state.py = g3.y;
-      if (Math.random() < 0.8) addDecal(state.px, g3.y - 0.05, 0.3 + Math.random() * 0.9, 0.6);
+      if (Math.random() < 0.3) addDecal(state.px, g3.y - 0.05, 0.12 + Math.random() * 0.35, 0.4);
     }
     state.camX = lerp(state.camX, state.px + 3 / state.zoom, 0.06);
     state.camY = lerp(state.camY, state.py + 2 / state.zoom, 0.06);
@@ -1263,7 +1257,7 @@ function drawFloods() {
 function drawJumper() {
   if (state.crashed) return;
   var z = PX, H = state.hill.H;
-  var s = clamp(z * 1.8, 3.2, 12); // sprite meters -> px (slightly oversized for pixel-read)
+  var s = clamp(z * 2.6, 5, 18); // sprite meters -> px (character clearly readable)
   var p = W2S(state.px, state.py), cx = p[0], cy = p[1];
   var sl = Math.max(4, H.skis * s);
   var suit = SUITS[state.suit], hair = HAIRS[state.hair], pants = PANTS[state.pants];
@@ -1310,12 +1304,18 @@ function drawJumper() {
   } else if (pose === 'slide' && state.landed) {
     var ang3 = state.hill.gAt(state.px).a * 0.5;
     if (state.telemark) {
-      ski(cx - sl * 0.3, cy, ang3 * 0.5); ski(cx + sl * 0.25, cy - s * 0.1, ang3 * 0.35);
-      X.fillStyle = pants; X.fillRect(cx - s * 0.2, cy - s * 0.65, s * 0.5, s * 0.5);
-      X.fillStyle = suit; X.fillRect(cx - s * 0.15, cy - s * 1.15, s * 0.45, s * 0.55);
-      X.fillStyle = hair; X.fillRect(cx - s * 0.05, cy - s * 1.45, s * 0.35, s * 0.32);
-      X.fillStyle = suit; X.fillRect(cx - s * 0.55, cy - s * 1.1, s * 0.35, s * 0.12);
-      X.fillRect(cx + s * 0.35, cy - s * 1.1, s * 0.35, s * 0.12);
+      // telemark lunge: front ski forward, back knee low, arms wide
+      ski(cx + sl * 0.3, cy - s * 0.12, ang3 * 0.45); ski(cx - sl * 0.24, cy + s * 0.06, ang3 * 0.3);
+      X.strokeStyle = pants; X.lineWidth = Math.max(1, s * 0.16); X.lineCap = 'round';
+      X.beginPath();
+      X.moveTo(cx, cy - s * 0.55); X.lineTo(cx + sl * 0.3, cy - s * 0.05);
+      X.moveTo(cx, cy - s * 0.55); X.lineTo(cx - sl * 0.2, cy + s * 0.02);
+      X.stroke(); X.lineCap = 'butt';
+      X.fillStyle = suit; X.fillRect(cx - s * 0.22, cy - s * 1.05, s * 0.46, s * 0.55);
+      X.fillStyle = hair; X.fillRect(cx - s * 0.12, cy - s * 1.32, s * 0.34, s * 0.3);
+      X.fillStyle = '#ffd23c'; X.fillRect(cx - s * 0.16, cy - s * 1.36, s * 0.42, Math.max(1, s * 0.09));
+      X.fillStyle = suit; X.fillRect(cx - s * 0.62, cy - s * 0.98, s * 0.4, s * 0.13);
+      X.fillRect(cx + s * 0.22, cy - s * 0.98, s * 0.4, s * 0.13);
     } else {
       ski(cx, cy, ang3 * 0.4);
       X.fillStyle = pants; X.fillRect(cx - s * 0.16, cy - s * 0.8, s * 0.44, s * 0.55);
