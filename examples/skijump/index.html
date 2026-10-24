@@ -43,6 +43,9 @@
   .btn b { font-size: 24px; }
   .btn.on { background: rgba(240,60,60,.55); opacity: 1; transform: scale(.96); }
   #fire { min-height: 96px; min-width: 30vw; border-radius: 999px; background: rgba(120,20,30,.55); border-color: #ff7a7a; opacity: .92; }
+  .btn.dim { opacity: .16; pointer-events: none; }
+  #fire.hot { background: rgba(220,50,40,.8); border-color: #ffd23c; animation: hotpulse .5s infinite alternate; }
+  @keyframes hotpulse { from { box-shadow: 0 0 0 0 rgba(255,210,60,0); } to { box-shadow: 0 0 0 6px rgba(255,210,60,.35); } }
   #mute {
     position: fixed; top: calc(6px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
     z-index: 5; pointer-events: auto;
@@ -279,15 +282,15 @@ function tune(silent) {
 // ve = exit speed (m/s). Hill landing surface is generated from the
 // trajectory of a perfect jump (physics below), so tangents match by design.
 var HILLS = [
-  { n: 'POIKETON BACKYARD 8m', K: 8, ve: 7.6, zoom: 13, tree: 1.6, crowd: 0.15, dusk: true, tower: 'wood', wind: 0.8, skis: 1.8 },
-  { n: 'JUNNUJARVI 15m', K: 15, ve: 10.3, zoom: 9, tree: 1.3, crowd: 0.35, dusk: false, tower: 'wood', wind: 1.0, skis: 2.0 },
-  { n: 'KESAMAKI 25m', K: 25, ve: 13.2, zoom: 7, tree: 1.0, crowd: 0.55, dusk: false, tower: 'wood', wind: 1.2, skis: 2.1 },
-  { n: 'TORNIO 38m', K: 38, ve: 17.0, zoom: 5.2, tree: 0.9, crowd: 0.7, dusk: false, tower: 'steel', wind: 1.4, skis: 2.2 },
-  { n: 'LAAJIS 70m', K: 70, ve: 21.7, zoom: 3.8, tree: 0.7, crowd: 0.9, dusk: false, tower: 'steel', wind: 1.6, skis: 2.3 },
-  { n: 'SALPAUSSELKA 90m', K: 90, ve: 25.0, zoom: 3.0, tree: 0.55, crowd: 1.2, dusk: false, tower: 'steel', wind: 1.8, skis: 2.4 },
-  { n: 'PUIJO 110m', K: 110, ve: 26.6, zoom: 2.6, tree: 0.5, crowd: 1.35, night: true, tower: 'steel', wind: 1.9, skis: 2.45 },
-  { n: 'OLYMPIAMAKI 125m', K: 125, ve: 27.6, zoom: 2.4, tree: 0.45, crowd: 1.5, dusk: true, tower: 'steel', wind: 2.0, skis: 2.5 },
-  { n: 'PLANICA THE WILD 190m', K: 190, ve: 29.2, zoom: 2.2, tree: 0.4, crowd: 1.8, dusk: false, tower: 'steel', wind: 2.2, skis: 2.5 },
+  { n: 'POIKETON BACKYARD 8m', K: 8, ve: 7.6, zoom: 18, tree: 1.6, crowd: 0.15, dusk: true, tower: 'wood', wind: 0.8, skis: 1.8 },
+  { n: 'JUNNUJARVI 15m', K: 15, ve: 10.3, zoom: 13, tree: 1.3, crowd: 0.35, dusk: false, tower: 'wood', wind: 1.0, skis: 2.0 },
+  { n: 'KESAMAKI 25m', K: 25, ve: 13.2, zoom: 10, tree: 1.0, crowd: 0.55, dusk: false, tower: 'wood', wind: 1.2, skis: 2.1 },
+  { n: 'TORNIO 38m', K: 38, ve: 17.0, zoom: 7.5, tree: 0.9, crowd: 0.7, dusk: false, tower: 'steel', wind: 1.4, skis: 2.2 },
+  { n: 'LAAJIS 70m', K: 70, ve: 21.7, zoom: 5.5, tree: 0.7, crowd: 0.9, dusk: false, tower: 'steel', wind: 1.6, skis: 2.3 },
+  { n: 'SALPAUSSELKA 90m', K: 90, ve: 25.0, zoom: 4.6, tree: 0.55, crowd: 1.2, dusk: false, tower: 'steel', wind: 1.8, skis: 2.4 },
+  { n: 'PUIJO 110m', K: 110, ve: 26.6, zoom: 4.1, tree: 0.5, crowd: 1.35, night: true, tower: 'steel', wind: 1.9, skis: 2.45 },
+  { n: 'OLYMPIAMAKI 125m', K: 125, ve: 27.6, zoom: 3.8, tree: 0.45, crowd: 1.5, dusk: true, tower: 'steel', wind: 2.0, skis: 2.5 },
+  { n: 'PLANICA THE WILD 190m', K: 190, ve: 29.2, zoom: 3.4, tree: 0.4, crowd: 1.8, dusk: false, tower: 'steel', wind: 2.2, skis: 2.5 },
 ];
 var C_AERO = 0.0130;
 function ClOf(l) {
@@ -300,7 +303,7 @@ function ClOf(l) {
 }
 function CdOf(l) { return 0.30 + (l > 0.75 ? 1.6 * (l - 0.75) * (l - 0.75) : 0.08 * (0.75 - l)); }
 function perfectTraj(ve) {
-  var x = 0, y = 0, vx = ve * 1.03, vy = -(0.055 * ve + 0.35) - 0.45, lean = 0.45, dt = 1 / 120;
+  var x = 0, y = 0, vx = ve * 1.03, vy = -(0.055 * ve + 0.35) - 0.95, lean = 0.45, dt = 1 / 120;
   var pts = [[0, 0]];
   for (var t = 0; t < 30; t += dt) {
     var hold = lean < 0.72;
@@ -325,14 +328,14 @@ function buildHill(idx) {
   }
   var mKick = 0.11, xK = H.K / 1.1;
   // clearance curve c(x): ground hugs below the perfect-flight path, zero at K.
-  // bump peaks at mid-hill (visible air!), grazes to zero at 1.02*xK, then
-  // sinks below the trajectory at ~6deg so contact happens on the K line.
+  // the table floats ~2 m above the knoll, the hill falls away fast (big air!),
+  // then ramps linearly back to the trajectory right at the K line.
   function cPar(xK) {
-    var B = Math.max(0.55, 0.065 * xK), xc = 1.02 * xK;
+    var B = Math.max(1.2, 0.10 * xK), xc = 1.02 * xK, c0 = clamp(0.3 * B, 0.5, 2.2);
     return function (x) {
-      if (x <= 0) return 0.5;
-      if (x <= 0.55 * xc) { var u = x / (0.55 * xc); return 0.5 + (B - 0.5) * (0.5 - 0.5 * Math.cos(PI * u)); }
-      if (x <= xc) return B * (xc - x) / (0.45 * xc);
+      if (x <= 0) return c0;
+      if (x <= 0.4 * xc) { var u = x / (0.4 * xc); return c0 + (B - c0) * (0.5 - 0.5 * Math.cos(PI * u)); }
+      if (x <= xc) return B * (xc - x) / (0.6 * xc);
       return -mKick * (x - xc);
     };
   }
@@ -340,7 +343,7 @@ function buildHill(idx) {
   // on the K line: iterate until the bot's ground-arc to contact equals K.
   function botArc(xK) {
     var c = cPar(xK);
-    var x = 0, y = -0.3, vx = H.ve * 1.03, vy = -(0.055 * H.ve + 0.35) - 0.45, lean = 0.45, dt = 1 / 60;
+    var x = 0, y = -0.3, vx = H.ve * 1.03, vy = -(0.055 * H.ve + 0.35) - 0.95, lean = 0.45, dt = 1 / 60;
     var a = 0, gy, gxPrev = -c(0);
     for (var t = 0; t < 30; t += dt) {
       var hold = lean < 0.72;
@@ -403,11 +406,13 @@ function buildHill(idx) {
     return { x: p.x, y: p.y, ang: p.a };
   }
   var inTop = inrunXY(0);
-  // terrain rising up-left behind the tower so the inrun stands on a shoulder
+  // terrain rising up-left behind the tower so the inrun stands on a shoulder,
+  // matching the knoll height right under the floating takeoff table
   var lx0 = inTop.x - 40;
+  var knoll = gz(0);
   function leftY(x) {
     if (x > 0) x = 0;
-    return Math.min(-0.5 + Math.tan(12 * DEG) * (-x), inTop.y + 1);
+    return Math.min(knoll + Math.tan(12 * DEG) * (-x), inTop.y + 1);
   }
   return {
     idx: idx, H: H, gAt: gAt, xs: xs, ys: ys, arc: arc, sl: sl, step: step,
@@ -463,11 +468,12 @@ function prepareHill(i) {
   state.trees = [];
   var span = 2.4 * HILLS[i].K + 150;
   var nTree = Math.floor(30 * HILLS[i].tree + 8);
+  var towerX = state.hill.inTop.x; // keep the whole tower/inrun zone tree-free
   for (var t = 0; t < nTree; t++) {
-    // keep the flight lane clear: trees only behind the outrun end or back at the tower
+    // keep the flight lane clear: trees only behind the outrun end or well behind the tower
     var tx = rng() < 0.75
       ? 1.35 * HILLS[i].K + 30 + rng() * (span - 1.35 * HILLS[i].K - 30)
-      : -(10 + rng() * 40);
+      : towerX - 8 - rng() * 40;
     state.trees.push({ x: tx, h: (3 + rng() * 5) * clamp(HILLS[i].K / 60, 0.35, 2), off: 0.5 + rng() * 2.5 });
   }
   state.crowdPts = [];
@@ -517,9 +523,9 @@ function doTakeoff(q) {
   state.px = 0; state.py = -0.3;
   var boost = q === 'PERFECT' ? 1.03 : q === 'GOOD' ? 1.01 : q === 'EARLY' ? 0.97 : 0.92;
   state.pvx = ve * boost;
-  state.pvy = -(0.055 * ve + 0.35) - (q === 'PERFECT' ? 0.45 : q === 'GOOD' ? 0.25 : q === 'EARLY' ? 0.12 : 0);
+  state.pvy = -(0.055 * ve + 0.35) - (q === 'PERFECT' ? 0.95 : q === 'GOOD' ? 0.5 : q === 'EARLY' ? 0.25 : 0);
   state.lean = 0.45;
-  state.extT = 0.35; // legs-up extension animation at the lip
+  state.extT = 0.5; // legs-up extension animation at the lip
   // puff of snow off the kick
   for (var i = 0; i < 6; i++) snowP.push({ x: (Math.random() - 0.5) * 1.5, y: -0.2, vx: -1 - Math.random() * 3, vy: -Math.random() * 2, life: 0.35, r: 0.08 + Math.random() * 0.12 });
   state.phase = 'flight'; state.flightT = 0; state.flightGood = 0;
@@ -611,24 +617,30 @@ function crash(kind) {
   if (!state.landed && state.hill) state.dist = state.hill.gAt(state.px).arc;
   var v = Math.hypot(state.pvx, state.pvy);
   var px = state.px, py = state.py;
-  // THE GORE: broken bones, but it stays a detail, not the show
+  // blood burst (the good part) + a ragdoll body that tumbles and slides —
+  // no body-part fireworks, just one athlete wrecking, skis flying off
   var n = Math.floor(clamp(v * v * 0.12, 30, 110));
   for (var i = 0; i < n; i++) {
     var a = Math.random() * TAU, sp = (2 + Math.random() * 12) * clamp(v / 22, 0.5, 1.6);
     blood.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: -Math.abs(Math.sin(a)) * sp - 1,
       r: 0.5 + Math.random() * 1.8, life: 4 });
   }
-  var gibs = 7 + (Math.random() * 4) | 0;
-  var kinds = ['head', 'torso', 'limb', 'limb', 'boot', 'boot', 'ski', 'ski', 'arm', 'arm'];
-  for (var j = 0; j < gibs; j++) {
-    var a2 = -PI * (0.1 + Math.random() * 0.8), sp2 = 3 + Math.random() * 11;
-    parts.push({
-      x: px, y: py - 0.3, vx: Math.cos(a2) * sp2 * (0.6 + Math.random()), vy: -Math.abs(Math.sin(a2)) * sp2,
-      rot: Math.random() * TAU, vrot: (Math.random() - 0.5) * 16, kind: kinds[j % kinds.length],
-      rest: false, settle: 0, col: j < 2 ? SUITS[state.suit] : (j % 2 ? HAIRS[state.hair] : '#c1121f'),
-    });
-  }
-  state.partCount = gibs;
+  parts.push({
+    x: px, y: py - 0.3, vx: state.pvx * 0.55 + 1, vy: clamp(-state.pvy * 0.2, 0.5, 4),
+    rot: 0.5, vrot: 5 + Math.random() * 4, kind: 'body',
+    rest: false, settle: 0, col: SUITS[state.suit],
+  });
+  parts.push({
+    x: px, y: py, vx: state.pvx * 0.42 + 2, vy: 1.5 + Math.random() * 2,
+    rot: Math.random() * TAU, vrot: (Math.random() - 0.5) * 12, kind: 'ski',
+    rest: false, settle: 0, col: '#20242a',
+  });
+  parts.push({
+    x: px - 0.3, y: py, vx: state.pvx * 0.38 - 1, vy: 1 + Math.random() * 2.5,
+    rot: Math.random() * TAU, vrot: (Math.random() - 0.5) * 12, kind: 'ski',
+    rest: false, settle: 0, col: '#20242a',
+  });
+  state.partCount = 3;
   for (var d = 0; d < 6; d++) addDecal(px + (Math.random() - 0.4) * 4, py - 0.05, (0.4 + Math.random() * 1.6) * splatScale(), 0.7);
   mist.push({ x: px, y: py - 0.5, r: 1, grow: 4, life: 0.45, a: 0.3 });
   sprayLines.push({ x: px, y: py, t: 0, pow: 1.4 });
@@ -641,7 +653,7 @@ function crash(kind) {
   save();
   splatSnd();
   if (navigator.vibrate) navigator.vibrate([80, 40, 120, 30, 90]);
-  console.info('[dsj] crash: ' + kind + ' at ' + state.dist.toFixed(1) + 'm gibs=' + gibs);
+  console.info('[dsj] crash: ' + kind + ' at ' + state.dist.toFixed(1) + 'm');
 }
 
 // ---------------------------------------------------------------- scoring
@@ -730,10 +742,24 @@ function toggleMute() {
 document.getElementById('mute').addEventListener('click', function () { audioInit(); toggleMute(); });
 function setLabel() {
   var p = state.phase;
+  var bA = document.getElementById('bA'), bB = document.getElementById('bB'), bF = document.getElementById('fire');
   var la = document.getElementById('lA'), lb = document.getElementById('lB'), lf = document.getElementById('lF');
-  if (p === 'title' || p === 'hills' || p === 'char') { la.textContent = '\u25C0 NAV'; lb.textContent = 'NAV \u25B6'; lf.textContent = 'SELECT'; }
-  else if (p === 'ready' || p === 'result') { la.textContent = 'LEAN'; lb.textContent = 'LAND'; lf.textContent = 'GO!'; }
-  else { la.textContent = 'HOLD TO LEAN'; lb.textContent = 'TELEMARK!'; lf.textContent = 'GO'; }
+  bA.classList.remove('dim'); bB.classList.remove('dim'); bF.classList.remove('dim'); bF.classList.remove('hot');
+  if (p === 'title' || p === 'hills' || p === 'char') {
+    la.textContent = '\u25C0 NAV'; lb.textContent = 'NAV \u25B6'; lf.textContent = 'SELECT';
+  } else if (p === 'ready' || p === 'inrun') {
+    la.textContent = 'LEAN'; lb.textContent = 'LAND';
+    lf.textContent = p === 'inrun' ? 'JUMP!' : 'GO!';
+    bF.classList.add('hot'); bA.classList.add('dim'); bB.classList.add('dim');
+  } else if (p === 'flight') {
+    la.textContent = '\u25BC LEAN'; lb.textContent = '\u25B2 LAND!';
+    lf.textContent = '\u2014'; bF.classList.add('dim');
+  } else if (p === 'result') {
+    la.textContent = '\u25C0 HILLS'; lb.textContent = 'HILLS \u25B6'; lf.textContent = 'JUMP AGAIN';
+  } else { // slide / crash
+    la.textContent = 'LEAN'; lb.textContent = 'LAND'; lf.textContent = '\u2014';
+    bA.classList.add('dim'); bB.classList.add('dim'); bF.classList.add('dim');
+  }
 }
 
 // menu navigation uses fire/edges, debounce
@@ -802,7 +828,7 @@ function update(dtReal) {
     var top = state.hill.inTop;
     state.camX = lerp(state.camX, top.x + 4 / state.zoom, 0.10);
     state.camY = lerp(state.camY, top.y + 8 / state.zoom, 0.10);
-    if (edgeFire) { state.phase = 'inrun'; beep(990, 0.06, 'square', 0.12); }
+    if (edgeFire || state.readyT > 2.5) { state.phase = 'inrun'; beep(990, 0.06, 'square', 0.12); }
   } else if (p === 'inrun') {
     var H = state.hill;
     state.inV += H.aIn * dt;
@@ -813,7 +839,7 @@ function update(dtReal) {
     if (Math.random() < 0.5) snowP.push({ x: state.px, y: state.py, vx: -1 - Math.random() * 2, vy: -Math.random() * 1.5, life: 0.4, r: 0.08 + Math.random() * 0.1 });
     if (windNode) { windNode.g.gain.value = clamp(state.inV / 40, 0, 0.2); windNode.bp.frequency.value = 250 + state.inV * 18; }
     var toEdge = H.inL - state.inS;
-    if (edgeA && !state.tookOff) {
+    if ((edgeA || edgeFire) && !state.tookOff) {
       if (toEdge <= 2.0) doTakeoff('PERFECT');
       else if (toEdge <= 5.0) { state.queuedTakeoff = 'GOOD'; setMsg('CROUCH...', 0.5); }
       else state.pendingEarly = true;
@@ -863,8 +889,9 @@ function update(dtReal) {
       var gg = state.hill.gAt(pt.x);
       if (pt.y <= gg.y) {
         pt.y = gg.y;
+        var rest = pt.kind === 'body' ? 0.12 : 0.35; // the body thuds, it does not pogo
         if (Math.abs(pt.vy) > 1.2) {
-          pt.vy = -pt.vy * 0.35; pt.vx *= 0.6; pt.vrot *= 0.5;
+          pt.vy = -pt.vy * rest; pt.vx *= pt.kind === 'body' ? 0.75 : 0.6; pt.vrot *= 0.5;
           if (Math.random() < 0.4) addDecal(pt.x, pt.y - 0.05, 0.15 + Math.random() * 0.4, 0.5);
           if (Math.random() < 0.3) blood.push({ x: pt.x, y: pt.y, vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4, r: 0.5 + Math.random(), life: 2 });
         } else { pt.vy = 0; pt.vx *= 0.92; pt.vrot *= 0.9; pt.settle += dt; if (pt.settle > 0.7) pt.rest = true; }
@@ -888,6 +915,7 @@ function update(dtReal) {
     else if ((edgeA || edgeB) && state.t > 0.6 && navCd <= 0) { state.phase = 'hills'; navCd = 0.3; }
     if (crowdG) crowdG.gain.value = 0.012;
   }
+  if (setLabel._p !== state.phase) { setLabel._p = state.phase; setLabel(); }
   // fx world update (all phases)
   stepFx(dt);
   edgeA = edgeB = edgeFire = false;
@@ -1230,7 +1258,7 @@ function drawFloods() {
 function drawJumper() {
   if (state.crashed) return;
   var z = PX, H = state.hill.H;
-  var s = clamp(z * 1.8, 3.2, 8); // sprite meters -> px (slightly oversized for pixel-read)
+  var s = clamp(z * 1.8, 3.2, 12); // sprite meters -> px (slightly oversized for pixel-read)
   var p = W2S(state.px, state.py), cx = p[0], cy = p[1];
   var sl = Math.max(4, H.skis * s);
   var suit = SUITS[state.suit], hair = HAIRS[state.hair], pants = PANTS[state.pants];
@@ -1297,25 +1325,30 @@ function drawGib(pt) {
   X.translate(w[0], w[1]);
   X.rotate(pt.rot);
   var k = Math.max(2, Math.round(0.3 * z));
-  switch (pt.kind) {
-    case 'head':
-      X.fillStyle = '#e8c39a'; X.fillRect(-k, -k, k * 2, k * 2);
-      X.fillStyle = pt.col; X.fillRect(-k, -k, k * 2, Math.max(1, k * 0.6));
-      X.fillStyle = '#c1121f'; X.fillRect(-k, 0, k * 2, Math.max(1, k * 0.35)); // mouth gore
-      break;
-    case 'torso':
-      X.fillStyle = SUITS[state.suit]; X.fillRect(-k, -k * 1.4, k * 2, k * 2.8);
-      X.fillStyle = '#8b0e16'; X.fillRect(-k, -k * 1.4, k * 2, Math.max(1, k * 0.5));
-      break;
-    case 'limb': case 'arm':
-      X.fillStyle = '#e8c39a'; X.fillRect(-k, -1, k * 2, 2);
-      X.fillStyle = '#c1121f'; X.fillRect(-k, -1, 2, 2);
-      break;
-    case 'boot':
-      X.fillStyle = '#20242a'; X.fillRect(-k, -2, k * 1.6, 3); break;
-    case 'ski':
-      X.fillStyle = '#20242a'; X.fillRect(-k * 3, -1, k * 6, 2);
-      X.fillStyle = '#d7263d'; X.fillRect(-k * 3, -1, k * 1.5, 2); break;
+  if (pt.kind === 'body') {
+    // ragdoll: whole athlete tumbling, limbs flailing — grim but whole
+    var u = Math.max(4, z * 1.3);
+    var fl = Math.sin(state.crashT * 11) * 0.5, fl2 = Math.sin(state.crashT * 8.5 + 2) * 0.5;
+    X.lineCap = 'round';
+    X.strokeStyle = PANTS[state.pants]; X.lineWidth = Math.max(1, u * 0.16);
+    X.beginPath();
+    X.moveTo(0, 0); X.lineTo(-u * 0.5, -u * (0.38 + fl * 0.22));
+    X.moveTo(0, 0); X.lineTo(u * 0.45, -u * (0.42 + fl2 * 0.22));
+    X.stroke();
+    X.fillStyle = SUITS[state.suit];
+    X.fillRect(-u * 0.25, -u * 1.0, u * 0.5, u * 1.02);
+    X.strokeStyle = SUITS[state.suit]; X.lineWidth = Math.max(1, u * 0.13);
+    X.beginPath();
+    X.moveTo(-u * 0.2, -u * 0.85); X.lineTo(-u * 0.7, -u * (0.55 + fl2 * 0.3));
+    X.moveTo(u * 0.2, -u * 0.85); X.lineTo(u * 0.72, -u * (0.6 + fl * 0.3));
+    X.stroke();
+    X.fillStyle = '#e8c39a'; X.fillRect(-u * 0.18, -u * 1.34, u * 0.36, u * 0.34);
+    X.fillStyle = HAIRS[state.hair]; X.fillRect(-u * 0.18, -u * 1.34, u * 0.36, u * 0.12);
+    X.fillStyle = '#8b0e16'; X.fillRect(u * 0.04, -u * 1.16, u * 0.14, u * 0.1);
+    X.lineCap = 'butt';
+  } else if (pt.kind === 'ski') {
+    X.fillStyle = '#20242a'; X.fillRect(-k * 3, -1, k * 6, 2);
+    X.fillStyle = '#d7263d'; X.fillRect(-k * 3, -1, k * 1.5, 2);
   }
   X.restore();
 }
@@ -1348,6 +1381,10 @@ function renderHUD() {
       var jp = W2S(state.px, state.py);
       txt('LAND!', clamp(jp[0] - 14, 4, VW - 44), clamp(jp[1] - 30, 20, VH - 30), '#7aff8a', 2, '#000');
     }
+    if (state.px < state.hill.xK * 0.35) {
+      var fh = 'HOLD LEAN TO STAY FLAT - TAP LAND TO TELEMARK';
+      txt(fh, VW / 2 - txtW(fh, 1) / 2, VH - 14, 'rgba(230,240,255,.8)', 1, '#000');
+    }
     // lean meter (vertical)
     var lx = VW - 14, ly = 40, lh = 70;
     X.fillStyle = 'rgba(0,0,0,.5)'; X.fillRect(lx - 1, ly - lh - 1, 10, lh + 2);
@@ -1372,6 +1409,10 @@ function renderHUD() {
     var toEdge = state.hill.inL - state.inS;
     if (toEdge < 6 && !state.tookOff && (state.blink * 5) % 2 < 1)
       txt('NOW!', VW / 2 + 30, VH / 2 - 20, '#7aff8a', 2, '#000');
+    if (!state.tookOff) {
+      var hint = 'HIT JUMP AT THE YELLOW LINE';
+      txt(hint, VW / 2 - txtW(hint, 1) / 2, VH - 14, 'rgba(230,240,255,.8)', 1, '#000');
+    }
   }
   // gore tally
   if (state.goreCount > 0 && (state.phase === 'crash' || state.phase === 'result' || state.phase === 'slide')) {
@@ -1388,7 +1429,7 @@ function renderResult() {
   if (state.crashed) {
     txt('JUMPED ' + state.dist.toFixed(1) + ' M  (DNF)', x + 14, y + 34, '#fff', 1);
     txt('CAUSE: ' + state.crashKind.slice(0, 34), x + 14, y + 46, '#e08080', 1);
-    txt('spilled ' + state.goreCount + ' drops + ' + state.partCount + ' pieces', x + 14, y + 58, '#9a6a70', 1);
+    txt('spilled ' + state.goreCount + ' drops of blood', x + 14, y + 58, '#9a6a70', 1);
     var rating = state.goreCount > 150 ? 'THAT WAS MESSY' : state.goreCount > 80 ? 'GORE AWARD' : 'A LITTLE SPLOOSH';
     txt(rating, x + w / 2 - txtW(rating, 2) / 2, y + 76, '#c05060', 2, '#400');
     // little skull
@@ -1510,6 +1551,8 @@ window.__state = function () {
     crashed: state.crashed, gore: state.goreCount, parts: parts.length,
     blood: blood.length, freeze: !!state.freezeAt, t: +state.t.toFixed(2),
     wind: +state.wind.toFixed(1), tq: state.takeoffQ, total: state.total ? +state.total.toFixed(1) : 0,
+    lean: +state.lean.toFixed(2), tele: state.telemark,
+    air: state.hill && state.phase === 'flight' ? +(state.py - state.hill.gAt(state.px).y).toFixed(1) : 0,
   };
 };
 // deterministic simulation pump (software-GL headless runs are ~5fps; stepping
