@@ -7,6 +7,7 @@ Browser experiments, served as GitHub Pages from one repo:
 | Example | What it is |
 |---|---|
 | [Living room — WebGPU](examples/livingroom/) | Blender-exported living room at 160 fps with WebGPURenderer: AgX matched to the Cycles look, same HDRI, GTAO + bloom. Needs a WebGPU browser; ~50 MB. |
+| [Monkey Island — 3D intro](examples/monkeyisland/) | The Secret of Monkey Island Special Edition opening rebuilt live: moonlit island, ships, glowing logo, and the Main Title Theme synthesized from inline score data. Click to start, drag to orbit. One file, no assets. |
 | [Black hole](examples/blackhole/) | Every pixel raymarches an actual photon orbit around a Schwarzschild black hole: gravitational lensing, Doppler-beamed accretion disk, photon ring. One file, no libraries, no assets. |
 | [Coral — reaction-diffusion](examples/coral/) | Gray-Scott reaction-diffusion on ping-ponged half-float textures: coral, mitosis, worms, fingerprints and mazes from six (f, k) presets. Drag to paint life; adaptive quality keeps phones at 60 fps. One file, no libraries, no assets. |
 | [OutRun 3D](examples/outrun/) | The SEGA arcade poster as a live Three.js scene with the soundtrack synthesized from the arcade FM data. One file, zero assets. |
