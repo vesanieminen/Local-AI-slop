@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+<title>Deluxe Ski Jump — Gore Edition</title>
+<meta name="description" content="The classic Finnish ski jumping game rebuilt for phones — with ultra gore. Time your takeoff, lean through the flight, hit the telemark... and explode into a fountain of blood when you hit the ground." />
+<style>
+  html, body { margin: 0; height: 100%; background: #06070c; overflow: hidden; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    touch-action: none; -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    gap: 8px;
+  }
+  #screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    touch-action: none;
+    background: #000;
+    width: min(100vw, calc((100vh - 120px) * 1.3333));
+    height: auto;
+  }
+  #pad {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: none; justify-content: space-between; align-items: flex-end;
+    padding: 0 calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    gap: 10px; pointer-events: none;
+    max-width: 900px; margin: 0 auto; left: 50%; transform: translateX(-50%); width: 100%; box-sizing: border-box;
+  }
+  @media (pointer: coarse) { #pad { display: flex; } }
+  .btn {
+    pointer-events: auto; touch-action: none;
+    font-family: ui-monospace, monospace; font-weight: 700;
+    color: #fff; border: 3px solid rgba(255,255,255,.55); border-radius: 16px;
+    background: rgba(10,30,70,.5); backdrop-filter: blur(2px);
+    min-width: 26vw; max-width: 300px; flex: 1;
+    min-height: 76px; font-size: 13px; line-height: 1.2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    opacity: .78;
+  }
+  .btn b { font-size: 24px; }
+  .btn.on { background: rgba(240,60,60,.55); opacity: 1; transform: scale(.96); }
+  #fire { min-height: 96px; min-width: 30vw; border-radius: 999px; background: rgba(120,20,30,.55); border-color: #ff7a7a; opacity: .92; }
+  #mute {
+    position: fixed; top: calc(6px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+    z-index: 5; pointer-events: auto;
+    font-size: 18px; background: rgba(0,0,0,.45); color: #fff;
+    border: 2px solid #555; border-radius: 8px; padding: 6px 10px; touch-action: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen" width="400" height="300"></canvas>
+<div id="pad">
+  <div class="btn" id="bA"><b>&#9660;</b><span id="lA">LEAN</span></div>
+  <div class="btn" id="fire"><b>&#9679;</b><span id="lF">FIRE</span></div>
+  <div class="btn" id="bB"><b>&#9650;</b><span id="lB">LAND</span></div>
+</div>
+<button id="mute">&#128266;</button>
+<script>
+'use strict';
+/* ---------------------------------------------------------------------------
+   DELUXE SKI JUMP — GORE EDITION
+   A homage to the 1997 Finnish classic (Jussi "Dynamite" Lahtonen's DSJ):
+   two arrow keys, one hill, a flag for wind, and questionable judgment.
+   Two-button remake: [down] crouch-takeoff + lean forward, [up] telemark land.
+   Every ground contact sprays blood. Crashes are R-rated carnage.
+   One file. No assets. No network.
+   URL hooks: ?shot=1&hill=N&gore=1&freeze=1  (deterministic screenshot mode)
+--------------------------------------------------------------------------- */
+var QS = new URLSearchParams(location.search);
+var SHOT = +QS.get('shot') || 0;
+var SHOT_HILL = clamp(QS.has('hill') ? +QS.get('hill') : 5, 0, 8);
+var WIND_FIX = QS.has('wind') ? +QS.get('wind') : null;
+var SHOT_GORE = !!QS.get('gore');
+var SHOT_FREEZE = !!QS.get('freeze');
+var FF = Math.max(0, Math.round(+QS.get('ff') || 0)); // pre-sim frames
+
+// ------------------------------------------------------------------- canvas
+var cv = document.getElementById('screen'), X = cv.getContext('2d');
+var VW = 400, VH = 300, SCALE = 1; // SCALE set on resize (internal pixels)
+X.imageSmoothingEnabled = false;
+function fitCanvas() {
+  var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  var reserve = coarse ? 110 : 24;
+  var w = Math.min(window.innerWidth, (window.innerHeight - reserve) * (VW / VH));
+  cv.style.width = Math.floor(w) + 'px';
+  cv.style.height = Math.floor(w * VH / VW) + 'px';
+}
+window.addEventListener('resize', fitCanvas); fitCanvas();
+document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+
+// -------------------------------------------------------------------- utils
+var PI = Math.PI, TAU = PI * 2, DEG = PI / 180;
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function mulberry(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+var GORE_TINTS = ['#c1121f', '#a4111b', '#8b0e16', '#d11f2c'];
+// bigger mess on bigger hills (they hit harder)
+function splatScale() {
+  var H = state.hill ? state.hill.H : HILLS[0];
+  return clamp(H.ve / 14, 1, 2.1);
+}
+
+// --------------------------------------------------------- 5x7 pixel font
+var FONT = {
+  'A': '01110 10001 10001 11111 10001 10001 10001', 'B': '11110 10001 10001 11110 10001 10001 11110',
+  'C': '01110 10001 10000 10000 10000 10001 01110', 'D': '11100 10010 10001 10001 10001 10010 11100',
+  'E': '11111 10000 10000 11110 10000 10000 11111', 'F': '11111 10000 10000 11110 10000 10000 10000',
+  'G': '01110 10001 10000 10111 10001 10001 01111', 'H': '10001 10001 10001 11111 10001 10001 10001',
+  'I': '01110 00100 00100 00100 00100 00100 01110', 'J': '00111 00010 00010 00010 00010 10010 01100',
+  'K': '10001 10010 10100 11000 10100 10010 10001', 'L': '10000 10000 10000 10000 10000 10000 11111',
+  'M': '10001 11011 10101 10101 10001 10001 10001', 'N': '10001 11001 10101 10011 10001 10001 10001',
+  'O': '01110 10001 10001 10001 10001 10001 01110', 'P': '11110 10001 10001 11110 10000 10000 10000',
+  'Q': '01110 10001 10001 10001 10101 10010 01101', 'R': '11110 10001 10001 11110 10100 10010 10001',
+  'S': '01111 10000 10000 01110 00001 00001 11110', 'T': '11111 00100 00100 00100 00100 00100 00100',
+  'U': '10001 10001 10001 10001 10001 10001 01110', 'V': '10001 10001 10001 10001 10001 01010 00100',
+  'W': '10001 10001 10001 10101 10101 11011 10001', 'X': '10001 10001 01010 00100 01010 10001 10001',
+  'Y': '10001 10001 01010 00100 00100 00100 00100', 'Z': '11111 00001 00010 00100 01000 10000 11111',
+  '0': '01110 10001 10011 10101 11001 10001 01110', '1': '00100 01100 00100 00100 00100 00100 01110',
+  '2': '01110 10001 00001 00010 00100 01000 11111', '3': '11110 00001 00001 00110 00001 00001 11110',
+  '4': '00010 00110 01010 10010 11111 00010 00010', '5': '11111 10000 11110 00001 00001 10001 01110',
+  '6': '00110 01000 10000 11110 10001 10001 01110', '7': '11111 00001 00010 00100 01000 01000 01000',
+  '8': '01110 10001 10001 01110 10001 10001 01110', '9': '01110 10001 10001 01111 00001 00010 01100',
+  '.': '00000 00000 00000 00000 00000 01100 01100', ',': '00000 00000 00000 00000 01100 00100 11000',
+  ':': '00000 01100 01100 00000 01100 01100 00000', '!': '00100 00100 00100 00100 00100 00000 00100',
+  '?': '01110 10001 00001 00010 00100 00000 00100', "'": '00100 00100 00000 00000 00000 00000 00000',
+  '+': '00000 00100 00100 11111 00100 00100 00000', '-': '00000 00000 00000 11111 00000 00000 00000',
+  '/': '00001 00010 00010 00100 01000 01000 10000', '%': '11001 11010 00010 00100 01000 01011 10011',
+  '(': '00010 00100 01000 01000 01000 00100 00010', ')': '01000 00100 00010 00010 00010 00100 01000',
+  '*': '00000 10101 01110 11111 01110 10101 00000', '=': '00000 00000 11111 00000 11111 00000 00000',
+  '<': '00001 00010 00100 01000 00100 00010 00001', '>': '10000 01000 00100 00010 00100 01000 10000',
+  'x': '00000 00000 10001 01010 00100 01010 10001', '#': '01010 11111 01010 01010 01010 11111 01010',
+  ' ': '00000 00000 00000 00000 00000 00000 00000'
+};
+function txt(s, x, y, c, sc, outline) {
+  s = ('' + s).toUpperCase(); sc = sc || 1;
+  // two passes so the outline halo never eats neighbouring dots
+  var passes = outline ? 2 : 1;
+  for (var pI = 0; pI < passes; pI++) {
+    if (pI === 0 && outline) X.fillStyle = outline;
+    else X.fillStyle = c;
+    var cx = x;
+    for (var i = 0; i < s.length; i++) {
+      var g = FONT[s[i]] || FONT[' '];
+      for (var r = 0; r < 7; r++) for (var cI = 0; cI < 5; cI++) {
+        if (g[r * 6 + cI] === '1') {
+          if (pI === 0 && outline) {
+            for (var ox = -1; ox <= 1; ox++) for (var oy = -1; oy <= 1; oy++)
+              X.fillRect(cx + cI * sc + ox, y + r * sc + oy, sc, sc);
+          } else {
+            X.fillRect(cx + cI * sc, y + r * sc, sc, sc);
+          }
+        }
+      }
+      cx += 6 * sc;
+    }
+  }
+  return cx;
+}
+function txtW(s, sc) { return ('' + s).length * 6 * sc - sc; }
+
+// -------------------------------------------------------------------- audio
+var AC = null, master = null, windNode = null, muted = false;
+function audioInit() {
+  if (AC) return;
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  master = AC.createGain(); master.gain.value = muted ? 0 : 0.5; master.connect(AC.destination);
+  // continuous wind: filtered noise
+  var buf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  var d = buf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  var src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+  var bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 400; bp.Q.value = 0.7;
+  var g = AC.createGain(); g.gain.value = 0;
+  src.connect(bp); bp.connect(g); g.connect(master); src.start();
+  windNode = { bp: bp, g: g };
+  // crowd bed
+  var c2 = AC.createBufferSource(); c2.buffer = buf; c2.loop = true;
+  var b2 = AC.createBiquadFilter(); b2.type = 'bandpass'; b2.frequency.value = 1100; b2.Q.value = 0.4;
+  var g2 = AC.createGain(); g2.gain.value = 0.012;
+  c2.connect(b2); b2.connect(g2); g2.connect(master); c2.start();
+  crowdG = g2;
+}
+var crowdG = null, tuneTimer = 0, tuneNext = 0;
+function beep(f, dur, type, vol, slide) {
+  if (!AC || muted) return;
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || 'square'; o.frequency.value = f;
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), AC.currentTime + dur);
+  g.gain.setValueAtTime(vol || 0.15, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + dur);
+  o.connect(g); g.connect(master); o.start(); o.stop(AC.currentTime + dur);
+}
+function splatSnd() {
+  if (!AC || muted) return;
+  var t = AC.currentTime;
+  var n = AC.createBufferSource(); n.buffer = windNodeBuf(); n.loop = true;
+  var bp = AC.createBiquadFilter(); bp.type = 'lowpass';
+  bp.frequency.setValueAtTime(5200, t); bp.frequency.exponentialRampToValueAtTime(90, t + 0.55);
+  var g = AC.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+  n.connect(bp); bp.connect(g); g.connect(master); n.start(t); n.stop(t + 0.62);
+  beep(85, 0.28, 'sine', 0.6, -60);
+  beep(150, 0.12, 'triangle', 0.3, -110);
+}
+var _nb = null;
+function windNodeBuf() {
+  if (_nb) return _nb;
+  _nb = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  var d = _nb.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return _nb;
+}
+function cheerSnd(big) {
+  if (!AC || muted) return;
+  var t = AC.currentTime;
+  var n = AC.createBufferSource(); n.buffer = windNodeBuf(); n.loop = true;
+  var bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(700, t);
+  bp.frequency.linearRampToValueAtTime(1600, t + 0.8); bp.Q.value = 0.8;
+  var g = AC.createGain(); g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(big ? 0.35 : 0.18, t + 0.25);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
+  n.connect(bp); bp.connect(g); g.connect(master); n.start(t); n.stop(t + 1.9);
+}
+function tune(silent) {
+  if (silent) { if (tuneTimer) { clearInterval(tuneTimer); tuneTimer = 0; } return; }
+  if (tuneTimer) return;
+  tuneNext = AC ? AC.currentTime + 0.05 : 0;
+  // original chiptune waltz in Am, 8 bars, 150bpm (DSJ-flavored oompah + dripping menace)
+  var L = [ // [midi, dur(beats)]
+    [57, 1], [60, 1], [64, 1], [69, 3], [67, 1], [64, 1], [60, 2],
+    [62, 1], [64, 1], [67, 1], [64, 1], [62, 1], [60, 1], [57, 2],
+    [55, 1], [57, 1], [60, 1], [55, 1], [52, 1], [57, 1], [60, 2],
+    [57, 1], [52, 1], [57, 1], [64, 3], [62, 1], [57, 1], [57, 2]];
+  var B = [ // bass: midi per beat
+    45, 52, 45, 52, 45, 52, 45, 52, 43, 50, 43, 50, 45, 52, 45, 57,
+    45, 52, 45, 52, 43, 50, 43, 50, 40, 48, 45, 52, 45, 45, 52, 45];
+  var beat = 0.4;
+  function schedule() {
+    if (!AC || muted || state.phase !== 'title') return;
+    var t = AC.currentTime + 0.1;
+    var li = 0, lb = 0, bi = 0, bb = 0;
+    var start = tuneNext;
+    for (; li < L.length; li++) {
+      var n = L[li];
+      var tt = start + lb * beat, f = 440 * Math.pow(2, (n[0] - 69) / 12);
+      toneAt(f, tt, n[1] * beat * 0.8, 'square', 0.11); lb += n[1];
+    }
+    for (; bi < B.length; bi++) {
+      var fb = 440 * Math.pow(2, (B[bi] - 69) / 12);
+      toneAt(fb, start + bb * beat, beat * 0.55, 'triangle', 0.16); bb++;
+    }
+    tuneNext = start + B.length * beat;
+  }
+  function toneAt(f, t, dur, type, vol) {
+    var o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+  }
+  schedule();
+  tuneTimer = setInterval(function () {
+    if (state.phase !== 'title') { clearInterval(tuneTimer); tuneTimer = 0; return; }
+    if (AC && AC.currentTime > tuneNext - 2.5) schedule();
+  }, 900);
+}
+
+// -------------------------------------------------------------------- hills
+// ve = exit speed (m/s). Hill landing surface is generated from the
+// trajectory of a perfect jump (physics below), so tangents match by design.
+var HILLS = [
+  { n: 'POIKETON BACKYARD 8m', K: 8, ve: 7.6, zoom: 8.4, tree: 1.6, crowd: 0.15, dusk: true, tower: 'wood', wind: 0.8, skis: 1.8 },
+  { n: 'JUNNUJARVI 15m', K: 15, ve: 10.3, zoom: 5.4, tree: 1.3, crowd: 0.35, dusk: false, tower: 'wood', wind: 1.0, skis: 2.0 },
+  { n: 'KESAMAKI 25m', K: 25, ve: 13.2, zoom: 3.8, tree: 1.0, crowd: 0.55, dusk: false, tower: 'wood', wind: 1.2, skis: 2.1 },
+  { n: 'TORNIO 38m', K: 38, ve: 17.0, zoom: 2.8, tree: 0.9, crowd: 0.7, dusk: false, tower: 'steel', wind: 1.4, skis: 2.2 },
+  { n: 'LAAJIS 70m', K: 70, ve: 21.7, zoom: 1.95, tree: 0.7, crowd: 0.9, dusk: false, tower: 'steel', wind: 1.6, skis: 2.3 },
+  { n: 'SALPAUSSELKA 90m', K: 90, ve: 25.0, zoom: 1.62, tree: 0.55, crowd: 1.2, dusk: false, tower: 'steel', wind: 1.8, skis: 2.4 },
+  { n: 'PUIJO 110m', K: 110, ve: 26.6, zoom: 1.44, tree: 0.5, crowd: 1.35, night: true, tower: 'steel', wind: 1.9, skis: 2.45 },
+  { n: 'OLYMPIAMAKI 125m', K: 125, ve: 27.6, zoom: 1.34, tree: 0.45, crowd: 1.5, dusk: true, tower: 'steel', wind: 2.0, skis: 2.5 },
+  { n: 'PLANICA THE WILD 190m', K: 190, ve: 29.2, zoom: 1.02, tree: 0.4, crowd: 1.8, dusk: false, tower: 'steel', wind: 2.2, skis: 2.5 },
+];
+var C_AERO = 0.0130;
+function ClOf(l) {
+  var pts = [[0, 0.10], [0.45, 0.70], [0.72, 1.0], [0.95, 0.78], [1.12, 0.15]];
+  for (var i = 0; i < pts.length - 1; i++) {
+    var a = pts[i], b = pts[i + 1];
+    if (l <= b[0]) return lerp(a[1], b[1], (l - a[0]) / (b[0] - a[0]));
+  }
+  return 0.15;
+}
+function CdOf(l) { return 0.30 + (l > 0.75 ? 1.6 * (l - 0.75) * (l - 0.75) : 0.08 * (0.75 - l)); }
+function perfectTraj(ve) {
+  var x = 0, y = 0, vx = ve * 1.03, vy = -(0.055 * ve + 0.35) - 0.25, lean = 0.45, dt = 1 / 120;
+  var pts = [[0, 0]];
+  for (var t = 0; t < 30; t += dt) {
+    var hold = lean < 0.72;
+    lean = clamp(lean + (hold ? 2.3 : -1.7) * dt, 0, 1.15);
+    var q = vx * vx + vy * vy, s = Math.max(1e-6, Math.sqrt(q));
+    vx += (C_AERO * ClOf(lean) * q * (-vy / s) - C_AERO * CdOf(lean) * q * (vx / s)) * dt;
+    vy += (C_AERO * ClOf(lean) * q * (vx / s) - C_AERO * CdOf(lean) * q * (vy / s) - 9.81) * dt;
+    x += vx * dt; y += vy * dt; pts.push([x, y]);
+  }
+  return pts;
+}
+function buildHill(idx) {
+  var H = HILLS[idx], P = perfectTraj(H.ve), dx = P[1][0] - P[0][0];
+  function trajY(x) {
+    if (x <= 0) return 0;
+    var i = clamp(Math.floor(x / dx), 0, P.length - 2), a = P[i], b = P[i + 1];
+    return a[1] + (b[1] - a[1]) * ((x - a[0]) / (b[0] - a[0]));
+  }
+  function trajA(x) {
+    var i = clamp(Math.floor(x / dx), 0, P.length - 2), a = P[i], b = P[i + 1];
+    return Math.atan2(b[1] - a[1], b[0] - a[0]);
+  }
+  var mKick = 0.10, d0 = 0.12, xK = H.K / 1.1;
+  function cPar(xK) {
+    var a = (-mKick * xK + d0) / (xK * xK), b = -mKick - 2 * a * xK;
+    return function (x) {
+      if (x <= 0) return d0;
+      if (x <= xK) return a * x * x + b * x + d0;
+      return -mKick * (x - xK);
+    };
+  }
+  for (var it = 0; it < 5; it++) {
+    var c = cPar(xK), a = 0;
+    for (var x = 0; x < xK; x += 0.2) a += Math.hypot(0.2, (trajY(x + 0.2) - c(x + 0.2)) - (trajY(x) - c(x)));
+    xK *= H.K / a;
+  }
+  var c = cPar(xK);
+  function gz(x) { return trajY(x) - c(x); }
+  // sample landing ground
+  var step = 0.4, xs = [], ys = [], sl = [], arc = [];
+  var acc = 0, rampStart = 1.28 * xK, rampLen = 0.5 * xK + 40, prevA = Math.atan2(gz(0.4) - gz(0), 0.4);
+  for (var x2 = 0; x2 <= 2.4 * H.K + 150; x2 += step) {
+    var yy, ang;
+    if (x2 < rampStart) { yy = gz(x2); ang = Math.atan2((gz(x2 + step) - gz(x2 - step)) / (2 * step), 1); }
+    else {
+      var t2 = Math.min(1, (x2 - rampStart) / rampLen);
+      ang = (prevA + (trajA(x2) - prevA) * 0.08) + (-3 * DEG - (prevA + (trajA(x2) - prevA) * 0.08)) * t2;
+      yy = ys[ys.length - 1] + Math.tan(ang) * step;
+    }
+    xs.push(x2); ys.push(yy); sl.push(ang);
+    acc += step / Math.cos(ang); arc.push(acc); prevA = ang;
+  }
+  function gAt(xg) {
+    if (xg < 0) xg = 0;
+    var i = clamp(Math.floor(xg / step), 0, xs.length - 2), f = (xg - xs[i]) / step;
+    return { y: lerp(ys[i], ys[i + 1], f), a: lerp(sl[i], sl[i + 1], f), arc: lerp(arc[i], arc[i + 1], f) };
+  }
+  // K & HS lines (arc-length positions)
+  function xAtArc(target) {
+    var lo = 0, hii = xs.length - 1;
+    while (lo < hii - 1) { var m = (lo + hii) >> 1; if (arc[m] < target) lo = m; else hii = m; }
+    return xs[lo];
+  }
+  var xKline = xAtArc(H.K), xHS = xAtArc(H.K * 1.12);
+  // inrun: table 10deg at edge, blend, straight 26deg. accel a = ve/3.4 m/s^2.
+  var aIn = H.ve / 3.4, L = H.ve * H.ve / (2 * aIn); // inrun length along slope
+  var table = 10 * DEG, straight = 26 * DEG, cL = 6, blend = 5;
+  var inL = L;
+  // polyline from the edge (d=0) walking backwards uphill
+  var ip = [{ x: 0, y: 0, a: table }], dSum = 0;
+  while (dSum < inL + 1) {
+    var ang2 = dSum < cL ? table : (dSum < cL + blend ? lerp(table, straight, (function (t) { return t * t * (3 - 2 * t); })((dSum - cL) / blend)) : straight);
+    var prev = ip[ip.length - 1];
+    dSum += 0.5;
+    ip.push({ x: prev.x - Math.cos(ang2) * 0.5, y: prev.y + Math.sin(ang2) * 0.5, a: ang2 });
+  }
+  function inrunXY(s) { // s from START downhill; edge at s=inL
+    var d = clamp(inL - s, 0, inL);
+    var i = clamp(Math.round(d / 0.5), 0, ip.length - 1);
+    var p = ip[i];
+    return { x: p.x, y: p.y, ang: p.a };
+  }
+  var inTop = inrunXY(0);
+  return {
+    idx: idx, H: H, gAt: gAt, xs: xs, ys: ys, arc: arc, sl: sl, step: step,
+    xKline: xKline, xHS: xHS, xK: xK, aIn: aIn, inL: inL, inTop: inTop,
+    inrunXY: inrunXY, drop: Math.abs(inTop.y),
+  };
+}
+
+// ------------------------------------------------------------------ state
+var state = {
+  phase: 'title', t: 0, hillIdx: 0, hill: null, sel: SHOT ? SHOT_HILL : 5,
+  seed: 1, wind0: 0, wind: 0, gustMsg: 0,
+  px: 0, py: 0, pvx: 0, pvy: 0, lean: 0, leanHold: false,
+  inS: 0, inV: 0, tookOff: false, takeoffQ: '', tStart: 0,
+  flightT: 0, flightGood: 0, landed: false, landPress: -9, landDone: false,
+  slideT: 0, dist: 0, impact: 0, crashed: false, crashT: 0, crashKind: '',
+  telemark: false, wobble: false, judges: null, dpts: 0, spts: 0, total: 0,
+  hair: 0, suit: 0, pants: 0, nameIdx: 0,
+  camX: 0, camY: 0, zoom: 2, shake: 0, flash: 0,
+  timeScale: 1, freezeAt: 0,
+  goreCount: 0, partCount: 0,
+  msg: '', msgT: 0, blink: 0, readyT: 0,
+  bot: false, botState: 0,
+};
+var NAMES = ['B. LOOD', 'VATTULAINEN', 'DYNAMITE D.', 'J. VERESKOSKI', 'T. HAAVAKKO', 'BLOOD VATTU', 'K. KALMARI', 'P. POIKELASKA'];
+var HAIRS = ['#d9b38c', '#2b2b2b', '#e8e332', '#b23a1a', '#c8c8c8', '#5a3b1e'];
+var SUITS = ['#d7263d', '#1f6fb2', '#2a9d4a', '#7b2fbe', '#e8871e', '#20242a'];
+var PANTS = ['#20242a', '#38506e', '#4a3728', '#666a6e', '#7a1f2b', '#1e3a2f'];
+var BEST = {};
+try {
+  var sv = JSON.parse(localStorage.getItem('dsjgore') || '{}');
+  if (sv.best) BEST = sv.best; if (sv.gore) state.goreTotal = sv.gore;
+} catch (e) { }
+function save() {
+  try { localStorage.setItem('dsjgore', JSON.stringify({ best: BEST, gore: state.goreTotal || 0 })); } catch (e) { }
+}
+
+// gore + particle world
+var decals = [], parts = [], blood = [], mist = [], snowP = [], sprayLines = [];
+function clearWorldFx() {
+  decals.length = 0; parts.length = 0; blood.length = 0; mist.length = 0; snowP.length = 0; sprayLines.length = 0;
+}
+
+// ---------------------------------------------------------------- attempt
+function prepareHill(i) {
+  state.hillIdx = i; state.hill = buildHill(i);
+  state.zoom = HILLS[i].zoom;
+  // scenery deterministic
+  var rng = mulberry(0xC0FFEE ^ (i * 7919));
+  state.clouds = [];
+  for (var c = 0; c < 5; c++) state.clouds.push({ x: rng() * 3000 - 500, y: 18 + rng() * 60, w: 30 + rng() * 70, s: 0.2 + rng() * 0.3 });
+  state.trees = [];
+  var span = 2.4 * HILLS[i].K + 150;
+  var nTree = Math.floor(30 * HILLS[i].tree + 8);
+  for (var t = 0; t < nTree; t++) {
+    // keep the flight lane clear: trees only behind the outrun end or back at the tower
+    var tx = rng() < 0.75
+      ? 1.35 * HILLS[i].K + 30 + rng() * (span - 1.35 * HILLS[i].K - 30)
+      : -(10 + rng() * 40);
+    state.trees.push({ x: tx, h: (3 + rng() * 5) * clamp(HILLS[i].K / 60, 0.35, 2), off: 0.5 + rng() * 2.5 });
+  }
+  state.crowdPts = [];
+  var nC = Math.floor(160 * HILLS[i].crowd + 20);
+  for (var c2 = 0; c2 < nC; c2++) {
+    var cx = 0.15 * HILLS[i].K + rng() * (1.25 * HILLS[i].K);
+    state.crowdPts.push({ x: cx, off: 0.3 + rng() * 1.8, col: [' #d7263d', '#1f6fb2', '#e8c33e', '#2a9d4a', '#e8e8e8', '#7b2fbe', '#e8871e'][(rng() * 7) | 0], ph: rng() * TAU, flag: rng() < 0.05 });
+  }
+  state.flags = [];
+  for (var f = 0; f < Math.floor(6 * HILLS[i].crowd + 2); f++)
+    state.flags.push({ x: 0.3 * HILLS[i].K + rng() * 0.9 * HILLS[i].K, ph: rng() * TAU, col: rng() < 0.5 ? '#d7263d' : '#e8e8e8' });
+  // background ridge
+  state.ridge = [];
+  for (var r = 0; r < 24; r++) state.ridge.push(rng() * 0.5);
+}
+function startAttempt() {
+  prepareHill(state.sel);
+  clearWorldFx();
+  var H = HILLS[state.sel];
+  state.wind0 = WIND_FIX !== null ? WIND_FIX : (Math.random() * 2 - 1) * H.wind;
+  state.wind = state.wind0;
+  state.phase = 'ready'; state.readyT = 0; state.inS = 0; state.inV = 0;
+  state.tookOff = false; state.takeoffQ = ''; state.landed = false;
+  state.landDone = false; state.landPress = -9;
+  state.lean = 0.35; state.leanHold = false;
+  state.dist = 0; state.impact = 0; state.crashed = false; state.crashT = 0;
+  state.telemark = false; state.wobble = false;
+  state.flightT = 0; state.flightGood = 0;
+  state.msg = ''; state.msgT = 0; state.timeScale = 1; state.freezeAt = 0;
+  state.goreCount = 0; state.partCount = 0;
+  state.pendingEarly = false;
+  state.px = 0; state.py = 0;
+  state.camX = 0; state.camY = 0;
+  state.gust = 0; state.gustT = WIND_FIX !== null ? 1e9 : 2 + Math.random() * 3;
+  setLabel();
+  console.info('[dsj] attempt start hill=' + H.n + ' wind=' + state.wind0.toFixed(1));
+}
+function setMsg(s, t) { state.msg = s; state.msgT = t || 1.4; }
+
+// ------------------------------------------------------------- takeoff/flight
+var LEAN_UP = 2.3, LEAN_DN = 1.7, FLIP = 1.149;
+function doTakeoff(q) {
+  var ve = state.hill.H.ve;
+  state.tookOff = true; state.takeoffQ = q;
+  // snap to table edge: takeoff quality = boost + kick, never position
+  state.px = 0; state.py = -0.05;
+  var boost = q === 'PERFECT' ? 1.03 : q === 'GOOD' ? 1.01 : q === 'EARLY' ? 0.97 : 0.92;
+  state.pvx = ve * boost;
+  state.pvy = -(0.055 * ve + 0.35) - (q === 'PERFECT' ? 0.25 : q === 'GOOD' ? 0.12 : q === 'EARLY' ? 0.06 : 0);
+  state.lean = 0.45;
+  state.phase = 'flight'; state.flightT = 0; state.flightGood = 0;
+  setMsg(q + ' TAKEOFF', 1.1);
+  beep(q === 'PERFECT' ? 880 : 620, 0.09, 'square', 0.12);
+  if (q === 'PERFECT' && navigator.vibrate) navigator.vibrate(18);
+  // whoosh
+  if (AC && !muted) { beep(300, 0.3, 'sawtooth', 0.05, -180); }
+}
+function flightStep(dt) {
+  state.wind = state.wind0 + state.gust;
+  state.lean = clamp(state.lean + (state.leanHold ? LEAN_UP : -LEAN_DN) * dt, 0, FLIP);
+  if (state.lean > 0.5 && state.lean < 0.95) state.flightGood += dt;
+  state.flightT += dt;
+  var rvx = state.pvx + state.wind * 0.6, rvy = state.pvy;
+  var q = rvx * rvx + rvy * rvy, s = Math.max(1e-6, Math.sqrt(q));
+  state.pvx += (C_AERO * ClOf(state.lean) * q * (-rvy / s) - C_AERO * CdOf(state.lean) * q * (rvx / s)) * dt;
+  state.pvy += (C_AERO * ClOf(state.lean) * q * (rvx / s) - C_AERO * CdOf(state.lean) * q * (rvy / s) - 9.81) * dt;
+  state.px += state.pvx * dt; state.py += state.pvy * dt;
+  // gust events
+  state.gustT -= dt;
+  if (state.gustT <= 0) {
+    state.gustT = 2.2 + Math.random() * 3.5;
+    var tgt = (Math.random() * 2 - 1) * 0.9;
+    if (Math.abs(tgt - state.gust) > 0.6) { state.gust = tgt; setMsg('GUST ' + (tgt > 0 ? '+' : '') + tgt.toFixed(1), 1.0); }
+  }
+  if (state.lean >= FLIP && state.phase === 'flight') { crash('FLIPPED OVER'); return; }
+  var g = state.hill.gAt(state.px);
+  if (state.py <= g.y && state.px > 1) { landCheck(g); }
+}
+function landCheck(g) {
+  state.py = g.y;
+  var fa = Math.atan2(state.pvy, state.pvx) / DEG;
+  state.impact = fa - g.a / DEG;
+  state.dist = g.arc;
+  var v = Math.hypot(state.pvx, state.pvy);
+  var pressDt = state.t - state.landPress;
+  if (state.dist < 0.48 * state.hill.H.K) { crash('LANDING ON THE KNOLL — NAILED IT'); return; }
+  if (state.impact > 13) { crash('FACEPLANTED AT ' + Math.round(v * 3.6) + ' KM/H'); return; }
+  if (state.lean < 0.22) { crash('LANDED TAIL-FIRST. SPINAL DECORATION'); return; }
+  state.landed = true;
+  state.telemark = pressDt >= -0.24 && pressDt <= 0.16;
+  state.wobble = state.impact > 6 || state.lean > 0.98;
+  state.phase = 'slide'; state.slideT = 0;
+  // every landing sprays: the hill is made of meat
+  goreSplat(state.px, state.py, v, state.telemark ? 0.35 : 0.6);
+  if (state.telemark) {
+    setMsg('TELEMARK!', 1.2); cheerSnd(true); state.crowdHype = 2;
+    if (navigator.vibrate) navigator.vibrate([10, 30, 10]);
+  } else {
+    setMsg('NO TELEMARK...', 1.2); cheerSnd(false); state.crowdHype = 1;
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+  state.pvx = Math.cos(g.a) * v * 0.995; state.pvy = Math.sin(g.a) * v * 0.995;
+}
+
+// ------------------------------------------------------------------- gore
+function addDecal(x, y, r, alpha) {
+  if (decals.length > 320) decals.shift();
+  decals.push({ x: x, y: y, r: r, a: alpha || 0.8, s: Math.random() * TAU,
+    c: GORE_TINTS[(Math.random() * 4) | 0] });
+}
+function goreSplat(x, y, v, scale) {
+  var n = Math.floor(clamp(v * v * 0.14, 10, 130) * scale);
+  for (var i = 0; i < n; i++) {
+    var a = Math.PI * (0.15 + Math.random() * 0.7); // up-spray arc (forward+up)
+    var sp = (2 + Math.random() * 9) * clamp(v / 20, 0.4, 2);
+    blood.push({ x: x, y: y, vx: Math.cos(a) * sp * (Math.random() < 0.7 ? 1 : -0.4),
+      vy: -Math.sin(a) * sp, r: 0.5 + Math.random() * 1.6, life: 3 });
+  }
+  mist.push({ x: x, y: y, r: 0.8 + scale, grow: 5.5 * clamp(v / 22, 0.5, 1.6), life: 0.4, a: 0.35 * scale });
+  for (var d = 0; d < 2 + 5 * scale; d++)
+    addDecal(x + (Math.random() - 0.3) * 3 * (1 + scale), y - 0.05, (0.3 + Math.random() * 1.4) * (0.7 + scale) * splatScale(), 0.75);
+  sprayLines.push({ x: x, y: y, t: 0, pow: scale * clamp(v / 20, 0.5, 1.8) });
+  state.goreCount += n;
+  state.shake = Math.min(10, state.shake + 3 * scale);
+  state.flash = Math.max(state.flash, 0.25 * scale);
+  splatSnd();
+  if (navigator.vibrate) navigator.vibrate([40, 20, 60]);
+}
+function crash(kind) {
+  if (state.crashed) return;
+  state.crashed = true; state.crashKind = kind; state.crashT = 0;
+  state.phase = 'crash';
+  if (!state.landed && state.hill) state.dist = state.hill.gAt(state.px).arc;
+  var v = Math.hypot(state.pvx, state.pvy);
+  var px = state.px, py = state.py;
+  // THE GORE: ultra particles + body shrapnel
+  var n = Math.floor(clamp(v * v * 0.35, 60, 240));
+  for (var i = 0; i < n; i++) {
+    var a = Math.random() * TAU, sp = (2 + Math.random() * 14) * clamp(v / 22, 0.5, 1.8);
+    blood.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: -Math.abs(Math.sin(a)) * sp - 1,
+      r: 0.5 + Math.random() * 2.2, life: 4 });
+  }
+  var gibs = 10 + (Math.random() * 7) | 0;
+  var kinds = ['head', 'torso', 'limb', 'limb', 'boot', 'boot', 'ski', 'ski', 'arm', 'arm'];
+  for (var j = 0; j < gibs; j++) {
+    var a2 = -PI * (0.1 + Math.random() * 0.8), sp2 = 3 + Math.random() * 11;
+    parts.push({
+      x: px, y: py - 0.3, vx: Math.cos(a2) * sp2 * (0.6 + Math.random()), vy: -Math.abs(Math.sin(a2)) * sp2,
+      rot: Math.random() * TAU, vrot: (Math.random() - 0.5) * 16, kind: kinds[j % kinds.length],
+      rest: false, settle: 0, col: j < 2 ? SUITS[state.suit] : (j % 2 ? HAIRS[state.hair] : '#c1121f'),
+    });
+  }
+  state.partCount = gibs;
+  for (var d = 0; d < 10; d++) addDecal(px + (Math.random() - 0.4) * 6, py - 0.05, (0.5 + Math.random() * 2.2) * splatScale(), 0.85);
+  mist.push({ x: px, y: py - 0.5, r: 1.2, grow: 7, life: 0.5, a: 0.45 });
+  sprayLines.push({ x: px, y: py, t: 0, pow: 2.2 });
+  goreSplat(px, py, v, 0.8);
+  setMsg(kind, 2.2);
+  state.shake = 11; state.flash = 0.7;
+  state.timeScale = 0.28;
+  state.goreCount += n;
+  state.goreTotal = (state.goreTotal || 0) + state.goreCount;
+  save();
+  splatSnd();
+  if (navigator.vibrate) navigator.vibrate([80, 40, 120, 30, 90]);
+  console.info('[dsj] crash: ' + kind + ' at ' + state.dist.toFixed(1) + 'm gibs=' + gibs);
+}
+
+// ---------------------------------------------------------------- scoring
+function judgeScores() {
+  var base = 20;
+  var q = state.takeoffQ;
+  base -= q === 'PERFECT' ? 0 : q === 'GOOD' ? 1 : q === 'EARLY' ? 3 : 4;
+  var frac = state.flightGood / Math.max(0.4, state.flightT);
+  base -= (1 - clamp(frac, 0, 1)) * 3.5;
+  if (!state.telemark) base -= 2;
+  if (state.wobble) base -= 1.5;
+  base -= Math.max(0, Math.abs(state.impact) - 5) * 0.15;
+  base += clamp((state.dist - state.hill.H.K) * 0.03, -2, 2);
+  var js = [];
+  for (var i = 0; i < 5; i++) {
+    var v = base + (Math.random() * 0.8 - 0.4);
+    v = clamp(Math.round(v * 2) / 2, 0, 20);
+    js.push(v);
+  }
+  var sorted = js.slice().sort(function (a, b) { return a - b; });
+  var style = sorted[1] + sorted[2] + sorted[3];
+  var K = state.hill.H.K, perM = K < 40 ? 2.0 : K < 100 ? 1.8 : 1.6;
+  var dpts = clamp(60 + (state.dist - K) * perM, 0, 999);
+  return { js: js, style: style, dpts: dpts, total: dpts + style };
+}
+function finishJump() {
+  var sc = judgeScores();
+  state.judges = sc; state.dpts = sc.dpts; state.spts = sc.style; state.total = sc.total;
+  var best = BEST[state.hillIdx] || 0;
+  state.newRecord = false;
+  if (!state.crashed && state.dist > best) { BEST[state.hillIdx] = state.dist; state.newRecord = true; save(); }
+  if (state.newRecord) { beep(660, .1, 'square', .12); setTimeout(function () { beep(880, .1, 'square', .12); }, 120); setTimeout(function () { beep(1320, .18, 'square', .12); }, 240); }
+  state.phase = 'result'; state.t = 0;
+  setLabel();
+  console.info('[dsj] result ' + state.dist.toFixed(1) + 'm total=' + sc.total.toFixed(1));
+}
+
+// ------------------------------------------------------------------- input
+var firePressed = false, edgeA = false, edgeB = false, edgeFire = false;
+var heldA = false, heldB = false;
+function pressA() { if (!heldA) { heldA = true; edgeA = true; } onAnyInput(); }
+function relA() { heldA = false; }
+function pressB() { if (!heldB) { heldB = true; edgeB = true; state.landPress = state.t; } onAnyInput(); }
+function relB() { heldB = false; }
+function pressFire() { if (!firePressed) { firePressed = true; edgeFire = true; } onAnyInput(); }
+function relFire() { firePressed = false; }
+function onAnyInput() {
+  audioInit();
+  if (AC && AC.state === 'suspended') AC.resume();
+  if (AC && state.phase === 'title') tune(false);
+  if (AC && state.phase !== 'title') tune(true);
+}
+function bindBtn(el, down, up) {
+  el.addEventListener('pointerdown', function (e) { e.preventDefault(); el.classList.add('on'); down(); });
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointerleave', up);
+  el.addEventListener('pointercancel', up);
+}
+bindBtn(document.getElementById('bA'), pressA, relA);
+bindBtn(document.getElementById('bB'), pressB, relB);
+bindBtn(document.getElementById('fire'), pressFire, relFire);
+cv.addEventListener('pointerdown', function (e) {
+  e.preventDefault();
+  if (state.phase === 'flight' || state.phase === 'inrun') { pressA(); }
+  else if (state.phase === 'landwin') { pressB(); }
+  else pressFire();
+});
+cv.addEventListener('pointerup', function () { relA(); relFire(); });
+window.addEventListener('keydown', function (e) {
+  if (e.repeat) return;
+  if (e.key === 'ArrowDown' || e.key === 's') pressA();
+  else if (e.key === 'ArrowUp' || e.key === 'w') pressB();
+  else if (e.key === ' ' || e.key === 'Enter') pressFire();
+  else if (e.key === 'm') toggleMute();
+});
+window.addEventListener('keyup', function (e) {
+  if (e.key === 'ArrowDown' || e.key === 's') relA();
+  else if (e.key === 'ArrowUp' || e.key === 'w') relB();
+  else if (e.key === ' ' || e.key === 'Enter') relFire();
+});
+function toggleMute() {
+  muted = !muted;
+  document.getElementById('mute').textContent = muted ? '\u{1F507}' : '\u{1F50A}';
+  if (master) master.gain.value = muted ? 0 : 0.5;
+}
+document.getElementById('mute').addEventListener('click', function () { audioInit(); toggleMute(); });
+function setLabel() {
+  var p = state.phase;
+  var la = document.getElementById('lA'), lb = document.getElementById('lB'), lf = document.getElementById('lF');
+  if (p === 'title' || p === 'hills' || p === 'char') { la.textContent = '\u25C0 NAV'; lb.textContent = 'NAV \u25B6'; lf.textContent = 'SELECT'; }
+  else if (p === 'ready' || p === 'result') { la.textContent = 'LEAN'; lb.textContent = 'LAND'; lf.textContent = 'GO!'; }
+  else { la.textContent = 'HOLD TO LEAN'; lb.textContent = 'TELEMARK!'; lf.textContent = 'GO'; }
+}
+
+// menu navigation uses fire/edges, debounce
+var navCd = 0;
+
+// -------------------------------------------------------------------- bot
+// deterministic bot for ?shot mode and title-screen attract
+function botTick() {
+  var p = state.phase;
+  if (p === 'title' || p === 'hills' || p === 'char') {
+    if (state.t > (p === 'title' ? 1.2 : 0.4)) { pressFire(); relFire(); }
+  } else if (p === 'ready') {
+    if (state.readyT > 1.0) { pressFire(); relFire(); }
+  } else if (p === 'inrun') {
+    var toGo = state.hill.inL - state.inS; // meters to edge
+    if (toGo < 1.0) { pressA(); } else relA();
+  } else if (p === 'flight') {
+    if (SHOT_GORE && state.px > state.hill.xK * 0.55) { pressA(); } // over-lean -> flip -> gore
+    else { if (state.lean < 0.72) pressA(); else relA(); }
+  } else if (p === 'slide') {
+    if (!state.landDone) pressB();
+  } else if (p === 'result') {
+    if (state.t > 2.0) { pressFire(); relFire(); }
+  }
+}
+
+// ------------------------------------------------------------------ update
+function update(dtReal) {
+  state.blink += dtReal;
+  state.t += dtReal * state.timeScale;
+  if (state.freezeAt && state.t >= state.freezeAt) state.timeScale = 0;
+  else if (state.crashed && state.timeScale < 1) state.timeScale = Math.min(1, state.timeScale + dtReal * 0.4);
+  var dt = dtReal * state.timeScale;
+  state.shake = Math.max(0, state.shake - dtReal * 14);
+  state.flash = Math.max(0, state.flash - dtReal * 1.4);
+  state.crowdHype = Math.max(0, (state.crowdHype || 0) - dt * 0.5);
+  state.msgT -= dtReal;
+  if (navCd > 0) navCd -= dtReal;
+  if (SHOT || state.bot) botTick();
+
+  var p = state.phase;
+  if (p === 'title') {
+    if (edgeFire) { state.phase = 'hills'; state.t = 0; navCd = 0.35; beep(660, .07, 'square', .1); tune(true); }
+    else if (edgeA) { state.sel = (state.sel + 8) % 9; navCd = 0.3; }
+    else if (edgeB) { state.sel = (state.sel + 1) % 9; navCd = 0.3; }
+  } else if (p === 'hills') {
+    if (edgeFire) { state.phase = 'char'; state.t = 0; navCd = 0.35; beep(660, .07, 'square', .1); }
+    else if (edgeA && navCd <= 0) { state.sel = (state.sel + 8) % 9; navCd = 0.22; beep(440, .04, 'square', .07); }
+    else if (edgeB && navCd <= 0) { state.sel = (state.sel + 1) % 9; navCd = 0.22; beep(520, .04, 'square', .07); }
+  } else if (p === 'char') {
+    if (edgeFire) { state.phase = 'setup'; state.t = 0; navCd = 0.3; }
+    else if (edgeA && navCd <= 0) {
+      state.nameIdx = (state.nameIdx + 7) % 8; state.hair = (state.hair + 5) % 6;
+      state.suit = (state.suit + 5) % 6; state.pants = (state.pants + 4) % 6; navCd = 0.2;
+    } else if (edgeB && navCd <= 0) {
+      state.nameIdx = (state.nameIdx + 1) % 8; state.hair = (state.hair + 1) % 6;
+      state.suit = (state.suit + 1) % 6; state.pants = (state.pants + 1) % 6; navCd = 0.2;
+    }
+  } else if (p === 'setup') {
+    startAttempt();
+  } else if (p === 'ready') {
+    state.readyT += dt;
+    // camera sits on tower
+    var top = state.hill.inTop;
+    state.camX = lerp(state.camX, top.x / 2 - 12 / state.zoom, 0.08);
+    state.camY = lerp(state.camY, top.y / 2 - 10 / state.zoom, 0.08);
+    if (edgeFire) { state.phase = 'inrun'; beep(990, 0.06, 'square', 0.12); }
+  } else if (p === 'inrun') {
+    var H = state.hill;
+    state.inV += H.aIn * dt;
+    state.inS += state.inV * dt;
+    var pos = H.inrunXY(Math.min(state.inS, H.inL));
+    state.px = pos.x; state.py = pos.y - 0.1;
+    // snow spray behind skis
+    if (Math.random() < 0.5) snowP.push({ x: state.px, y: state.py, vx: -1 - Math.random() * 2, vy: -Math.random() * 1.5, life: 0.4, r: 0.08 + Math.random() * 0.1 });
+    if (windNode) { windNode.g.gain.value = clamp(state.inV / 40, 0, 0.2); windNode.bp.frequency.value = 250 + state.inV * 18; }
+    var toEdge = H.inL - state.inS;
+    if (edgeA && !state.tookOff) {
+      if (toEdge <= 2.0) doTakeoff('PERFECT');
+      else if (toEdge <= 4.5) doTakeoff('GOOD');
+      else state.pendingEarly = true;
+    } else if (!state.tookOff && toEdge <= 0) {
+      doTakeoff(state.pendingEarly ? 'EARLY' : 'LATE');
+    }
+    // camera: slide down with him
+    state.camX = lerp(state.camX, state.px + 26 / state.zoom, 0.06);
+    state.camY = lerp(state.camY, state.py + 8 / state.zoom, 0.06);
+  } else if (p === 'flight') {
+    state.leanHold = heldA;
+    if (state.t - state.landPress < 0.001 && state.landPress > 0) { /* land press recorded */ }
+    flightStep(dt);
+    if (windNode) { windNode.g.gain.value = 0.16; windNode.bp.frequency.value = 600; }
+    // camera: look ahead + keep ground in frame
+    var lead = clamp(state.pvx * 1.6, 8, 55) / state.zoom;
+    state.camX = lerp(state.camX, state.px + lead * 0.55, 0.12);
+    state.camY = lerp(state.camY, state.py - 14 / state.zoom, 0.10);
+    var g2 = state.hill.gAt(state.px + 30 / state.zoom);
+    if (state.camY > g2.y + 24 / state.zoom) state.camY = g2.y + 24 / state.zoom;
+  } else if (p === 'slide') {
+    var g = state.hill.gAt(state.px);
+    var v = Math.hypot(state.pvx, state.pvy);
+    var dec = (0.16 + 0.012 * v) * 9.81;
+    if (v > 0.1) {
+      var sp2 = Math.max(0, v - dec * dt);
+      var ga = g.a;
+      state.pvx = Math.cos(ga) * sp2; state.pvy = Math.sin(ga) * sp2;
+      state.px += state.pvx * dt;
+    }
+    state.py = state.hill.gAt(state.px).y;
+    // bloody slide trail
+    if (Math.random() < 0.6) addDecal(state.px - 0.2 + Math.random() * 0.4, g.y - 0.05, 0.2 + Math.random() * 0.5, 0.5);
+    if (Math.random() < 0.7) snowP.push({ x: state.px, y: state.py, vx: -2 - Math.random() * 3, vy: -Math.random() * 2, life: 0.5, r: 0.1 + Math.random() * 0.15 });
+    if (windNode) windNode.g.gain.value = clamp(v / 50, 0, 0.12);
+    state.camX = lerp(state.camX, state.px + 12 / state.zoom, 0.1);
+    state.camY = lerp(state.camY, state.py + 6 / state.zoom, 0.1);
+    state.slideT += dt;
+    if (v < 4 || state.slideT > 5) finishJump();
+  } else if (p === 'crash') {
+    state.crashT += dtReal;
+    if (SHOT_FREEZE && !state.freezeAt && state.crashT > 0.34) state.freezeAt = state.t;
+    // gib physics
+    for (var i = 0; i < parts.length; i++) {
+      var pt = parts[i];
+      if (pt.rest) continue;
+      pt.vy += 9.81 * dt * (0.4 + 0.6 * state.timeScale);
+      pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.rot += pt.vrot * dt;
+      var gg = state.hill.gAt(pt.x);
+      if (pt.y <= gg.y) {
+        pt.y = gg.y;
+        if (Math.abs(pt.vy) > 1.2) {
+          pt.vy = -pt.vy * 0.35; pt.vx *= 0.6; pt.vrot *= 0.5;
+          if (Math.random() < 0.4) addDecal(pt.x, pt.y - 0.05, 0.15 + Math.random() * 0.4, 0.5);
+          if (Math.random() < 0.3) blood.push({ x: pt.x, y: pt.y, vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 4, r: 0.5 + Math.random(), life: 2 });
+        } else { pt.vy = 0; pt.vx *= 0.92; pt.vrot *= 0.9; pt.settle += dt; if (pt.settle > 0.7) pt.rest = true; }
+      }
+      // blood drips off gibs
+      if (Math.random() < 0.08) blood.push({ x: pt.x, y: pt.y, vx: 0, vy: -0.5, r: 0.4, life: 1.5 });
+    }
+    // continue body slide point
+    var g3 = state.hill.gAt(state.px);
+    if (state.px < state.hill.xs[state.hill.xs.length - 1]) {
+      state.px += Math.max(0, state.pvx) * 0.5 * dt;
+      state.py = g3.y;
+      if (Math.random() < 0.8) addDecal(state.px, g3.y - 0.05, 0.3 + Math.random() * 0.9, 0.6);
+    }
+    state.camX = lerp(state.camX, state.px + 6 / state.zoom, 0.06);
+    state.camY = lerp(state.camY, state.py - 4 / state.zoom, 0.06);
+    if (windNode) windNode.g.gain.value = 0.02;
+    if (!SHOT_FREEZE && state.crashT > 2.6) finishJump();
+  } else if (p === 'result') {
+    if (edgeFire && state.t > 0.6 && navCd <= 0) { state.phase = 'setup'; navCd = 0.3; }
+    else if ((edgeA || edgeB) && state.t > 0.6 && navCd <= 0) { state.phase = 'hills'; navCd = 0.3; }
+    if (crowdG) crowdG.gain.value = 0.012;
+  }
+  // fx world update (all phases)
+  stepFx(dt);
+  edgeA = edgeB = edgeFire = false;
+  state.landDone = false;
+}
+function stepFx(dt) {
+  var gAcc = 9.81;
+  for (var i = blood.length - 1; i >= 0; i--) {
+    var b = blood[i];
+    b.vy -= gAcc * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+    var gy = state.hill ? state.hill.gAt(b.x).y : 0;
+    if (b.y <= gy) {
+      addDecal(b.x, gy - 0.03, 0.08 + b.r * 0.25, 0.55);
+      if (b.vx > 2 && Math.random() < 0.5) { b.y = gy; b.vy = -b.vy * 0.25; b.vx *= 0.4; }
+      else blood.splice(i, 1);
+      continue;
+    }
+    b.life -= dt;
+    if (b.life <= 0) blood.splice(i, 1);
+  }
+  for (var m = mist.length - 1; m >= 0; m--) {
+    var mm = mist[m]; mm.r += mm.grow * dt; mm.life -= dt; mm.a *= (1 - dt * 1.5);
+    if (mm.life <= 0) mist.splice(m, 1);
+  }
+  for (var s = snowP.length - 1; s >= 0; s--) {
+    var sp = snowP[s]; sp.x += sp.vx * dt; sp.y += sp.vy * dt; sp.vy -= 6 * dt; sp.life -= dt;
+    if (sp.life <= 0) snowP.splice(s, 1);
+  }
+  for (var q2 = sprayLines.length - 1; q2 >= 0; q2--) {
+    sprayLines[q2].t += dt; if (sprayLines[q2].t > 0.35) sprayLines.splice(q2, 1);
+  }
+  if (state.phase === 'flight' || state.phase === 'inrun' || state.phase === 'slide') {
+    var v = Math.hypot(state.pvx || 0, state.pvy || 0);
+    if (windNode) windNode.g.gain.value = Math.max(windNode.g.gain.value, 0);
+  }
+}
+
+// ------------------------------------------------------------------ render
+var PX = 1; // px per world meter (=state.zoom) set at render
+function W2S(x, y) { // world -> screen
+  var z = PX;
+  return [Math.round((x - state.camX) * z + VW / 2), Math.round(VH / 2 - (y - state.camY) * z)];
+}
+function pal() {
+  var H = state.hill ? state.hill.H : HILLS[0];
+  if (H.night) return { sky1: '#0a1030', sky2: '#101a44', snow: '#dfe6f2', snow2: '#b9c4dc', ridge: '#0d1636', tree: '#0f2417', sun: '#e8e8c8' };
+  if (H.dusk) return { sky1: '#1f3a6e', sky2: '#c46a4a', snow: '#f4f0ea', snow2: '#c9cfe0', ridge: '#27314f', tree: '#17301f', sun: '#ffb36b' };
+  return { sky1: '#2f7bd0', sky2: '#bfe3ff', snow: '#ffffff', snow2: '#ccd7e8', ridge: '#7c94b8', tree: '#1c4a26', sun: '#fff6c8' };
+}
+function render() {
+  var shakeX = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
+  var shakeY = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
+  X.save();
+  X.translate(Math.round(shakeX), Math.round(shakeY));
+  var P = pal();
+  // sky
+  var gr = X.createLinearGradient(0, 0, 0, VH);
+  gr.addColorStop(0, P.sky1); gr.addColorStop(1, P.sky2);
+  X.fillStyle = gr; X.fillRect(-16, -16, VW + 32, VH + 32);
+  // sun/moon
+  X.fillStyle = P.sun;
+  X.beginPath(); X.arc(VW - 70 + state.blink * 0, 42, state.hill && state.hill.H.night ? 9 : 13, 0, TAU); X.fill();
+
+  if (state.phase === 'title') { renderTitle(); X.restore(); return; }
+  if (state.phase === 'hills') { renderHillsMenu(); X.restore(); return; }
+  if (state.phase === 'char') { renderCharMenu(); X.restore(); return; }
+  if (!state.hill) { X.restore(); return; }
+
+  var H = state.hill.H;
+  PX = state.zoom;
+  // clouds
+  X.fillStyle = 'rgba(255,255,255,.75)';
+  for (var c = 0; c < state.clouds.length; c++) {
+    var cl = state.clouds[c];
+    var sx = (cl.x - state.camX * PX * cl.s * 0.2) % (VW + 200); if (sx < -100) sx += VW + 200;
+    X.fillRect(sx, cl.y, cl.w, 6); X.fillRect(sx + 6, cl.y - 5, cl.w * 0.6, 5);
+  }
+  // ridge backdrop
+  X.fillStyle = P.ridge;
+  X.beginPath(); X.moveTo(-16, VH);
+  for (var r = 0; r <= 23; r++) {
+    var rx = (r * 55 - (state.camX * PX * 0.12) % (24 * 55));
+    rx = ((rx % (24 * 55)) + 24 * 55) % (24 * 55) - 55;
+    X.lineTo(rx, 120 - state.ridge[r] * 70 + (state.camY * PX * 0.05));
+  }
+  X.lineTo(VW + 16, VH); X.closePath(); X.fill();
+
+  // hill polygon
+  var xs = state.hill.xs, ys = state.hill.ys;
+  X.beginPath();
+  var first = W2S(state.hill.inTop.x - 6, state.hill.inTop.y);
+  X.moveTo(first[0], first[1]);
+  // inrun top to edge
+  for (var s = 0; s <= 40; s++) {
+    var pt = state.hill.inrunXY(s / 40 * state.hill.inL);
+    var pw = W2S(pt.x, pt.y);
+    X.lineTo(pw[0], pw[1]);
+  }
+  // landing samples
+  var zc = state.camX - VW / 2 / PX - 4, zc2 = state.camX + VW / 2 / PX + 4;
+  for (var i = 0; i < xs.length; i++) {
+    if (xs[i] < zc - 10 || xs[i] > zc2 + 60) continue;
+    var w = W2S(xs[i], ys[i]);
+    X.lineTo(w[0], w[1]);
+  }
+  var endW = W2S(xs[xs.length - 1], ys[ys.length - 1]);
+  X.lineTo(endW[0], VH + 30); X.lineTo(first[0], VH + 30); X.closePath();
+  X.fillStyle = P.snow; X.fill();
+  X.strokeStyle = P.snow2; X.lineWidth = 1; X.stroke();
+
+  // subtle dither shading lines on slope
+  X.fillStyle = P.snow2;
+  for (var dl = Math.floor(zc); dl < zc2; dl += 6) {
+    var gd = state.hill.gAt(dl);
+    var dp = W2S(dl, gd.y + 0.25);
+    if (dp[1] > 0 && dp[1] < VH) X.fillRect(dp[0], dp[1], Math.max(2, 3 * PX / 2), 1);
+  }
+
+  // inrun tower
+  drawTower(H, P);
+
+  // inrun track grooves
+  X.strokeStyle = '#9fb0c8'; X.lineWidth = 1;
+  X.beginPath();
+  for (var s2 = 0; s2 <= 30; s2++) {
+    var pt2 = state.hill.inrunXY(s2 / 30 * state.hill.inL);
+    var p2 = W2S(pt2.x, pt2.y);
+    if (s2 === 0) X.moveTo(p2[0], p2[1]); else X.lineTo(p2[0], p2[1]);
+  }
+  X.stroke();
+
+  // trees
+  X.fillStyle = P.tree;
+  for (var t = 0; t < state.trees.length; t++) {
+    var tr = state.trees[t];
+    if (tr.x < zc - 8 || tr.x > zc2 + 8) continue;
+    var gg = state.hill.gAt(Math.max(0, tr.x));
+    var tp = W2S(tr.x, gg.y - tr.off);
+    var hh = tr.h * PX;
+    if (hh < 3) continue;
+    X.beginPath(); X.moveTo(tp[0], tp[1] - hh); X.lineTo(tp[0] - hh * 0.35, tp[1]); X.lineTo(tp[0] + hh * 0.35, tp[1]); X.closePath(); X.fill();
+  }
+  // crowd (dots standing on the slope)
+  for (var c3 = 0; c3 < state.crowdPts.length; c3++) {
+    var cp = state.crowdPts[c3];
+    if (cp.x < zc - 3 || cp.x > zc2 + 3) continue;
+    var cg = state.hill.gAt(cp.x);
+    var bounce = Math.sin(state.blink * 6 + cp.ph) * (state.crowdHype || 0) * 0.9;
+    var cpw = W2S(cp.x, cg.y - cp.off - 0.15 - bounce);
+    X.fillStyle = cp.col;
+    var dot = clamp(PX * 0.55, 1, 3);
+    X.fillRect(cpw[0], cpw[1], dot, dot + 1);
+    if (cp.flag) {
+      X.fillStyle = '#e8e8e8';
+      X.fillRect(cpw[0] + dot, cpw[1] - 3, 1, 4);
+      X.fillStyle = cp.col; X.fillRect(cpw[0] + dot + 1, cpw[1] - 3, 2, 2);
+    }
+  }
+  // flags near K & HS lines + lines themselves
+  drawLine(state.hill.xKline, 'K' + H.K, '#d7263d');
+  drawLine(state.hill.xHS, 'HS' + Math.round(H.K * 1.12), '#e8871e');
+
+  // world blood decals
+  for (var d2 = 0; d2 < decals.length; d2++) {
+    var dc = decals[d2];
+    if (dc.x < zc - 4 || dc.x > zc2 + 4) continue;
+    var dw = W2S(dc.x, dc.y);
+    if (dw[1] < -8 || dw[1] > VH + 8) continue;
+    X.save();
+    X.globalAlpha = dc.a;
+    X.fillStyle = dc.c;
+    var rr = dc.r * PX;
+    X.beginPath();
+    for (var k = 0; k < 7; k++) {
+      var ang = k / 7 * TAU + dc.s, rad = rr * (0.6 + ((k * 7919) % 10) / 20);
+      var px2 = dw[0] + Math.cos(ang) * rad, py2 = dw[1] + Math.sin(ang) * rad * 0.45;
+      if (k === 0) X.moveTo(px2, py2); else X.lineTo(px2, py2);
+    }
+    X.closePath(); X.fill();
+    X.restore();
+  }
+  // mist clouds (blood mist)
+  for (var m2 = 0; m2 < mist.length; m2++) {
+    var mm2 = mist[m2], mw = W2S(mm2.x, mm2.y);
+    X.fillStyle = 'rgba(190,30,40,' + mm2.a.toFixed(2) + ')';
+    X.beginPath(); X.arc(mw[0], mw[1], mm2.r * PX, 0, TAU); X.fill();
+  }
+  // radial spray lines
+  for (var q3 = 0; q3 < sprayLines.length; q3++) {
+    var sl2 = sprayLines[q3], sw = W2S(sl2.x, sl2.y);
+    X.strokeStyle = 'rgba(200,25,35,' + (1 - sl2.t / 0.35).toFixed(2) + ')';
+    X.lineWidth = 2;
+    for (var rr2 = 0; rr2 < 9; rr2++) {
+      var a3 = rr2 / 9 * TAU + sl2.x;
+      var ln = (7 + (rr2 * 997 % 16)) * sl2.pow * (1 + sl2.t * 1.5);
+      X.beginPath(); X.moveTo(sw[0], sw[1]);
+      X.lineTo(sw[0] + Math.cos(a3) * ln, sw[1] + Math.sin(a3) * ln * 0.7);
+      X.stroke();
+    }
+  }
+  // flying blood particles
+  X.fillStyle = '#c1121f';
+  for (var b2 = 0; b2 < blood.length; b2++) {
+    var bp = blood[b2], bw = W2S(bp.x, bp.y);
+    if (bw[1] < -8 || bw[1] > VH + 8 || bw[0] < -8 || bw[0] > VW + 8) continue;
+    X.fillStyle = GORE_TINTS[b2 & 3];
+    var sz = Math.max(1, Math.round(bp.r * PX * 0.5));
+    X.fillRect(bw[0] - sz / 2, bw[1] - sz / 2, sz, sz);
+  }
+  // snow spray
+  X.fillStyle = '#fff';
+  for (var s3 = 0; s3 < snowP.length; s3++) {
+    var sp3 = snowP[s3], s3w = W2S(sp3.x, sp3.y);
+    X.fillRect(s3w[0], s3w[1], 1, 1);
+  }
+  // gib parts
+  for (var i2 = 0; i2 < parts.length; i2++) drawGib(parts[i2]);
+  // jumper (unless fully exploded -> tiny residual)
+  if (!state.crashed) drawJumper();
+
+  // wind flag on tower
+  drawFlag();
+  // floodlights for night hills
+  if (H.night) drawFloods();
+
+  // HUD
+  renderHUD();
+  if (state.phase === 'result') renderResult();
+  X.restore();
+
+  // red flash vignette
+  if (state.flash > 0) {
+    X.fillStyle = 'rgba(200,20,25,' + (state.flash * 0.55).toFixed(2) + ')';
+    X.fillRect(0, 0, VW, VH);
+  }
+}
+function drawLine(xw, label, col) {
+  var g = state.hill.gAt(xw);
+  var a = W2S(xw - 1.4, g.y + 1.4 * Math.tan(g.a) + 0.15), b = W2S(xw + 1.4, g.y - 1.4 * Math.tan(g.a) - 0.15);
+  X.strokeStyle = col; X.lineWidth = 2;
+  X.beginPath(); X.moveTo(a[0], a[1]); X.lineTo(b[0], b[1]); X.stroke();
+  txt(label, b[0] + 3, b[1] - 3, col, 1, '#000');
+}
+function drawTower(H, P) {
+  // lattice tower under the inrun
+  var a = W2S(0, 0), top = state.hill.inTop;
+  var b = W2S(top.x, top.y);
+  X.strokeStyle = H.tower === 'wood' ? '#7a4a22' : '#8a94a2';
+  X.lineWidth = 2;
+  var gBase = state.hill.gAt(0).y;
+  var posts = 4;
+  for (var pp = 0; pp < posts; pp++) {
+    var f = pp / (posts - 1);
+    var pxX = lerp(top.x * 0.9, -0.5, f), pyT = state.hill.inrunXY((1 - f) * 0.98 * state.hill.inL).y;
+    var w1 = W2S(pxX, pyT), w2 = W2S(pxX, state.hill.gAt(pxX).y);
+    X.beginPath(); X.moveTo(w1[0], w1[1]); X.lineTo(w2[0], w2[1]); X.stroke();
+  }
+  // cross braces
+  for (var cb = 1; cb < 5; cb++) {
+    var s3 = cb / 5 * state.hill.inL;
+    var p1 = state.hill.inrunXY(s3), p0 = state.hill.inrunXY(s3 - state.hill.inL / 5);
+    var w3 = W2S(p1.x, p1.y), w4 = W2S(p0.x, state.hill.gAt(p0.x).y), w5 = W2S(p0.x, p0.y), w6 = W2S(p1.x, state.hill.gAt(p1.x).y);
+    X.beginPath(); X.moveTo(w3[0], w3[1]); X.lineTo(w6[0], w6[1]); X.moveTo(w5[0], w5[1]); X.lineTo(w4[0], w4[1]); X.stroke();
+  }
+  // takeoff table edge marker
+  X.fillStyle = '#d7263d';
+  X.fillRect(a[0] - 2, a[1] - 3, 3, 3);
+}
+function drawFlag() {
+  if (!state.hill) return;
+  var top = state.hill.inTop;
+  var p = W2S(top.x - 0.6, top.y - 0.2);
+  var x0 = p[0] + 2, y0 = Math.max(6, p[1] - 22);
+  X.strokeStyle = '#ddd'; X.lineWidth = 1;
+  X.beginPath(); X.moveTo(x0, y0 + 22); X.lineTo(x0, y0); X.stroke();
+  // wind: + = headwind (flag blows backward, i.e., toward -x uphill => flag points left)
+  var w = state.wind;
+  var dir = w >= 0 ? -1 : 1, len = clamp(Math.abs(w) * 6, 1, 14);
+  var wav = Math.sin(state.blink * 9) * (1 + Math.abs(w));
+  X.fillStyle = '#d7263d';
+  X.beginPath();
+  X.moveTo(x0, y0);
+  X.lineTo(x0 + dir * len, y0 + 2 + wav * 0.4);
+  X.lineTo(x0, y0 + 5);
+  X.closePath(); X.fill();
+}
+function drawFloods() {
+  var H = state.hill.H;
+  X.fillStyle = '#30363f';
+  for (var i = 0; i < 4; i++) {
+    var xw = (0.2 + 0.3 * i) * H.K;
+    var g = state.hill.gAt(xw), p = W2S(xw, g.y);
+    var h = 46;
+    X.fillRect(p[0], p[1] - h, 2, h);
+    X.fillStyle = '#ffe9a0'; X.fillRect(p[0] - 4, p[1] - h - 3, 10, 4);
+    X.fillStyle = '#30363f';
+  }
+  X.fillStyle = 'rgba(255,235,150,.05)';
+  X.fillRect(0, 0, VW, VH);
+}
+function drawJumper() {
+  var pose = state.phase;
+  var skis = state.hill.H.skis;
+  var p = W2S(state.px, state.py);
+  var z = PX;
+  var sl = skis * z;
+  var cx = p[0], cy = p[1];
+  var suit = SUITS[state.suit], hair = HAIRS[state.hair], pants = PANTS[state.pants];
+  function ski(x, y, ang, len) {
+    X.save(); X.translate(x, y); X.rotate(ang);
+    X.fillStyle = '#20242a'; X.fillRect(-len / 2, -1, len, 2);
+    X.fillStyle = '#d7263d'; X.fillRect(-len / 2, -1, len * 0.25, 2);
+    X.restore();
+  }
+  X.fillStyle = suit;
+  if (pose === 'inrun' || pose === 'ready') {
+    // crouch position on slope
+    var ang = state.phase === 'ready' ? 26 * DEG : (state.hill.inrunXY(Math.min(state.inS, state.hill.inL))).ang;
+    ski(cx, cy, ang, sl);
+    X.save(); X.translate(cx, cy - 2); X.rotate(ang * 0.4);
+    X.fillStyle = pants; X.fillRect(-3, -5, 7, 4);
+    X.fillStyle = suit; X.fillRect(-2, -9, 6, 5);
+    X.fillStyle = hair; X.fillRect(1, -12, 5, 4); // head
+    X.fillStyle = '#ffd23c'; X.fillRect(0, -13, 6, 2); // helmet band
+    X.restore();
+  } else if (pose === 'flight') {
+    var vAng = Math.atan2(state.pvy, state.pvx);
+    var lean = state.lean;
+    ski(cx, cy + 1, vAng * 0.6 + (0.5 - lean) * 0.35, sl);
+    X.save(); X.translate(cx, cy - 1);
+    X.rotate(vAng * 0.5 + (0.55 - lean) * 0.55);
+    X.fillStyle = pants; X.fillRect(-4, -4, 8, 3);
+    X.fillStyle = suit; X.fillRect(-3, -8, 7, 5);
+    X.fillStyle = hair; X.fillRect(3 - lean * 3, -10, 4, 4);
+    X.fillStyle = '#ffd23c'; X.fillRect(3 - lean * 3, -10, 4, 1);
+    // arms back
+    X.fillStyle = suit; X.fillRect(-6, -7, 3, 2);
+    X.restore();
+  } else if (pose === 'slide' && state.landed) {
+    var ang3 = state.hill.gAt(state.px).a;
+    if (state.telemark) {
+      // telemark lunge
+      ski(cx - sl * 0.25, cy, ang3 * 0.5, sl); ski(cx + sl * 0.2, cy, ang3 * 0.4, sl);
+      X.fillStyle = pants; X.fillRect(-2, -6, 6, 5);
+      X.fillStyle = suit; X.fillRect(-1, -11, 5, 6);
+      X.fillStyle = hair; X.fillRect(1, -14, 4, 4);
+      X.fillStyle = suit; X.fillRect(-4, -12, 3, 2); X.fillRect(5, -12, 3, 2); // arms out
+    } else {
+      ski(cx, cy, ang3 * 0.3, sl);
+      X.fillStyle = pants; X.fillRect(-3, -7, 7, 5);
+      X.fillStyle = suit; X.fillRect(-2, -12, 6, 6);
+      X.fillStyle = hair; X.fillRect(0, -15, 4, 4);
+    }
+  }
+}
+function drawGib(pt) {
+  var w = W2S(pt.x, pt.y), z = PX;
+  X.save();
+  X.translate(w[0], w[1]);
+  X.rotate(pt.rot);
+  var k = Math.max(2, Math.round(0.3 * z));
+  switch (pt.kind) {
+    case 'head':
+      X.fillStyle = '#e8c39a'; X.fillRect(-k, -k, k * 2, k * 2);
+      X.fillStyle = pt.col; X.fillRect(-k, -k, k * 2, Math.max(1, k * 0.6));
+      X.fillStyle = '#c1121f'; X.fillRect(-k, 0, k * 2, Math.max(1, k * 0.35)); // mouth gore
+      break;
+    case 'torso':
+      X.fillStyle = SUITS[state.suit]; X.fillRect(-k, -k * 1.4, k * 2, k * 2.8);
+      X.fillStyle = '#8b0e16'; X.fillRect(-k, -k * 1.4, k * 2, Math.max(1, k * 0.5));
+      break;
+    case 'limb': case 'arm':
+      X.fillStyle = '#e8c39a'; X.fillRect(-k, -1, k * 2, 2);
+      X.fillStyle = '#c1121f'; X.fillRect(-k, -1, 2, 2);
+      break;
+    case 'boot':
+      X.fillStyle = '#20242a'; X.fillRect(-k, -2, k * 1.6, 3); break;
+    case 'ski':
+      X.fillStyle = '#20242a'; X.fillRect(-k * 3, -1, k * 6, 2);
+      X.fillStyle = '#d7263d'; X.fillRect(-k * 3, -1, k * 1.5, 2); break;
+  }
+  X.restore();
+}
+function renderHUD() {
+  var H = state.hill.H;
+  X.fillStyle = 'rgba(0,0,0,.42)'; X.fillRect(0, 0, VW, 16);
+  txt(H.n, 4, 4, '#fff', 1);
+  // wind
+  var w = state.wind;
+  // wind arrow (right of the text, never on it)
+  var wtxt = 'WIND ' + (w > 0 ? '+' : '') + w.toFixed(1);
+  txt(wtxt, VW - txtW(wtxt, 1) - 24, 4, Math.abs(w) > H.wind * 0.7 ? (w < 0 ? '#ff6a6a' : '#7aff8a') : '#fff', 1);
+  var ax = VW - 18;
+  X.fillStyle = w >= 0 ? '#7aff8a' : '#ff6a6a';
+  var dirc = w >= 0 ? -1 : 1;
+  X.beginPath();
+  X.moveTo(ax + dirc * 10, 8); X.lineTo(ax, 5); X.lineTo(ax, 11); X.closePath(); X.fill();
+  // speed during inrun
+  if (state.phase === 'inrun') {
+    var sp = Math.round(state.inV * 3.6);
+    txt(sp + ' KM/H', 4, 22, '#fff', 1, '#000');
+  }
+  // flight: distance + lean meter
+  if (state.phase === 'flight') {
+    var g = state.hill.gAt(state.px);
+    txt(state.hill.gAt(state.px).arc.toFixed(0) + 'M', 4, 22, '#ffd23c', 1, '#000');
+    // lean meter (vertical)
+    var lx = VW - 14, ly = 40, lh = 70;
+    X.fillStyle = 'rgba(0,0,0,.5)'; X.fillRect(lx - 1, ly - lh - 1, 10, lh + 2);
+    X.fillStyle = '#374a5e'; X.fillRect(lx, ly - lh, 8, lh);
+    X.fillStyle = '#2a9d4a'; X.fillRect(lx, ly - lh * 0.95, 8, lh * 0.38); // optimal band .55-.92ish
+    X.fillStyle = '#d7263d'; X.fillRect(lx, ly - lh * 0.06, 8, lh * 0.06); // red danger
+    var v = clamp(state.lean, 0, 1.15);
+    X.fillStyle = '#ffd23c'; X.fillRect(lx - 2, ly - v * lh - 1, 12, 2);
+    txt('LEAN', lx - 14, ly - lh - 12, '#fff', 1, '#000');
+  }
+  // messages
+  if (state.msgT > 0) {
+    var m = state.msg;
+    txt(m, VW / 2 - txtW(m, 2) / 2, 26, '#ffd23c', 2, '#000');
+  }
+  // ready prompt
+  if (state.phase === 'ready') {
+    if ((state.blink * 2) % 2 < 1) txt('PRESS FIRE TO START', VW / 2 - txtW('PRESS FIRE TO START', 2) / 2, VH - 30, '#fff', 2, '#000');
+    txt('DOWN=TAKEOFF/LEAN   UP=LAND', VW / 2 - txtW('DOWN=TAKEOFF/LEAN   UP=LAND', 1) / 2, VH - 12, '#cfe2ff', 1, '#000');
+  }
+  if (state.phase === 'inrun') {
+    var toEdge = state.hill.inL - state.inS;
+    if (toEdge < 2.5 && !state.tookOff && (state.blink * 5) % 2 < 1)
+      txt('NOW!', VW / 2 + 40, VH / 2, '#7aff8a', 2, '#000');
+  }
+  // gore tally
+  if (state.goreCount > 0 && (state.phase === 'crash' || state.phase === 'result' || state.phase === 'slide')) {
+    txt('GORE ' + state.goreCount, 4, VH - 12, '#ff5566', 1, '#000');
+  }
+}
+function renderResult() {
+  var w = 330, h = 150, x = (VW - w) / 2, y = (VH - h) / 2 - 10;
+  X.fillStyle = '#000'; X.fillRect(x, y, w, h);
+  X.strokeStyle = '#fff'; X.lineWidth = 2; X.strokeRect(x, y, w, h);
+  var title = state.crashed ? 'WRECKED' : 'RESULT';
+  txt(title, x + w / 2 - txtW(title, 2) / 2, y + 8, state.crashed ? '#d7263d' : '#ffd23c', 2);
+  var H = state.hill.H;
+  if (state.crashed) {
+    txt('JUMPED ' + state.dist.toFixed(1) + ' M  (DNF)', x + 14, y + 34, '#fff', 1);
+    txt('CAUSE: ' + state.crashKind.slice(0, 34), x + 14, y + 46, '#ff8080', 1);
+    txt('BLOOD: ' + state.goreCount + ' DROPS + ' + state.partCount + ' PIECES', x + 14, y + 58, '#ff8080', 1);
+    var rating = state.goreCount > 200 ? 'ULTRA GORE!!' : state.goreCount > 120 ? 'GORE AWARD' : 'SOME SPLOOSH';
+    txt(rating, x + w / 2 - txtW(rating, 2) / 2, y + 76, '#ff3040', 2, '#400');
+    // little skull
+    X.fillStyle = '#e8e8e8'; X.fillRect(x + w / 2 - 6, y + 104, 12, 10);
+    X.fillStyle = '#000'; X.fillRect(x + w / 2 - 3, y + 107, 2, 2); X.fillRect(x + w / 2 + 1, y + 107, 2, 2);
+    X.fillStyle = '#e8e8e8'; X.fillRect(x + w / 2 - 4, y + 114, 8, 3);
+  } else {
+    var j = state.judges;
+    var line = '';
+    for (var i = 0; i < 5; i++) line += j.js[i].toFixed(1).padStart(5, ' ');
+    txt('DISTANCE ' + state.dist.toFixed(1) + ' M   K' + H.K, x + 14, y + 32, '#fff', 1);
+    txt('JUDGES  ' + line, x + 14, y + 46, '#cfe2ff', 1);
+    txt('POINTS  ' + state.dpts.toFixed(1) + '  +  STYLE  ' + state.spts.toFixed(1), x + 14, y + 60, '#cfe2ff', 1);
+    var tot = 'TOTAL ' + state.total.toFixed(1);
+    txt(tot, x + w / 2 - txtW(tot, 2) / 2, y + 78, '#ffd23c', 2);
+    if (state.newRecord) { if ((state.blink * 3) % 2 < 1) txt('NEW HILL RECORD!', x + w / 2 - txtW('NEW HILL RECORD!', 1) / 2, y + 104, '#7aff8a', 1, '#040'); }
+    else { var b = BEST[state.hillIdx] || 0; if (b) txt('HILL BEST ' + b.toFixed(1) + ' M', x + w / 2 - txtW('HILL BEST ' + b.toFixed(1) + ' M', 1) / 2, y + 104, '#9fb8d8', 1, '#000'); }
+  }
+  txt('FIRE = ANOTHER JUMP    NAV = HILLS', x + w / 2 - txtW('FIRE = ANOTHER JUMP    NAV = HILLS', 1) / 2, y + h - 14, '#9fb8d8', 1);
+}
+// -------------------------------------------------------------- menu screens
+var titleSkier = { x: 0, y: 0, vx: 6, vy: 0, lean: 0.7 };
+function renderTitle() {
+  // backdrop: a distant hill + flying silhouette
+  X.fillStyle = '#7c94b8';
+  X.beginPath(); X.moveTo(0, VH); X.lineTo(0, 210); X.lineTo(150, 150); X.lineTo(240, 240); X.lineTo(VW, 200); X.lineTo(VW, VH); X.closePath(); X.fill();
+  X.fillStyle = '#e8eef8';
+  X.beginPath(); X.moveTo(0, VH); X.lineTo(0, 226); X.lineTo(150, 166); X.lineTo(240, 252); X.lineTo(VW, 214); X.lineTo(VW, VH); X.closePath(); X.fill();
+  // tower
+  X.strokeStyle = '#7a4a22'; X.lineWidth = 2;
+  X.strokeRect(36, 120, 26, 70);
+  X.beginPath(); X.moveTo(36, 120); X.lineTo(62, 190); X.moveTo(62, 120); X.lineTo(36, 190); X.stroke();
+  X.fillStyle = '#fff'; X.fillRect(20, 116, 52, 6);
+  // attract skier
+  titleSkier.x += titleSkier.vx;
+  if (titleSkier.x > VW + 40) { titleSkier.x = -40; titleSkier.y = 100 + Math.random() * 30; }
+  titleSkier.y = titleSkier.y + Math.sin(titleSkier.x * 0.05) * 0.4;
+  X.save(); X.translate(titleSkier.x, titleSkier.y); X.rotate(0.28);
+  X.fillStyle = '#20242a'; X.fillRect(-8, 4, 18, 2);
+  X.fillStyle = '#d7263d'; X.fillRect(-3, -2, 7, 5);
+  X.fillStyle = '#e8c39a'; X.fillRect(3, -5, 4, 4);
+  X.restore();
+  // logo with DRIP
+  var l1 = 'DELUXE SKI JUMP', l2 = 'GORE EDITION';
+  var s1 = 4, s2 = 3;
+  var w1 = txtW(l1, s1);
+  var lx = (VW - w1) / 2, ly = 28;
+  // drips
+  for (var i = 0; i < l1.length; i++) {
+    if ((i * 7919) % 5 === 0) {
+      var dl = 8 + ((i * 104729) % 16) + Math.sin(state.blink * 2 + i) * 2;
+      X.fillStyle = '#8b0e16';
+      X.fillRect(lx + i * 6 * s1 + s1, ly + 7 * s1, Math.round(s1 * 0.75), dl);
+      X.beginPath(); X.arc(lx + i * 6 * s1 + s1 + s1 * 0.35, ly + 7 * s1 + dl, s1 * 0.45, 0, TAU); X.fill();
+    }
+  }
+  txt(l1, lx, ly, '#d7263d', s1, '#000');
+  var l2x = (VW - txtW(l2, s2)) / 2;
+  for (var j2 = 0; j2 < l2.length; j2++) {
+    if (j2 % 3 === 0) { X.fillStyle = '#8b0e16'; X.fillRect(l2x + j2 * 6 * s2, ly + 7 * s1 + 14 + 7 * s2, 2, 5); }
+  }
+  txt(l2, l2x, ly + 7 * s1 + 14, '#ff3040', s2, '#000');
+  if ((state.blink * 2) % 2 < 1) txt('PRESS FIRE', VW / 2 - txtW('PRESS FIRE', 2) / 2, 176, '#fff', 2, '#000');
+  txt('KEYS: DOWN=TAKEOFF+LEAN   UP=LAND   SPACE=FIRE', VW / 2 - txtW('KEYS: DOWN=TAKEOFF+LEAN   UP=LAND   SPACE=FIRE', 1) / 2, 200, '#cfe2ff', 1, '#000');
+  var goreTotal = state.goreTotal || 0;
+  if (goreTotal) txt('TOTAL BLOOD THIS SEASON: ' + goreTotal + ' DROPS', VW / 2 - txtW('TOTAL BLOOD THIS SEASON: ' + goreTotal + ' DROPS', 1) / 2, 250, '#ff8080', 1, '#000');
+  txt('A 1997 FINNISH CLASSIC, REBORN AND RE-BLED', VW / 2 - txtW('A 1997 FINNISH CLASSIC, REBORN AND RE-BLED', 1) / 2, 262, '#9fb8d8', 1, '#000');
+  txt('TUOTANTO: VUORI & VERI OY', VW / 2 - txtW('TUOTANTO: VUORI & VERI OY', 1) / 2, 284, '#6d7d95', 1);
+}
+function renderHillsMenu() {
+  X.fillStyle = 'rgba(0,0,20,.55)'; X.fillRect(0, 0, VW, VH);
+  var t = 'CHOOSE YOUR GRAVE';
+  txt(t, VW / 2 - txtW(t, 2) / 2, 10, '#ffd23c', 2, '#000');
+  var y0 = 36, rowH = 26;
+  var start = clamp(state.sel - 3, 0, 9 - 7);
+  for (var i = 0; i < 7; i++) {
+    var hi = start + i, H = HILLS[hi];
+    if (!H) continue;
+    var y = y0 + i * rowH;
+    var sel = hi === state.sel;
+    if (sel) { X.fillStyle = 'rgba(215,38,61,.35)'; X.fillRect(8, y - 4, VW - 16, rowH - 3); }
+    txt(H.n, 14, y + 2, sel ? '#fff' : '#9fb8d8', 1, '#000');
+    var b = BEST[hi];
+    txt('K' + H.K + (b ? '  BEST ' + b.toFixed(1) : '') + (H.wind > 1.7 ? '  WINDY' : ''), 14, y + 12, sel ? '#ffd23c' : '#5f7592', 1, '#000');
+    // mini skier icon
+    if (sel) { X.fillStyle = '#d7263d'; X.fillRect(VW - 26, y + 5, 4, 4); }
+  }
+  txt('NAV = PICK    FIRE = RIDE', VW / 2 - txtW('NAV = PICK    FIRE = RIDE', 1) / 2, VH - 14, '#cfe2ff', 1, '#000');
+}
+function renderCharMenu() {
+  X.fillStyle = 'rgba(0,0,20,.55)'; X.fillRect(0, 0, VW, VH);
+  var t = 'YOUR DOOMED ATHLETE';
+  txt(t, VW / 2 - txtW(t, 2) / 2, 12, '#ffd23c', 2, '#000');
+  // big jumper preview
+  X.save();
+  X.translate(VW / 2 - 30, VH / 2 + 30);
+  X.scale(4, 4);
+  X.fillStyle = '#20242a'; X.fillRect(-9, 4, 19, 2); // skis
+  X.fillStyle = PANTS[state.pants]; X.fillRect(-4, -4, 8, 4);
+  X.fillStyle = SUITS[state.suit]; X.fillRect(-3, -9, 7, 6);
+  X.fillStyle = HAIRS[state.hair]; X.fillRect(0, -13, 4, 4);
+  X.fillStyle = '#ffd23c'; X.fillRect(-1, -14, 5, 2);
+  X.restore();
+  txt(NAMES[state.nameIdx], VW / 2 - txtW(NAMES[state.nameIdx], 2) / 2, VH / 2 - 70, '#fff', 2, '#000');
+  txt(HILLS[state.sel].n + '   K' + HILLS[state.sel].K, VW / 2 - txtW(HILLS[state.sel].n + '   K' + HILLS[state.sel].K, 1) / 2, VH - 52, '#9fb8d8', 1, '#000');
+  if ((state.blink * 2) % 2 < 1) txt('NAV = CHANGE   FIRE = GO BLOOD', VW / 2 - txtW('NAV = CHANGE   FIRE = GO BLOOD', 2) / 2, VH - 34, '#7aff8a', 2, '#000');
+}
+
+// ------------------------------------------------------------------ main loop
+var lastT = 0;
+function loop(ts) {
+  var dt = Math.min(0.05, (ts - lastT) / 1000 || 0.016);
+  lastT = ts;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+// expose probe for testing/screenshots
+window.__state = function () {
+  return {
+    phase: state.phase, hill: state.hill ? state.hill.H.n : null,
+    px: +state.px.toFixed(1), dist: +state.dist.toFixed(1),
+    crashed: state.crashed, gore: state.goreCount, parts: parts.length,
+    blood: blood.length, freeze: !!state.freezeAt, t: +state.t.toFixed(2),
+    wind: +state.wind.toFixed(1), tq: state.takeoffQ, total: state.total ? +state.total.toFixed(1) : 0,
+  };
+};
+// deterministic simulation pump (software-GL headless runs are ~5fps; stepping
+// lets tests/screenshots advance game time instantly). 60 steps = 1 game second.
+window.__step = function (n) { for (var k = 0; k < n; k++) update(1 / 60); };
+window.__bot = function (on) { state.bot = !!on; };
+if (SHOT) {
+  state.bot = true;
+  // fast path: skip menus quickly
+  state.phase = 'title';
+}
+if (FF > 0) window.__step(FF);
+tune(false);
+requestAnimationFrame(loop);
+console.info('[dsj] deluxe ski jump gore edition ready');
+</script>
+</body>
+</html>

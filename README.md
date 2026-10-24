@@ -7,6 +7,7 @@ Browser experiments, served as GitHub Pages from one repo:
 | Example | What it is |
 |---|---|
 | [Living room — WebGPU](examples/livingroom/) | Blender-exported living room at 160 fps with WebGPURenderer: AgX matched to the Cycles look, same HDRI, GTAO + bloom. Needs a WebGPU browser; ~50 MB. |
+| [Deluxe Ski Jump — Gore Edition](examples/skijump/) | The 1997 Finnish cult classic rebuilt as a two-button phone game: crouch-takeoff, lean, telemark, gusts, FIS judges, nine hills from K8 to K190 — and R-rated carnage: every landing sprays blood, every crash is a fourteen-piece red snowstorm. One file, no assets. |
 | [Commander Keen — self-playing demo](examples/commanderkeen/) | The box art alive at 320×200 in the 16-color Keen palette: a bot runs, jumps and lie-flat-shoots through two looping levels — Vorticons, Vortiguns, ick, 1UPs, the grinning Vorticomander — with AdLib-style FM audio. Press any key to take over. One file, no assets. |
 | [Monkey Island — 3D intro](examples/monkeyisland/) | The Secret of Monkey Island Special Edition opening rebuilt live: moonlit island, ships, glowing logo, and the Main Title Theme synthesized from inline score data. Click to start, drag to orbit. One file, no assets. |
 | [Black hole](examples/blackhole/) | Every pixel raymarches an actual photon orbit around a Schwarzschild black hole: gravitational lensing, Doppler-beamed accretion disk, photon ring. One file, no libraries, no assets. |
