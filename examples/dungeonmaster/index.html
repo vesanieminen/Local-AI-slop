@@ -1336,7 +1336,8 @@ function cast(i) {
 /* ---------------- movement ---------------- */
 function turn(d) {
   if (player.turn || player.mv) return;
-  player.yawT += d * Math.PI / 2;
+  /* camera-right of fwd=(sin y, cos y) is (-cos y, sin y) => a right turn *decreases* yaw */
+  player.yawT -= d * Math.PI / 2;
   player.turn = { t: 0, from: player.yaw };
 }
 function stepMove(dx, dy) {
