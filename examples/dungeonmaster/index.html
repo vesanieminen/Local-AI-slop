@@ -752,7 +752,8 @@ function genLevel(d) {
   rooms.forEach((r, i) => { const dd = dist[cellIdx(r.cx, r.cy)]; if (dd > far) { far = dd; fi = i; } });
   stairsCell = cellIdx(rooms[fi].cx, rooms[fi].cy);
   grid[stairsCell] = STAIR;
-  /* torches on wall faces, spread out */
+  /* torches on wall faces, spread out — cell (x,y) spans [x-.5,x+.5], so the face
+     toward neighbour (x+dx,y+dy) sits at x+dx*.5 */
   torchers = [];
   const faces = [];
   for (let y = 1; y < GH - 1; y++) for (let x = 1; x < GW - 1; x++) {
@@ -1002,7 +1003,7 @@ function spawnMonsters(d) {
 function addMonster(kind, x, y, d) {
   const t = MON[kind], hpMul = 1 + .2 * (d - 1), dAdd = Math.floor(d / 2);
   const m = {
-    kind, t, x, y, mx: x + .5, my: y + .5, hp: Math.round(t.hp * hpMul), mhp: Math.round(t.hp * hpMul),
+    kind, t, x, y, mx: x, my: y, hp: Math.round(t.hp * hpMul), mhp: Math.round(t.hp * hpMul),
     spd: t.spd, at: 1 / t.spd + R(0, .5), mvp: null, alerted: false, flash: 0, frozen: 0, dying: false,
     hold: false, holdAt: 0,
     dmg: [t.dmg[0] + dAdd, t.dmg[1] + dAdd], xp: t.xp, bob: rnd() * 7,
@@ -1011,12 +1012,12 @@ function addMonster(kind, x, y, d) {
   return m;
 }
 
-/* LOS between float points */
+  /* LOS between float points; cells span [x-.5,x+.5] => nearest int is the cell */
 function los(x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.hypot(dx, dy) * 4);
   for (let i = 1; i < n; i++) {
     const x = x0 + dx * i / n, y = y0 + dy * i / n;
-    if (at(Math.floor(x), Math.floor(y)) === WALL) return false;
+    if (at(Math.round(x), Math.round(y)) === WALL) return false;
   }
   return true;
 }
@@ -1377,7 +1378,7 @@ function newLevel(d) {
   spawnMonsters(d);
   projs = []; pickups = [];
   player.cellX = startCell % GW; player.cellY = (startCell / GW) | 0;
-  player.x = player.cellX + .5; player.y = player.cellY + .5;
+  player.x = player.cellX; player.y = player.cellY;
   /* face along a corridor */
   for (const [dx, dy] of [[1,0],[0,1],[-1,0],[0,-1]]) if (walkable(player.cellX + dx, player.cellY + dy)) { player.yaw = player.yawT = Math.atan2(dx, dy); break; }
   player.mv = null; player.turn = null;
@@ -1406,7 +1407,7 @@ function render(now) {
   /* gate light */
   if (tSorted.length < 9) {
     const i = tSorted.length;
-    lp[i * 3] = stairsCell % GW + .5; lp[i * 3 + 1] = 1.2; lp[i * 3 + 2] = ((stairsCell / GW) | 0) + .5;
+    lp[i * 3] = stairsCell % GW; lp[i * 3 + 1] = 1.2; lp[i * 3 + 2] = ((stairsCell / GW) | 0);
     lc[i * 4] = .35; lc[i * 4 + 1] = .85; lc[i * 4 + 2] = .8; lc[i * 4 + 3] = 5.2;
     tSorted.push({ t: { x: -9, y: -9, ph: 3 }, d: 0, gate: true });
     tSorted[i].gate = true;
@@ -1480,7 +1481,7 @@ function render(now) {
     drawSprite(pSpr, uS, t.hx, .95, t.hy, .16, .6, 'white', 0, .9, true);
   }
   {
-    const gx = stairsCell % GW + .5, gy2 = ((stairsCell / GW) | 0) + .5;
+    const gx = stairsCell % GW, gy2 = ((stairsCell / GW) | 0);
     const gd = Math.hypot(gx - player.x, gy2 - player.y);
     if (gd < 14) {
       const pulse = .7 + .3 * Math.sin(TIME * 2.2);
@@ -1677,11 +1678,11 @@ function update(dt) {
     const mv = player.mv;
     mv.t += dt / .18;
     const t2 = clamp(mv.t, 0, 1), e2 = t2 * t2 * (3 - 2 * t2);
-    player.x = mv.fx + .5 + (mv.tx - mv.fx) * e2;
-    player.y = mv.fy + .5 + (mv.ty - mv.fy) * e2;
+    player.x = mv.fx + (mv.tx - mv.fx) * e2;
+    player.y = mv.fy + (mv.ty - mv.fy) * e2;
     player.bob = Math.sin(t2 * Math.PI) * .06;
     if (t2 >= 1) {
-      player.mv = null; player.x = mv.tx + .5; player.y = mv.ty + .5; player.bob = 0;
+      player.mv = null; player.x = mv.tx; player.y = mv.ty; player.bob = 0;
       arrived();
     }
   }
@@ -1697,7 +1698,7 @@ function update(dt) {
       const t2 = clamp(m.mvp.t, 0, 1);
       m.mx = m.mvp.fx + (m.mvp.tx - m.mvp.fx) * t2;
       m.my = m.mvp.fy + (m.mvp.ty - m.mvp.fy) * t2;
-      if (t2 >= 1) { m.x = m.mvp.tx; m.y = m.mvp.ty; m.mx = m.x + .5; m.my = m.y + .5; m.mvp = null; }
+      if (t2 >= 1) { m.x = m.mvp.tx; m.y = m.mvp.ty; m.mx = m.x; m.my = m.y; m.mvp = null; }
     }
     m.at -= dt;
     if (m.at <= 0 && !m.mvp) {
@@ -1719,7 +1720,7 @@ function update(dt) {
             if (!walkable(nx, ny)) continue;
             if (nx === player.cellX && ny === player.cellY) continue;
             if (monsters.some(o => o !== m && !o.dying && !o.mvp && o.x === nx && o.y === ny)) continue;
-            const nd = Math.hypot(player.x - (nx + .5), player.y - (ny + .5));
+            const nd = Math.hypot(player.x - nx, player.y - ny);
             cands.push([nd, nx, ny]);
           }
           cands.sort((a, b2) => a[0] - b2[0] || rnd() - .5);
@@ -1736,7 +1737,7 @@ function update(dt) {
   for (const pr of projs) {
     pr.life -= dt;
     pr.x += pr.vx * dt; pr.y += pr.vz * dt;
-    if (at(Math.floor(pr.x), Math.floor(pr.y)) === WALL) { pr.life = 0; if (!pr.mine) sfx.boom(); continue; }
+    if (at(Math.round(pr.x), Math.round(pr.y)) === WALL) { pr.life = 0; if (!pr.mine) sfx.boom(); continue; }
     if (pr.mine) {
       for (const m of monsters) {
         if (m.dying) continue;
@@ -1789,12 +1790,12 @@ function stageShot() {
   grid[cellIdx(x + 8, y)] = STAIR; stairsCell = cellIdx(x + 8, y); /* glowing gate at the hall's end */
   buildGeometry();
   player.cellX = x; player.cellY = y;
-  player.x = x + .5; player.y = y + .5;
+  player.x = x; player.y = y;
   player.yaw = player.yawT = Math.PI / 2; /* face +x */
   torchers = [
-    { x: x + 1 + .5, y: y - 1.5, hx: x + 1 + .5, hy: y - 1.42, ph: 1.2 },
-    { x: x + 4 + .5, y: y + 1.5, hx: x + 4 + .5, hy: y + 1.42, ph: 3.9 },
-    { x: x + 6 + .5, y: y - 1.5, hx: x + 6 + .5, hy: y - 1.42, ph: 5.1 },
+    { x: x + 1, y: y - 1.5, hx: x + 1, hy: y - 1.42, ph: 1.2 },
+    { x: x + 4, y: y + 1.5, hx: x + 4, hy: y + 1.42, ph: 3.9 },
+    { x: x + 6, y: y - 1.5, hx: x + 6, hy: y - 1.42, ph: 5.1 },
   ];
   monsters = [];
   const mS = addMonster('skel', x + 7, y - 1, 1); mS.alerted = true; mS.hold = true; mS.holdAt = 3.4;
@@ -1841,8 +1842,35 @@ window.__dm = {
     if (o && typeof o.yaw === 'number') player.yaw = player.yawT = o.yaw;
     if (o && o.pos) {
       player.x = o.pos[0]; player.y = o.pos[1];
-      player.cellX = Math.floor(o.pos[0]); player.cellY = Math.floor(o.pos[1]);
+      player.cellX = Math.round(o.pos[0]); player.cellY = Math.round(o.pos[1]);
       player.mv = null; player.turn = null;
+    }
+    if (o && o.fbox) {
+      const [bx0, by0, bx1, by1] = o.fbox;
+      const out = [];
+      for (let cy = by0; cy <= by1; cy++) for (let cx = bx0; cx <= bx1; cx++) {
+        if (grid[cellIdx(cx, cy)] === WALL) continue;
+        if (at(cx - 1, cy) === WALL) out.push(`cell(${cx},${cy}) faceX plane=${cx - .5} normal+X`);
+        if (at(cx + 1, cy) === WALL) out.push(`cell(${cx},${cy}) faceX plane=${cx + .5} normal-X`);
+        if (at(cx, cy - 1) === WALL) out.push(`cell(${cx},${cy}) faceZ plane=${cy - .5} normal+Z`);
+        if (at(cx, cy + 1) === WALL) out.push(`cell(${cx},${cy}) faceZ plane=${cy + .5} normal-Z`);
+      }
+      return out;
+    }
+    if (o && o.map) {
+      const rows = [];
+      for (let cy = 0; cy < GH; cy++) {
+        let r = '';
+        for (let cx = 0; cx < GW; cx++) {
+          let ch = grid[cellIdx(cx, cy)] === WALL ? '#' : grid[cellIdx(cx, cy)] === STAIR ? '>' : '.';
+          if (cx === player.cellX && cy === player.cellY) ch = '@';
+          if (torchers.some(t => Math.abs(t.x - cx) < .6 && Math.abs(t.y - cy) < .6)) ch = 'T';
+          if (monsters.some(m => m.x === cx && m.y === cy)) ch = 'M';
+          r += ch;
+        }
+        rows.push(r);
+      }
+      return rows;
     }
     const around = [];
     for (let cy = player.cellY - 2; cy <= player.cellY + 2; cy++) {
