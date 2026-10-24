@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Black hole — real-time gravitational lensing</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
+  #gl { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  #gl:active { cursor: grabbing; }
+
+  .ui-btn {
+    font-family: Georgia, serif; font-size: 13px; letter-spacing: .06em;
+    color: rgba(235, 225, 210, .85); text-shadow: 0 1px 4px #000;
+    background: rgba(10, 12, 18, .55); border: 1px solid rgba(150, 140, 120, .35);
+    border-radius: 8px; padding: 6px 11px; cursor: pointer; backdrop-filter: blur(4px);
+    transition: background .2s, border-color .2s;
+  }
+  .ui-btn:hover { background: rgba(40, 36, 30, .65); border-color: rgba(220, 190, 140, .6); }
+  .ui-btn.active { color: #ffd9a0; border-color: rgba(255, 200, 120, .7); }
+
+  .presets {
+    position: absolute; top: 12px; right: 12px; z-index: 6;
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 70vw;
+  }
+  .panel {
+    position: absolute; top: 52px; right: 12px; z-index: 6;
+    background: rgba(8, 10, 15, .55); border: 1px solid rgba(150, 140, 120, .25);
+    border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; gap: 7px;
+    font-family: Georgia, serif; font-size: 12px; color: rgba(230, 220, 205, .8);
+  }
+  .panel label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .panel input[type=range] { width: 130px; accent-color: #e8a45c; }
+  .panel .val { color: #ffcf9a; font-size: 11px; min-width: 34px; text-align: right; }
+
+  .brand {
+    position: absolute; top: 14px; left: 16px; z-index: 6; pointer-events: none;
+    font-family: Georgia, serif; color: rgba(240, 230, 215, .9); text-shadow: 0 1px 8px #000;
+  }
+  .brand h1 { margin: 0; font-size: 17px; font-weight: 400; letter-spacing: .1em; }
+  .brand p { margin: 3px 0 0; font-size: 11px; letter-spacing: .06em; color: rgba(200, 190, 175, .65); }
+
+  .hud {
+    position: absolute; left: 16px; bottom: 40px; z-index: 6; pointer-events: none;
+    font-family: ui-monospace, monospace; font-size: 11px; color: rgba(190, 200, 210, .55);
+    text-shadow: 0 1px 3px #000; line-height: 1.5;
+  }
+
+  .controls {
+    position: absolute; right: 12px; bottom: 10px; z-index: 6;
+    display: flex; gap: 8px; align-items: flex-end;
+  }
+  .hint {
+    position: absolute; left: 0; right: 0; bottom: 14px; text-align: center;
+    font-family: Georgia, serif; font-size: 13px; letter-spacing: .12em;
+    color: rgba(230, 220, 200, .65); text-shadow: 0 1px 6px #000;
+    pointer-events: none; transition: opacity 1.8s ease;
+  }
+  .hint.hidden { opacity: 0; }
+  .fadeable { transition: opacity .6s ease; }
+  .fadeable.hidden { opacity: 0; pointer-events: none; }
+
+  .fatal {
+    position: absolute; inset: 0; display: grid; place-content: center; z-index: 10;
+    font-family: Georgia, serif; color: #e8d8c0; text-align: center; padding: 24px;
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="brand fadeable">
+  <h1>BLACK&nbsp;HOLE</h1>
+  <p>raymarched photon orbits · Schwarzschild metric · no libraries, no assets</p>
+</div>
+
+<div class="presets fadeable" id="presets">
+  <button class="ui-btn active" data-preset="interstellar">Interstellar</button>
+  <button class="ui-btn" data-preset="edgeon">Edge-on</button>
+  <button class="ui-btn" data-preset="faceon">Face-on</button>
+  <button class="ui-btn" data-preset="ring">Photon ring</button>
+</div>
+
+<div class="panel fadeable" id="panel">
+  <label>lensing <input type="range" id="sLens" min="0" max="1.5" step="0.01" value="1"><span class="val" id="vLens">1.00</span></label>
+  <label>disk density <input type="range" id="sDens" min="0.15" max="3" step="0.01" value="1"><span class="val" id="vDens">1.00</span></label>
+  <label>doppler beaming <input type="range" id="sDopp" min="0" max="2" step="0.01" value="1"><span class="val" id="vDopp">1.00</span></label>
+  <label>exposure <input type="range" id="sExp" min="0.4" max="2.5" step="0.01" value="1.1"><span class="val" id="vExp">1.10</span></label>
+</div>
+
+<div class="hud" id="hud"></div>
+<div class="hint" id="hint">drag to orbit &nbsp;·&nbsp; wheel / pinch to zoom &nbsp;·&nbsp; h hides the chrome</div>
+
+<div class="controls">
+  <button class="ui-btn" id="musicBtn">&#9834; music</button>
+  <button class="ui-btn" id="fsBtn">[ ] full</button>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   Black hole — one file, zero dependencies, works offline.
+
+   Physics: photons are integrated as null geodesics of the
+   Schwarzschild metric. In the form used by every good black
+   hole shader, a photon with conserved specific angular momentum
+   h obeys  d²r⃗/dt² = −(3/2)·rs·h²·r⃗ / |r⃗|⁵  (units rs = 1).
+   Integrate per pixel with RK2, sample a thin accretion disk at
+   the y=0 crossings, Doppler-boost by g³, composite front-to-back.
+   ============================================================ */
+
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false, alpha: false });
+if (!gl) {
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="fatal"><p>This demo needs WebGL2.<br>Try a current Chrome / Firefox / Safari.</p></div>');
+  throw new Error('no webgl2');
+}
+const floatRT = gl.getExtension('EXT_color_buffer_float'); // RGBA16F framebuffers when available
+
+/* ---------------- shaders ---------------- */
+
+const VS = `#version 300 es
+void main() {
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+const FS_SCENE = `#version 300 es
+precision highp float;
+out vec4 o;
+
+uniform vec2  uRes;
+uniform float uTime, uTanHalf;
+uniform float uLensing, uDensity, uDoppler, uSteps;
+uniform vec3  uCamPos, uRight, uUp, uFwd;
+
+const float RS = 1.0;        // Schwarzschild radius = 1 length unit
+const float RIN = 3.0;       // disk inner edge (~ISCO)
+const float ROUT = 13.5;     // disk outer edge
+
+float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+
+float vnoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = mix(mix(mix(hash13(i), hash13(i + vec3(1,0,0)), f.x),
+                    mix(hash13(i + vec3(0,1,0)), hash13(i + vec3(1,1,0)), f.x), f.y),
+                mix(mix(hash13(i + vec3(0,0,1)), hash13(i + vec3(1,0,1)), f.x),
+                    mix(hash13(i + vec3(0,1,1)), hash13(i + vec3(1,1,1)), f.x), f.y), f.z);
+  return a;
+}
+
+vec3 sky(vec3 d) {
+  vec3 c = vec3(0.004, 0.005, 0.009);                       // deep space floor
+  vec3 ax = normalize(vec3(0.33, 0.88, -0.34));             // galactic band axis
+  float mw = exp(-pow(dot(d, ax) * 3.4, 2.0));
+  float n = vnoise(d * 2.5) * 0.6 + vnoise(d * 9.0) * 0.4;
+  c += mw * (0.015 + 0.075 * n) * vec3(0.5, 0.56, 0.85);    // faint milky way
+  // stars from 3D cells on the direction sphere (seam-free)
+  float sc = 110.0;
+  vec3 cell = floor(d * sc);
+  float h = hash13(cell + 7.31);
+  if (h > 0.955) {
+    vec3 jitter = (vec3(hash13(cell + 1.7), hash13(cell + 2.9), hash13(cell + 4.3)) - 0.5) * 0.6;
+    vec3 ctr = normalize(cell + 0.5 + jitter);
+    float ang = acos(clamp(dot(d, ctr), -1.0, 1.0));
+    float size = (0.0006 + 0.0028 * fract(h * 17.3));       // radians
+    float b = smoothstep(size, 0.0, ang) * (0.5 + 2.3 * fract(h * 31.7));
+    vec3 tint = mix(vec3(1.0, 0.82, 0.66), vec3(0.66, 0.8, 1.0), fract(h * 13.1));
+    c += b * tint;
+  }
+  return c;
+}
+
+// hot-body color ramp: deep red -> orange -> white -> blue-white
+vec3 hot(float t) {
+  vec3 c = mix(vec3(0.58, 0.10, 0.02), vec3(1.0, 0.42, 0.08), smoothstep(0.0, 0.45, t));
+  c = mix(c, vec3(1.0, 0.84, 0.58), smoothstep(0.45, 0.72, t));
+  c = mix(c, vec3(0.72, 0.84, 1.15), smoothstep(0.82, 1.12, t));
+  return c;
+}
+
+// accretion-disk sample at a y=0 crossing point hp (rd = |hp|),
+// vdir = photon travel direction there. Returns emission, sets alpha.
+vec3 disk(vec3 hp, vec3 vdir, out float alpha) {
+  float rd = length(hp);
+  float ang = atan(hp.z, hp.x);
+  // Keplerian swirl: omega ∝ r^-1.5, plus radial phase for filaments
+  float om = 2.6 * pow(rd, -1.5);
+  float sw = ang + rd * 2.3 - uTime * om;
+  vec2 pc = vec2(cos(sw), sin(sw)) * rd * 0.9;
+  float n1 = vnoise(vec3(pc, rd * 1.35));
+  float n2 = vnoise(vec3(pc * 3.1 + 9.0, rd * 2.7));
+  float prof = smoothstep(RIN, RIN * 1.6, rd) * (1.0 - smoothstep(ROUT * 0.55, ROUT, rd));
+  float dens = prof * (0.35 + 1.05 * n1 + 0.35 * n2) + pow(max(0.0, 1.0 - (rd - RIN) / 3.5), 2.0) * 0.45;
+  dens = max(dens, 0.0);
+
+  // relativistic Doppler + gravitational redshift
+  vec3 tang = normalize(cross(vec3(0.0, 1.0, 0.0), hp));   // orbital direction
+  float v = clamp(sqrt(0.5 / max(rd - RS, 0.6)), 0.0, 0.72) * uDoppler;
+  v = min(v, 0.95);
+  float gam = 1.0 / sqrt(1.0 - v * v);
+  float gD = 1.0 / (gam * (1.0 - dot(tang * v, vdir)));    // approaching side -> g > 1
+  float gTot = gD * sqrt(max(1.0 - RS / rd, 0.05));        // grav redshift
+
+  float T = pow(rd / RIN, -0.75) * gD;                     // thin-disk T ∝ r^-3/4, Doppler-shifted
+  vec3 col = hot(T) * (2.2 + 10.0 * dens) * dens * pow(gTot, 3.0);
+  // shift hue by the Doppler factor: blueshift approaches, redshift recedes
+  col = mix(col, col * vec3(0.55, 0.75, 1.55), clamp((gD - 1.0) * 1.1, 0.0, 1.0));
+  col = mix(col, col * vec3(1.35, 0.55, 0.2), clamp((1.0 - gD) * 1.1, 0.0, 0.9));
+
+  alpha = 1.0 - exp(-dens * uDensity * 3.2);
+  return col;
+}
+
+vec3 accel(vec3 p, float h2) { return -1.5 * uLensing * h2 * p / pow(dot(p, p), 2.5); }
+
+void main() {
+  vec2 ndc = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  vec3 dir = normalize(uFwd + uRight * ndc.x * uTanHalf * (uRes.x / uRes.y) + uUp * ndc.y * uTanHalf);
+
+  vec3 pos = uCamPos, vel = dir;
+  vec3 col = vec3(0.0);
+  float trans = 1.0;
+  int hits = 0;
+  int steps = int(uSteps);
+
+  for (int i = 0; i < 800; i++) {
+    if (i >= steps) break;
+    float r = length(pos);
+    float dt = clamp(r * r * 0.006, 0.008, 0.55);
+
+    // RK2 (midpoint) step of the geodesic equation
+    vec3 a1 = accel(pos, dot(cross(pos, vel), cross(pos, vel)));
+    vec3 pm = pos + vel * dt * 0.5;
+    vec3 vm = vel + a1 * dt * 0.5;
+    vec3 p1 = pos + (vm + accel(pm, dot(cross(pm, vm), cross(pm, vm))) * dt * 0.5) * dt;
+    vec3 v1 = vel + accel(pm, dot(cross(pm, vm), cross(pm, vm))) * dt;
+
+    // accretion disk plane crossing (front-to-back compositing)
+    if (hits < 3 && (pos.y > 0.0) != (p1.y > 0.0)) {
+      float f = pos.y / (pos.y - p1.y);
+      vec3 hp = mix(pos, p1, f);
+      float rd = length(hp);
+      if (rd > RIN * 0.92 && rd < ROUT * 1.05) {
+        float a;
+        vec3 e = disk(hp, normalize(v1), a);
+        col += trans * e * a;
+        trans *= 1.0 - a;
+        hits++;
+        if (trans < 0.02) { trans = 0.0; break; }
+      }
+    }
+
+    pos = p1; vel = v1;
+    if (length(pos) < RS * 1.02) { trans = 0.0; break; }   // captured by the horizon
+  }
+
+  if (trans > 0.0) col += trans * sky(normalize(vel));     // lensed background
+  o = vec4(col, 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+uniform vec2 uDir;
+void main() {
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec3 c = texture(uSrc, uv).rgb * 0.227027;
+  vec2 d = uDir * uTexel;
+  c += (texture(uSrc, uv + d * 1.3846).rgb + texture(uSrc, uv - d * 1.3846).rgb) * 0.3162162;
+  c += (texture(uSrc, uv + d * 3.2308).rgb + texture(uSrc, uv - d * 3.2308).rgb) * 0.0702702;
+  o = vec4(c, 1.0);
+}`;
+
+const FS_BRIGHTQ = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+void main() {
+  // downsample + bright extract with a soft knee
+  vec3 c = texture(uSrc, gl_FragCoord.xy * uTexel).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  o = vec4(c * smoothstep(0.35, 1.4, l), 1.0);
+}`;
+
+const FS_COMPOSITE = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D uScene, uBloom;
+uniform vec2 uTexel;
+uniform float uExposure;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main() {
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec3 c = texture(uScene, uv).rgb;
+  c += texture(uBloom, uv).rgb * 0.75;
+  c *= uExposure;
+  vec2 v = uv - 0.5;
+  c *= 1.0 - dot(v, v) * 0.62;                       // vignette
+  c = aces(c);
+  c = pow(c, vec3(1.0 / 2.2));
+  float g = dot(gl_FragCoord.xy, vec2(0.7, 1.3));
+  c += (fract(sin(g * 12.9898) * 43758.5453) - 0.5) / 255.0;   // dither
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------------- gl plumbing ---------------- */
+
+function compile(src) {
+  const s = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src.slice(0, 200));
+  return s;
+}
+function link(vsSrc, fsSrc) {
+  const v = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(v, vsSrc); gl.compileShader(v);
+  if (!gl.getShaderParameter(v, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(v));
+  const p = gl.createProgram();
+  gl.attachShader(p, v); gl.attachShader(p, compile(fsSrc)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) u[gl.getActiveUniform(p, i).name] = gl.getUniformLocation(p, gl.getActiveUniform(p, i).name);
+  return { p, u };
+}
+
+let progScene, progBlur, progBright, progComp, vao, quad;
+try {
+  progScene = link(VS, FS_SCENE);
+  progBlur = link(VS, FS_BLUR);
+  progBright = link(VS, FS_BRIGHTQ);
+  progComp = link(VS, FS_COMPOSITE);
+} catch (e) {
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="fatal"><p>Shader compilation failed on this GPU:<br><code>' + (e.message || e) + '</code></p></div>');
+  throw e;
+}
+vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+
+const RT_TYPE = floatRT ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+let sceneFB, sceneTex, brightFB, brightTex, blurFB = [], blurTex = [];
+
+function makeRT(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, floatRT ? gl.RGBA16F : gl.RGBA8, w, h, 0, gl.RGBA, RT_TYPE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return { fb, tex, w, h };
+}
+function freeRT(rt) { if (!rt) return; gl.deleteTexture(rt.tex); gl.deleteFramebuffer(rt.fb); }
+
+function resize() {
+  const base = Math.min(window.devicePixelRatio || 1, 1.75) * scale;
+  const w = Math.max(320, Math.round(canvas.clientWidth * base));
+  const h = Math.max(240, Math.round(canvas.clientHeight * base));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  if (!sceneFB || sceneFB.w !== w || sceneFB.h !== h) {
+    freeRT(sceneFB); freeRT(brightFB); blurFB.forEach(freeRT);
+    sceneFB = makeRT(w, h); sceneTex = sceneFB.tex;
+    const hw = w >> 1, hh = h >> 1, qw = Math.max(2, w >> 2), qh = Math.max(2, h >> 2);
+    brightFB = makeRT(hw, hh); brightTex = brightFB.tex;
+    blurFB = [makeRT(qw, qh), makeRT(qw, qh)];
+    blurTex = blurFB.map(f => f.tex);
+  }
+}
+
+/* ---------------- camera ---------------- */
+
+const cam = { dist: 16.5, yaw: 0.44, pitch: 0.115, fovDeg: 42 };
+const params = { lensing: 1, density: 1, doppler: 1, exposure: 1.1, steps: 550 };
+const PRESETS = {
+  interstellar: { dist: 16.5, yaw: 0.44, pitch: 0.115, fovDeg: 42, exposure: 1.1, lensing: 1, doppler: 1, density: 1 },
+  edgeon:       { dist: 21.0, yaw: 0.30, pitch: 0.010, fovDeg: 34, exposure: 1.2, lensing: 1, doppler: 1.4, density: 1.2 },
+  faceon:       { dist: 15.0, yaw: 0.00, pitch: 1.370, fovDeg: 46, exposure: 1.0, lensing: 1, doppler: 1, density: 1 },
+  ring:         { dist: 7.6,  yaw: 0.90, pitch: 0.210, fovDeg: 55, exposure: 1.15, lensing: 1, doppler: 1, density: 1.1 },
+};
+let tween = null;
+function setPreset(name) {
+  const to = PRESETS[name];
+  if (!to) return;
+  const from = { ...cam, ...params };
+  const tgt = { ...cam, ...to };
+  tgt.yaw = cam.yaw + shortest(cam.yaw, to.yaw);
+  tween = { from, to: tgt, t0: performance.now(), dur: 1000 };
+  document.querySelectorAll('#presets .ui-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
+}
+function shortest(a, b) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; }
+const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+function camVectors() {
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const pos = [cam.dist * cp * Math.sin(cam.yaw), cam.dist * sp, cam.dist * cp * Math.cos(cam.yaw)];
+  const fl = Math.hypot(...pos);
+  const fwd = [-pos[0] / fl, -pos[1] / fl, -pos[2] / fl];
+  let r = [-fwd[2], 0, fwd[0]];                       // normalize(fwd × worldUp)
+  const rl = Math.hypot(...r) || 1; r = r.map(v => v / rl);
+  const up = [
+    r[1] * fwd[2] - r[2] * fwd[1],
+    r[2] * fwd[0] - r[0] * fwd[2],
+    r[0] * fwd[1] - r[1] * fwd[0],
+  ];
+  return { pos, fwd, r, up };
+}
+
+/* ---------------- interaction ---------------- */
+
+const ptrs = new Map();
+let lastPinch = 0, lastInteract = 0;
+canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); lastInteract = performance.now(); });
+canvas.addEventListener('pointerup', e => ptrs.delete(e.pointerId));
+canvas.addEventListener('pointercancel', e => ptrs.delete(e.pointerId));
+canvas.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  const prev = ptrs.get(e.pointerId);
+  if (ptrs.size === 1) {
+    cam.yaw -= (e.clientX - prev[0]) * 0.005;
+    cam.pitch = Math.min(1.43, Math.max(-0.35, cam.pitch + (e.clientY - prev[1]) * 0.005));
+  }
+  ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  lastInteract = performance.now();
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()];
+    const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (lastPinch) cam.dist = Math.min(60, Math.max(2.6, cam.dist * lastPinch / d));
+    lastPinch = d;
+  }
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.dist = Math.min(60, Math.max(2.6, cam.dist * Math.exp(e.deltaY * 0.0011)));
+  lastInteract = performance.now();
+}, { passive: false });
+
+// sliders
+function bindSlider(id, valId, key, fmt) {
+  const el = document.getElementById(id), val = document.getElementById(valId);
+  el.addEventListener('input', () => { params[key] = +el.value; val.textContent = fmt(+el.value); });
+  return el;
+}
+const sLens = bindSlider('sLens', 'vLens', 'lensing', v => v.toFixed(2));
+const sDens = bindSlider('sDens', 'vDens', 'density', v => v.toFixed(2));
+const sDopp = bindSlider('sDopp', 'vDopp', 'doppler', v => v.toFixed(2));
+const sExp = bindSlider('sExp', 'vExp', 'exposure', v => v.toFixed(2));
+function syncSliders() {
+  sLens.value = params.lensing; document.getElementById('vLens').textContent = params.lensing.toFixed(2);
+  sDens.value = params.density; document.getElementById('vDens').textContent = params.density.toFixed(2);
+  sDopp.value = params.doppler; document.getElementById('vDopp').textContent = params.doppler.toFixed(2);
+  sExp.value = params.exposure; document.getElementById('vExp').textContent = params.exposure.toFixed(2);
+}
+
+document.getElementById('presets').addEventListener('click', e => {
+  const b = e.target.closest('[data-preset]');
+  if (b) setPreset(b.dataset.preset);
+});
+
+// chrome toggle + fullscreen + hint fade
+let chromeOn = true;
+function setChrome(on) {
+  chromeOn = on;
+  document.querySelectorAll('.fadeable').forEach(el => el.classList.toggle('hidden', !on));
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'h' || e.key === 'H') setChrome(!chromeOn);
+  if (e.key === 'f' || e.key === 'F') toggleFs();
+  if (e.key === 'm' || e.key === 'M') toggleMusic();
+});
+function toggleFs() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
+document.getElementById('fsBtn').addEventListener('click', toggleFs);
+setTimeout(() => document.getElementById('hint').classList.add('hidden'), 9000);
+
+/* ---------------- generative ambient audio ---------------- */
+
+let actx = null, master = null, pingTimer = 0, musicOn = false;
+function buildAudio() {
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value = 0; master.connect(actx.destination);
+
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240; lp.Q.value = 0.7; lp.connect(master);
+  const lfo = actx.createOscillator(); lfo.frequency.value = 0.05;
+  const lfoG = actx.createGain(); lfoG.gain.value = 130; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start();
+  [[41.2, 'sawtooth', 0.16], [55.0, 'triangle', 0.2], [55.35, 'triangle', 0.14], [82.4, 'sine', 0.12], [110.1, 'sine', 0.05]]
+    .forEach(([f, type, g]) => {
+      const o = actx.createOscillator(); o.type = type; o.frequency.value = f;
+      const og = actx.createGain(); og.gain.value = g; o.connect(og); og.connect(lp); o.start();
+    });
+
+  const len = actx.sampleRate * 4;
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+  const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.6;
+  const wg = actx.createGain(); wg.gain.value = 0.05;
+  src.connect(bp); bp.connect(wg); wg.connect(master); src.start();
+  const wlfo = actx.createOscillator(); wlfo.frequency.value = 0.028;
+  const wlG = actx.createGain(); wlG.gain.value = 300; wlfo.connect(wlG); wlG.connect(bp.frequency); wlfo.start();
+
+  const delay = actx.createDelay(2.2); delay.delayTime.value = 0.85;
+  const fb = actx.createGain(); fb.gain.value = 0.42;
+  const dwet = actx.createGain(); dwet.gain.value = 0.5;
+  delay.connect(fb); fb.connect(delay); delay.connect(dwet); dwet.connect(master);
+
+  const notes = [110, 130.81, 164.81, 196, 220, 261.63];
+  function ping() {
+    if (!musicOn) return;
+    const f = notes[(Math.random() * notes.length) | 0];
+    const t = actx.currentTime;
+    const car = actx.createOscillator(); car.frequency.value = f;
+    const mod = actx.createOscillator(); mod.frequency.value = f * 2.76;
+    const mg = actx.createGain(); mg.gain.setValueAtTime(f * 1.4, t); mg.gain.exponentialRampToValueAtTime(1, t + 1.2);
+    mod.connect(mg); mg.connect(car.frequency);
+    const env = actx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 5.5);
+    car.connect(env); env.connect(master); env.connect(delay);
+    car.start(t); mod.start(t); car.stop(t + 6); mod.stop(t + 6);
+    pingTimer = setTimeout(ping, 4000 + Math.random() * 12000);
+  }
+  ping();
+}
+function toggleMusic() {
+  if (!actx) buildAudio();
+  if (actx.state === 'suspended') actx.resume();
+  musicOn = !musicOn;
+  master.gain.cancelScheduledValues(actx.currentTime);
+  master.gain.linearRampToValueAtTime(musicOn ? 0.8 : 0, actx.currentTime + (musicOn ? 1.6 : 0.8));
+  document.getElementById('musicBtn').classList.toggle('active', musicOn);
+}
+document.getElementById('musicBtn').addEventListener('click', toggleMusic);
+
+/* ---------------- main loop ---------------- */
+
+let scale = 1, frames = 0, fpsT = performance.now(), fps = 0, lastScaleAdj = 0;
+const hud = document.getElementById('hud');
+
+function frame(now) {
+  // tween between presets
+  if (tween) {
+    const k = Math.min(1, (now - tween.t0) / tween.dur), e = ease(k);
+    for (const key of ['dist', 'yaw', 'pitch', 'fovDeg', 'lensing', 'doppler', 'density', 'exposure']) {
+      if (tween.to[key] !== undefined) {
+        if (key in cam) cam[key] = tween.from[key] + (tween.to[key] - tween.from[key]) * e;
+        else params[key] = tween.from[key] + (tween.to[key] - tween.from[key]) * e;
+      }
+    }
+    syncSliders();
+    if (k >= 1) tween = null;
+  }
+  // slow idle drift, Interstellar-style
+  if (now - lastInteract > 6000 && !tween) cam.yaw += 0.00018;
+
+  // adaptive resolution (also shrink steps for the low tier)
+  const q = Math.min(1.6, Math.max(0.75, fps === 0 ? 1 : fps / 55));
+  params.steps = Math.min(790, Math.round(550 * q));
+
+  resize();
+  const { pos, fwd, r, up } = camVectors();
+  const t = now * 0.001;
+
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(vao);
+
+  // 1. scene -> half-float HDR
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFB.fb);
+  gl.viewport(0, 0, sceneFB.w, sceneFB.h);
+  gl.useProgram(progScene.p);
+  gl.uniform2f(progScene.u.uRes, sceneFB.w, sceneFB.h);
+  gl.uniform1f(progScene.u.uTime, t);
+  gl.uniform1f(progScene.u.uTanHalf, Math.tan(cam.fovDeg * Math.PI / 360));
+  gl.uniform1f(progScene.u.uLensing, params.lensing);
+  gl.uniform1f(progScene.u.uDensity, params.density);
+  gl.uniform1f(progScene.u.uDoppler, params.doppler);
+  gl.uniform1f(progScene.u.uSteps, params.steps);
+  gl.uniform3fv(progScene.u.uCamPos, pos);
+  gl.uniform3fv(progScene.u.uRight, r);
+  gl.uniform3fv(progScene.u.uUp, up);
+  gl.uniform3fv(progScene.u.uFwd, fwd);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // 2. bright extract (half res) + ping-pong gaussian blur (quarter res)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, brightFB.fb);
+  gl.viewport(0, 0, brightFB.w, brightFB.h);
+  gl.useProgram(progBright.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.uniform2f(progBright.u.uTexel, 1 / brightFB.w, 1 / brightFB.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  let srcTex = brightTex;
+  const taps = [[1, 0], [0, 1], [1.5, 0], [0, 1.5]];
+  for (let i = 0; i < 4; i++) {
+    const rt = blurFB[i & 1];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fb);
+    gl.viewport(0, 0, rt.w, rt.h);
+    gl.useProgram(progBlur.p);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform2f(progBlur.u.uTexel, 1 / rt.w, 1 / rt.h);
+    gl.uniform2f(progBlur.u.uDir, taps[i][0], taps[i][1]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    srcTex = rt.tex;
+  }
+
+  // 3. composite to screen
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(progComp.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.uniform1i(progComp.u.uScene, 0);
+  gl.uniform1i(progComp.u.uBloom, 1);
+  gl.uniform2f(progComp.u.uTexel, 1 / canvas.width, 1 / canvas.height);
+  gl.uniform1f(progComp.u.uExposure, params.exposure);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // fps + auto quality
+  frames++;
+  if (now - fpsT > 500) {
+    fps = frames * 1000 / (now - fpsT); frames = 0; fpsT = now;
+    if (fps < 46 && scale > 0.5 && now - lastScaleAdj > 1200) { scale = Math.max(0.5, scale * 0.9); lastScaleAdj = now; }
+    if (fps > 57 && scale < 1 && now - lastScaleAdj > 2500) { scale = Math.min(1, scale * 1.06); lastScaleAdj = now; }
+    hud.textContent = fps.toFixed(0) + ' fps · ' + Math.round(scale * 100) + '% res · ' + params.steps + ' photon steps'
+      + (cam.dist < 10.5 ? ' · ⚠ close to the photon sphere (1.5 rs)' : '') + ' · horizon = 1 rs';
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
