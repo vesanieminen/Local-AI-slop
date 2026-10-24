@@ -52,9 +52,9 @@ per frame via URL override so enough simulation steps happen within the wait.
 - `index.html` (the hub): add an `<a class="card">` block inside `.grid` —
   `img` (`src="examples/<name>/screenshot.png"`, `loading="lazy"`, real alt),
   `<h2>` title, one `<p>` of plain-language what/why, `.tags` chips with the
-  tech. Cards are ordered **coolest first** (the owner ranks by wow-factor —
-  currently living room, black hole, OutRun, coral); slot a new example where
-  its coolness belongs rather than at the end.
+  tech. Cards are ordered **coolest first** — the owner ranks by wow-factor and
+  will ask for re-orders; slot a new example where its coolness belongs
+  (ask if unsure) rather than at the end.
 - `README.md`: add a row to the examples table — `[Name](examples/<name>/)`
   plus a one-sentence summary in the same voice as the others. Keep the table
   rows in the same order as the hub cards.
