@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Commander Keen — self-playing fan demo</title>
+<meta name="description" content="A self-playing homage to Commander Keen: 320x200, 16 colors, AdLib-style FM audio. A bot plays the Galaxy Frangetrap." />
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body {
+    display: grid; place-items: center;
+    touch-action: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    touch-action: none;
+    background: #000;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen" width="320" height="200"></canvas>
+<script>
+'use strict';
+/* ---------------------------------------------------------------------------
+   COMMANDER KEEN — self-playing fan tribute demo
+   One file. No assets. No network. 320x200, 16 colors, fixed-step physics.
+   A bot runs, jumps and pew-pews through two looping levels forever.
+   Keys (arrows / WASD / space / ctrl) take over for 3 s, then the bot returns.
+   URL hooks (deterministic):  ?ff=N pre-simulates N frames, ?skiptitle=1
+--------------------------------------------------------------------------- */
+
+// ---------------------------------------------------------------- constants
+var QS = new URLSearchParams(location.search);
+var FF = Math.max(0, Math.round(+QS.get('ff') || 0));
+var SKIP_TITLE = !!QS.get('skiptitle');
+var NO_AUDIO = !!QS.get('noaudio');
+
+var W = 320, H = 200, BAR = 24, VH = H - BAR;     // screen, status bar, view
+var T = 16;                                        // tile size
+
+// The classic 16-colour Keen palette.
+var PAL = [
+  '#000000', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', '#aaaaaa',
+  '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff'
+];
+var C_BLACK = 0, C_BLUE = 1, C_GREEN = 2, C_CYAN = 3, C_RED = 4, C_MAG = 5,
+    C_BROWN = 6, C_LGRAY = 7, C_DGRAY = 8, C_LBLUE = 9, C_LGREEN = 10, C_LCYAN = 11,
+    C_LRED = 12, C_PINK = 13, C_YELLOW = 14, C_WHITE = 15;
+
+var SPR_CHARS = {
+  K: 0, B: 1, G: 2, Q: 3, R: 4, M: 5, O: 6, A: 7, D: 8,
+  b: 9, g: 10, c: 11, r: 12, p: 13, y: 14, w: 15
+};
+
+var cv = document.getElementById('screen');
+var ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ---------------------------------------------------------------- rng
+function mulberry(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------- sprites
+function makeSprite(rows) {
+  var h = rows.length, w = rows[0].length;
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var g = c.getContext('2d');
+  for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+    var ch = rows[y][x];
+    if (ch === '.' || ch === ' ') continue;
+    var ci = SPR_CHARS[ch];
+    if (ci === undefined) continue;
+    g.fillStyle = PAL[ci];
+    g.fillRect(x, y, 1, 1);
+  }
+  return c;
+}
+
+// Keen — base sprites face LEFT (authentic), flipped for running right.
+// helmet yellow w/ white stripe, pale face, green shirt, blue pants, ray gun.
+var KEEN_IDLE = makeSprite([
+  '..........KKKKKKK.........',
+  '.......KKYYYYYWWKK........',
+  '......KYYYYYYWWKKYYK......',
+  '.....KYYYYYYYWWKYYYYK.....',
+  '.....KYYYYKKKKKKKYYYYK....',
+  '.....KYKDDKKKKKKKDDKYK....',
+  '....KYYKDKKKKKKKKDKYYYK...',
+  '....KCYKAAKKKKKKKAAAYYK...',
+  '.....KKAWWKAAKKAAKWWKAK...',
+  '.....KKAWWKAAKKAAKWWKAAK..',
+  '......KAAAAARRAAAKKAK.....',
+  '.......KKAAAAAAKKAK.......',
+  '.........KGGGGGKKK........',
+  '........KGGGGGGGK.........',
+  '.....KKKGGKGGGGGGK........',
+  '..KWRRKGGKGGGGGGGK........',
+  '..KRKAKGGKGGGGGGGK........',
+  '...KAAKGGKGGGGGGK.........',
+  '....KKKGGKGGGGGK..........',
+  '.......KGGGGGGK...........',
+  '.......KGGGGGGK...........',
+  '........KKGGGKK...........',
+  '..........KBBKBBK.........',
+  '..........KBBKBBK.........',
+  '..........KBBKBBK.........',
+  '..........KBBKBBK.........',
+  '..........KBBKBBK.........',
+  '.........KBWBKWBWK........',
+  '.........KBBBKBBBK........',
+  '.........KDDDKDDDK........',
+  '..........KKK.KKK.........',
+  '..........................'
+]);
+var KEEN_WALK = makeSprite([   // legs-spread walk frame
+  '..........KKKKKKK.........',
+  '.......KKYYYYYWWKK........',
+  '......KYYYYYYWWKKYYK......',
+  '.....KYYYYYYYWWKYYYYK.....',
+  '.....KYYYYKKKKKKKYYYYK....',
+  '.....KYKDDKKKKKKKDDKYK....',
+  '....KYYKDKKKKKKKKDKYYYK...',
+  '....KCYKAAKKKKKKKAAAYYK...',
+  '.....KKAWWKAAKKAAKWWKAK...',
+  '.....KKAWWKAAKKAAKWWKAAK..',
+  '......KAAAAARRAAAKKAK.....',
+  '.......KKAAAAAAKKAK.......',
+  '.........KGGGGGKKK........',
+  '........KGGGGGGGK.........',
+  '.....KKKGGKGGGGGGK........',
+  '..KWRRKGGKGGGGGGGK........',
+  '..KRKAKGGKGGGGGGGK........',
+  '...KAAKGGKGGGGGGK.........',
+  '....KKKGGKGGGGGK..........',
+  '.......KGGGGGGK...........',
+  '.......KGGGGGGK...........',
+  '........KKGGGKK...........',
+  '.........KBBKKBBK.........',
+  '........KBBK...KBBK.......',
+  '.......KBBK.....KBBK......',
+  '......KBWBK.....KWBWK.....',
+  '......KBBBK.....KBBBK.....',
+  '......KDDDK.....KDDDK.....',
+  '.......KKK.......KKK......',
+  '..........................',
+  '..........................',
+  '..........................'
+]);
+var KEEN_JUMP = makeSprite([   // legs tucked
+  '..........KKKKKKK.........',
+  '.......KKYYYYYWWKK........',
+  '......KYYYYYYWWKKYYK......',
+  '.....KYYYYYYYWWKYYYYK.....',
+  '.....KYYYYKKKKKKKYYYYK....',
+  '.....KYKDDKKKKKKKDDKYK....',
+  '....KYYKDKKKKKKKKDKYYYK...',
+  '....KCYKAAKKKKKKKAAAYYK...',
+  '.....KKAWWKAAKKAAKWWKAK...',
+  '.....KKAWWKAAKKAAKWWKAAK..',
+  '......KAAAAARRAAAKKAK.....',
+  '.......KKAAAAAAKKAK.......',
+  '.........KGGGGGKKK........',
+  '........KGGGGGGGK.........',
+  '.....KKKGGKGGGGGGK........',
+  '..KWRRKGGKGGGGGGGK........',
+  '..KRKAKGGKGGGGGGGK........',
+  '...KAAKGGKGGGGGGK.........',
+  '....KKKGGKGGGGGK..........',
+  '.......KGGGGGGK...........',
+  '.......KGGGGGGK...........',
+  '........KKGGGKK...........',
+  '........KBBBBBBK..........',
+  '.......KBBBBBBBBK.........',
+  '.......KBBKKKBBBK.........',
+  '........KDD.KDDK..........',
+  '..........................',
+  '..........................',
+  '..........................',
+  '..........................',
+  '..........................',
+  '..........................'
+]);
+// the famous lie-flat shot pose, 30 x 13
+var KEEN_FLAT = makeSprite([
+  '................KWKK........',
+  '...............KWRWK........',
+  '.....KKK.......KWRKK........',
+  '....KYYYK......KGKK.........',
+  '...KYYAYAKKKKKKGGGKKKK......',
+  '...KYKAWWKGGGGGGGGGBBK......',
+  '...KYYAWAKGGGGGGGGGBBBK.....',
+  '...KYYAAAKGGGGGGGGGKBBK.....',
+  '...KYYYYAKGGGGGGGGGGKBBK....',
+  '...KYYYYKKGKGGGGGGGGKBWK....',
+  '....KKKKK..KKKKKKKKKKKK.....',
+  '............................',
+  '............................'
+]);
+var KEEN_DEAD = makeSprite([   // the pancake
+  '..........................',
+  '..........................',
+  '....KKKKKKKKKKKKKKKKKK....',
+  '...KYYYYAAKAAKAAARRAYK....',
+  '..KYYYYAAAAAAAAAAAAAAYK...',
+  '..KYYYYYYYYAAAAAAAAAAYK...',
+  '...KKKKKKKKKKKKKKKKKKK....'
+]);
+// Vorticon — purple, white visor band, brown feet. 20 x 18
+var VORT1 = makeSprite([
+  '.....KMMMMMK....',
+  '...KKMMMMMMMK...',
+  '..KMMMMMMMMMMK..',
+  '..KWKKWMMWKKWK..',
+  '..KWWWWWWWWWWK..',
+  '..KMMMMMMMMMMK..',
+  '.KMMKMMMMMMKMMK.',
+  '.KAAKMMMMMMKAAMK',
+  '.KMMKKKKKKKKMMM.',
+  '..KMMMMMMMMMMK..',
+  '..KMMMMMMMMMMK..',
+  '...KKMMMMMMKK...',
+  '....KMMKKMMK....',
+  '...KOOK..OOK....',
+  '...KDDK..KDDK...',
+  '................'
+]);
+var VORT2 = makeSprite([
+  '.....KMMMMMK....',
+  '...KKMMMMMMMK...',
+  '..KMMMMMMMMMMK..',
+  '..KWKKWMMWKKWK..',
+  '..KWWWWWWWWWWK..',
+  '..KMMMMMMMMMMK..',
+  '..KMMMMMMMMMMK..',
+  '.KMMKMMMMMMKMMK.',
+  '.KAAKMMMMMMKAAMK',
+  '..KMMMMMMMMMMK..',
+  '..KMMMMMMMMMMK..',
+  '...KKMMMMMMKK...',
+  '....KMMKKMMK....',
+  '....KOOKOOK.....',
+  '....KDDKKDDK....',
+  '................'
+]);
+// Vortigun — floating purple gun pod, red barrel. 22 x 16
+var VGUN = makeSprite([
+  '.......KKKKKKKK.......',
+  '.....KKMMMMMMMMKK.....',
+  '....KMMWWKKMMMMMMK....',
+  '....KMMWWKKMMMMMMMK...',
+  '.....KMMMMMMMMMMMK....',
+  '......KMMMMMMMMK......',
+  '.......KMMMMMK........',
+  '......KRRKKKK.........',
+  '.....KRWK...........',
+  '.....KRRK.............',
+  '......KK..............',
+  '......................'
+]);
+
+// procedural prop canvases -------------------------------------------------
+function canvasOf(w, h, fn) {
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  fn(c.getContext('2d'), w, h);
+  return c;
+}
+var DOOR = canvasOf(20, 42, function (g) {
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(0, 0, 20, 42);
+  g.fillStyle = PAL[C_LGRAY]; g.fillRect(1, 1, 18, 41);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(2, 2, 16, 2); g.fillRect(2, 2, 2, 39);
+  g.fillStyle = PAL[C_DGRAY]; g.fillRect(6, 4, 8, 30);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(7, 5, 6, 1);
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(4, 35, 12, 6);
+  g.fillStyle = PAL[C_YELLOW]; g.fillRect(14, 22, 2, 2);
+});
+var CUP = canvasOf(14, 14, function (g) {
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(2, 1, 10, 6);
+  g.fillStyle = PAL[C_YELLOW]; g.fillRect(3, 2, 8, 4);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(4, 2, 1, 2);
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(1, 2, 1, 3); g.fillRect(12, 2, 1, 3);
+  g.fillStyle = PAL[C_YELLOW]; g.fillRect(6, 7, 2, 3);
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(4, 10, 6, 2);
+  g.fillStyle = PAL[C_YELLOW]; g.fillRect(5, 11, 4, 1);
+});
+var ONEUP = canvasOf(16, 16, function (g) {
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(0, 0, 16, 16);
+  g.fillStyle = PAL[C_BLUE]; g.fillRect(1, 1, 14, 14);
+  g.fillStyle = PAL[C_YELLOW]; g.fillRect(4, 3, 8, 4);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(7, 3, 2, 4);
+  g.fillStyle = PAL[C_LGRAY]; g.fillRect(5, 7, 6, 4);
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(6, 8, 1, 2); g.fillRect(9, 8, 1, 2);
+  g.fillStyle = PAL[C_PINK]; g.fillRect(3, 12, 2, 2);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(7, 12, 2, 2);
+  g.fillStyle = PAL[C_PINK]; g.fillRect(11, 12, 2, 2);
+});
+function rockTile(rock) { // beveled stone block, E4 style
+  var c = canvasOf(16, 16, function (g) {
+    g.fillStyle = PAL[rock ? C_LGRAY : C_DGRAY]; g.fillRect(0, 0, 16, 16);
+    g.fillStyle = PAL[rock ? C_WHITE : C_LGRAY];
+    g.fillRect(0, 0, 16, 1); g.fillRect(0, 0, 1, 16);
+    g.fillStyle = PAL[rock ? C_DGRAY : C_BLACK];
+    g.fillRect(0, 15, 16, 1); g.fillRect(15, 0, 1, 16);
+    g.fillStyle = PAL[rock ? C_DGRAY : C_BLACK];
+    g.fillRect(3, 6, 1, 1); g.fillRect(9, 3, 1, 1); g.fillRect(11, 10, 1, 1); g.fillRect(6, 12, 1, 1);
+  });
+  return c;
+}
+var TILE_ROCK = rockTile(true), TILE_METAL = rockTile(false);
+var TILE_ICK = canvasOf(16, 16, function (g) {  // the ick! silver spikes
+  for (var s = 0; s < 3; s++) {
+    var bx = s * 5 + 1;
+    for (var y = 4; y < 16; y++) {
+      var wq = Math.max(1, (y - 4) * 0.6);
+      g.fillStyle = PAL[C_BLACK];
+      g.fillRect(bx + 2.5 - wq, y, wq * 2, 1);
+      g.fillStyle = PAL[C_LGRAY];
+      g.fillRect(bx + 2.5 - wq + 0.5, y, wq, 1);
+    }
+  }
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(0, 14, 16, 2);
+  g.fillStyle = PAL[C_DGRAY]; g.fillRect(0, 14, 16, 1);
+});
+var BULLET = canvasOf(9, 3, function (g) {
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(1, 1, 7, 1);
+  g.fillStyle = PAL[C_LRED]; g.fillRect(0, 1, 1, 1); g.fillRect(2, 0, 2, 1); g.fillRect(2, 2, 2, 1);
+});
+var EBULLET = canvasOf(7, 7, function (g) {
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(1, 1, 5, 5); g.fillRect(0, 2, 7, 3); g.fillRect(2, 0, 3, 7);
+  g.fillStyle = PAL[C_LRED]; g.fillRect(1, 2, 5, 3); g.fillRect(2, 1, 3, 5);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(2, 2, 1, 1);
+});
+var SPARK = canvasOf(9, 9, function (g) {  // 4-point twinkle, like the box art
+  g.fillStyle = PAL[C_WHITE];
+  g.fillRect(4, 0, 1, 9); g.fillRect(0, 4, 9, 1);
+  g.fillRect(3, 3, 3, 3);
+});
+
+// ---------------------------------------------------------------- 5x7 font
+var FONT = {};
+(function () {
+  var G = {
+    'A': '01110,10001,10001,11111,10001,10001,10001',
+    'B': '11110,10001,10001,11110,10001,10001,11110',
+    'C': '01110,10001,10000,10000,10000,10001,01110',
+    'D': '11110,10001,10001,10001,10001,10001,11110',
+    'E': '11111,10000,10000,11110,10000,10000,11111',
+    'F': '11111,10000,10000,11110,10000,10000,10000',
+    'G': '01110,10001,10000,10111,10001,10001,01111',
+    'H': '10001,10001,10001,11111,10001,10001,10001',
+    'I': '11111,00100,00100,00100,00100,00100,11111',
+    'J': '00111,00010,00010,00010,00010,10010,01100',
+    'K': '10001,10010,10100,11000,10100,10010,10001',
+    'L': '10000,10000,10000,10000,10000,10000,11111',
+    'M': '10001,11011,11011,10101,10001,10001,10001',
+    'N': '10001,11001,10101,10011,10001,10001,10001',
+    'O': '01110,10001,10001,10001,10001,10001,01110',
+    'P': '11110,10001,10001,11110,10000,10000,10000',
+    'Q': '01110,10001,10001,10001,10101,01110,00010',
+    'R': '11110,10001,10001,11110,10100,10010,10001',
+    'S': '01111,10000,10000,01110,00001,00001,11110',
+    'T': '11111,00100,00100,00100,00100,00100,00100',
+    'U': '10001,10001,10001,10001,10001,10001,01110',
+    'V': '10001,10001,10001,10001,10001,01010,00100',
+    'W': '10001,10001,10001,10101,10101,10101,01010',
+    'X': '10001,10001,01010,00100,01010,10001,10001',
+    'Y': '10001,10001,01010,00100,00100,00100,00100',
+    'Z': '11111,00001,00010,00100,01000,10000,11111',
+    '0': '01110,10001,10011,10101,11001,10001,01110',
+    '1': '00100,01100,00100,00100,00100,00100,01110',
+    '2': '01110,10001,00001,00010,00100,01000,11111',
+    '3': '11111,00010,00100,00010,00001,10001,01110',
+    '4': '00010,00110,01010,10010,11111,00010,00010',
+    '5': '11111,10000,11110,00001,00001,10001,01110',
+    '6': '00110,01000,10000,11110,10001,10001,01110',
+    '7': '11111,00001,00010,00100,01000,01000,01000',
+    '8': '01110,10001,10001,01110,10001,10001,01110',
+    '9': '01110,10001,10001,01111,00001,00010,01100',
+    ' ': '00000,00000,00000,00000,00000,00000,00000',
+    '-': '00000,00000,00000,11111,00000,00000,00000',
+    '+': '00000,00100,00100,11111,00100,00100,00000',
+    ':': '00000,00100,00100,00000,00100,00100,00000',
+    '.': '00000,00000,00000,00000,00000,01100,01100',
+    '!': '00100,00100,00100,00100,00100,00000,00100',
+    '/': '00001,00001,00010,00100,01000,10000,10000',
+    '(': '00010,00100,01000,01000,01000,00100,00010',
+    ')': '01000,00100,00010,00010,00010,00100,01000',
+    ',': '00000,00000,00000,00000,00100,00100,01000',
+    '\'': '00100,00100,00000,00000,00000,00000,00000',
+    '?': '01110,10001,00001,00010,00100,00000,00100'
+  };
+  for (var k in G) FONT[k] = G[k].split(',');
+})();
+
+function textW(s, sc) { return s.length * 6 * sc - sc; }
+function drawText(s, x, y, ci, sc) {
+  sc = sc || 1;
+  s = s.toUpperCase();
+  ctx.fillStyle = PAL[ci];
+  for (var i = 0; i < s.length; i++) {
+    var gl = FONT[s[i]]; if (!gl) continue;
+    var gx = x + i * 6 * sc;
+    for (var r = 0; r < 7; r++) for (var c = 0; c < 5; c++) {
+      if (gl[r][c] === '1') ctx.fillRect(gx + c * sc, y + r * sc, sc, sc);
+    }
+  }
+}
+function drawTextC(s, cx, y, ci, sc) { drawText(s, Math.round(cx - textW(s, sc) / 2), y, ci, sc); }
+function draw3D(s, x, y, sc, dropCi) {  // silver extruded letters, like the box logo
+  var i, j;
+  drawText(s, x + 2 * sc, y + 2 * sc, dropCi === undefined ? C_MAG : dropCi, sc);
+  for (i = -1; i <= 1; i++) for (j = -1; j <= 1; j++)
+    if (i || j) drawText(s, x + i, y + j, C_BLACK, sc);
+  drawText(s, x - 1, y - 1, C_WHITE, sc);
+  drawText(s, x, y, C_LGRAY, sc);
+}
+
+// ---------------------------------------------------------------- audio
+var AC = null, master = null, musicOn = false;
+function ensureAudio() {
+  if (AC || NO_AUDIO) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.42;
+    master.connect(AC.destination);
+    musicOn = true;
+    musicResync();
+  } catch (e) { /* silent demo is still a demo */ }
+}
+function fm(t, f0, f1, dur, carrier, depth, vol, type) {
+  if (!AC) return;
+  var c = AC.createOscillator(), m = AC.createOscillator(), mg = AC.createGain(), g = AC.createGain();
+  c.type = type || 'sine'; m.type = 'sine';
+  c.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) c.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  m.frequency.setValueAtTime(f0 * 3 + 40, t);
+  mg.gain.setValueAtTime(depth, t);
+  mg.gain.exponentialRampToValueAtTime(1, t + dur);
+  m.connect(mg); mg.connect(c.frequency);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  c.connect(g); g.connect(master);
+  c.start(t); m.start(t); c.stop(t + dur + .02); m.stop(t + dur + .02);
+}
+function noiseHit(t, dur, vol, hp) {
+  if (!AC) return;
+  var n = AC.createBufferSource(), buf = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate),
+      d = buf.getChannelData(0);
+  for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  n.buffer = buf;
+  var f = AC.createBiquadFilter(); f.type = hp ? 'highpass' : 'lowpass'; f.frequency.value = hp || 1200;
+  var g = AC.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  n.connect(f); f.connect(g); g.connect(master);
+  n.start(t); n.stop(t + dur);
+}
+var sfx = {
+  shoot: function () { var t = AC.currentTime; fm(t, 1150, 180, 0.09, 2, 400, 0.30, 'square'); noiseHit(t, 0.03, 0.10, 3000); },
+  jump: function () { var t = AC.currentTime; fm(t, 260, 540, 0.10, 1, 60, 0.25); },
+  kill: function () { var t = AC.currentTime; fm(t, 700, 90, 0.20, 2, 300, 0.35, 'square'); noiseHit(t, 0.08, 0.18, 900); },
+  item: function () { var t = AC.currentTime; fm(t, 660, 660, 0.07, 1, 90, 0.30); fm(t + .07, 990, 990, 0.09, 1, 90, 0.30); },
+  life: function () { var t = AC.currentTime, n = [440, 554, 659, 880]; for (var i = 0; i < 4; i++) fm(t + i * .09, n[i], n[i], 0.12, 1, 140, 0.30); },
+  death: function () { var t = AC.currentTime; fm(t, 440, 70, 0.55, 1, 250, 0.40, 'square'); noiseHit(t, 0.2, 0.15, 600); },
+  door: function () { var t = AC.currentTime, n = [392, 494, 587, 784, 988]; for (var i = 0; i < 5; i++) fm(t + i * .08, n[i], n[i], 0.14, 1, 130, 0.30); },
+  tick: function () { var t = AC.currentTime; fm(t, 1200, 900, 0.05, 1, 100, 0.25); }
+};
+
+// AdLib-flavoured original loop: galloping bass + bouncy lead, A minor.
+function midiN(s) { var m = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, r = /^([A-G])(#?)(\d)$/.exec(s); return 12 * (+r[3] + 1) + m[r[1]] + (r[2] ? 1 : 0); }
+function hz(n) { return 440 * Math.pow(2, (n - 69) / 12); }
+var BPM = 154, E8 = 60 / BPM / 2;
+var MELODY = ('A4 . A5 G5 E5 . D5 . | C5 . E5 D5 C5 . A4 . | D5 . F5 E5 D5 . C5 . | A4 C5 E5 D5 C5 A4 . . | ' +
+              'E5 . A5 C6 A5 G5 . . | E5 . G5 A5 B4 D5 A4 . | C5 E5 G5 A5 G5 E5 C5 . | D5 F5 A5 G5 E5 D5 A4 .').split(/\s*\|\s*/).join(' ').split(' ');
+var BASSPAT = ('A2 A2 A3 A2 C3 C3 B2 B2 | A2 A2 A3 A2 C3 C3 E3 E3 | F2 F2 F3 F2 A2 A2 G2 G2 | E2 E2 E3 E2 C3 B2 A2 E2').split(/\s*\|\s*/).join(' ').split(' ');
+var musicAt = 0, musicStep = 0, musicTimer = null;
+function musicResync() {
+  if (!AC) return;
+  musicAt = AC.currentTime + 0.08; musicStep = 0;
+  if (!musicTimer) musicTimer = setInterval(musicTick, 120);
+}
+function musicTick() {
+  if (!AC || !musicOn) return;
+  while (musicAt < AC.currentTime + 0.45) {
+    var s = musicStep % 64, t = musicAt;
+    var mel = MELODY[s];
+    if (mel !== '.') fm(t, hz(midiN(mel)), hz(midiN(mel)), E8 * 0.92, 1, 320, 0.20, 'square');
+    var bas = BASSPAT[s % 32];
+    if (bas !== '.') fm(t, hz(midiN(bas)), hz(midiN(bas)), E8 * 0.85, 2, 120, 0.30, 'square');
+    if (s % 8 === 0) { fm(t, 150, 45, 0.14, 2, 30, 0.55); }           // kick
+    if (s % 8 === 4) { noiseHit(t, 0.10, 0.16, 1800); }               // snare
+    if (s % 2 === 0) { noiseHit(t, 0.02, 0.045, 6000); }              // hat
+    musicAt += E8; musicStep++;
+  }
+}
+
+// ---------------------------------------------------------------- levels
+// Maps are built from rect fills: '#' rock, '=' metal, '^' ick (hurt, not
+// solid), and spawns P keen, V vorticon, G vortigun, c cup, L 1UP, D door.
+// Spawn tiles sit where the entity's FEET are (one tile above the floor).
+function buildMap(w, ops) {
+  var g = [], r, c;
+  for (r = 0; r < 11; r++) { g.push([]); for (c = 0; c < w; c++) g[r].push('.'); }
+  function f(r0, r1, c0, c1, ch) {
+    for (var rr = r0; rr <= r1; rr++) for (var cc = c0; cc <= c1; cc++) g[rr][cc] = ch;
+  }
+  var ents = [];
+  function s(type, r, c) { ents.push({ t: type, r: r, c: c }); }
+  ops(f, s);
+  return { grid: g, ents: ents, w: w, h: 11 };
+}
+
+var LEVELS = [
+  {
+    name: 'STEPPING STONES', label: 'LEVEL 4 - 1', theme: 'space',
+    map: buildMap(176, function (f, s) {
+      f(9, 10, 0, 27, '#');   s('P', 8, 3);   s('V', 8, 16);
+      f(8, 10, 32, 45, '#');  s('c', 5, 38);
+      f(9, 10, 49, 60, '#');  s('V', 8, 54);  s('^', 8, 57);
+      f(7, 10, 61, 70, '#');  s('G', 6, 66);
+      f(9, 10, 75, 90, '#');  s('V', 8, 79);  s('c', 5, 82);  s('V', 8, 85);
+      f(7, 10, 94, 97, '#');
+      f(8, 10, 102, 107, '#');
+      f(9, 10, 111, 128, '#'); s('^', 8, 120); s('^', 8, 121);
+                               s('L', 5, 117); s('V', 8, 127);
+      f(9, 10, 133, 150, '#'); s('V', 8, 137); s('c', 5, 141); s('G', 8, 143); s('V', 8, 147);
+      f(8, 10, 155, 175, '#'); s('D', 7, 170);
+      f(8, 10, 102, 107, '#'); s('G', 7, 104);
+    })
+  },
+  {
+    name: 'THE GALAXY FRANGETRAP', label: 'LEVEL 4 - 4', theme: 'fringe',
+    map: buildMap(150, function (f, s) {
+      f(9, 10, 0, 40, '=');   s('P', 8, 2);   s('V', 8, 12);  s('V', 8, 20);
+                               s('^', 8, 26); s('^', 8, 27);
+      f(7, 10, 33, 35, '=');  s('G', 8, 39);
+      f(9, 10, 44, 70, '=');  s('c', 6, 52);  s('V', 8, 56);  s('V', 8, 62);
+      f(9, 10, 74, 100, '='); s('^', 8, 82);  s('^', 8, 83);  s('^', 8, 84); s('G', 8, 90);
+      f(8, 10, 101, 103, '='); f(7, 10, 104, 106, '='); f(6, 10, 107, 110, '=');
+                               s('V', 5, 108);
+                               s('L', 5, 112);
+      f(9, 10, 114, 145, '='); s('G', 8, 121); s('c', 6, 127); s('V', 8, 132); s('V', 8, 138);
+                               s('D', 8, 142);
+    })
+  }
+];
+
+// ---------------------------------------------------------------- backgrounds
+var rnd0 = mulberry(0xceed);
+function dither(g, x, y, w, h, ci, density, rng) {
+  g.fillStyle = PAL[ci];
+  for (var yy = y; yy < y + h; yy++) for (var xx = x; xx < x + w; xx++)
+    if (rng() < density) g.fillRect(xx, yy, 1, 1);
+}
+function makeSky(theme) {
+  var c = document.createElement('canvas'); c.width = W; c.height = VH;
+  var g = c.getContext('2d'), rng = mulberry(theme === 'space' ? 7771 : 4242), x, y, band;
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(0, 0, W, VH);
+  var top = theme === 'space' ? C_MAG : C_DGRAY;
+  // CGA-style dot dither: purple (or gray) haze thickest at the top
+  for (y = 0; y < VH; y++) {
+    band = 1 - y / VH;
+    var dens = 0.08 + (theme === 'space' ? 0.58 : 0.26) * band;
+    g.fillStyle = PAL[top];
+    for (x = 0; x < W; x++) if (rng() < dens) g.fillRect(x, y, 1, 1);
+    if (rng() < 0.25) { g.fillStyle = PAL[C_BLACK]; g.fillRect(rng() * W | 0, y, 2 + (rng() * 20 | 0), 1); }
+  }
+  // stars
+  for (var i = 0; i < 90; i++) {
+    g.fillStyle = PAL[rng() < 0.7 ? C_WHITE : C_LGRAY];
+    g.fillRect(rng() * W | 0, rng() * (VH - 30) | 0, 1, 1);
+  }
+  if (theme === 'space') {
+    // orange nebula glow along the bottom, like the box art
+    dither(g, 0, VH - 60, W, 60, C_BROWN, 0.09, rng);
+    dither(g, 0, VH - 34, W, 34, C_LRED, 0.12, rng);
+    dither(g, 0, VH - 14, W, 14, C_BROWN, 0.20, rng);
+    dither(g, 60, 70, 120, 40, C_BROWN, 0.08, rng);
+  } else {
+    dither(g, 0, VH - 40, W, 40, C_MAG, 0.10, rng);
+  }
+  return c;
+}
+var SKY = { space: makeSky('space'), fringe: makeSky('fringe') };
+
+function makeStarsLayer(seed) {
+  var c = document.createElement('canvas'); c.width = 640; c.height = VH;
+  var g = c.getContext('2d'), rng = mulberry(seed);
+  for (var i = 0; i < 130; i++) {
+    g.fillStyle = PAL[rng() < 0.5 ? C_WHITE : C_LGRAY];
+    g.fillRect(rng() * 640 | 0, rng() * (VH - 20) | 0, 1, 1);
+  }
+  return c;
+}
+var STARS_FAR = makeStarsLayer(31), STARS_NEAR = makeStarsLayer(57);
+
+var EARTH = canvasOf(170, 170, function (g) {   // home, bottom-left, like the cover
+  var rng = mulberry(99), cx = 85, cy = 85, r = 78, x, y;
+  for (y = -r; y <= r; y++) for (x = -r; x <= r; x++) {
+    var d = x * x + y * y;
+    if (d > r * r) continue;
+    var edge = d > (r - 3) * (r - 3);
+    g.fillStyle = PAL[edge ? C_BLUE : C_BLUE];
+    g.fillRect(cx + x, cy + y, 1, 1);
+  }
+  // landmasses
+  for (var l = 0; l < 5; l++) {
+    var lx = cx + (rng() - 0.5) * 120, ly = cy + (rng() - 0.5) * 120;
+    for (var i = 0; i < 240; i++) {
+      var a = rng() * 6.28, rr = rng() * 14 * (1 - l * 0.1);
+      var px = (lx + Math.cos(a) * rr) | 0, py = (ly + Math.sin(a) * rr * 0.6) | 0;
+      if ((px - cx) * (px - cx) + (py - cy) * (py - cy) < (r - 2) * (r - 2))
+        g.fillStyle = PAL[C_GREEN], g.fillRect(px, py, 1 + (rng() * 2 | 0), 1);
+    }
+  }
+  // cloud swirls
+  for (var cl = 0; cl < 4; cl++) {
+    var ox = cx + (rng() - 0.5) * 130, oy = cy + (rng() - 0.5) * 130;
+    for (var a2 = 0; a2 < 26; a2++) {
+      var t = a2 / 26 * 3.4, px2 = (ox + Math.cos(t * 2) * t * 5) | 0, py2 = (oy + Math.sin(t * 2) * t * 3) | 0;
+      if ((px2 - cx) * (px2 - cx) + (py2 - cy) * (py2 - cy) < (r - 1) * (r - 1))
+        g.fillStyle = PAL[C_WHITE], g.fillRect(px2, py2, 2, 1);
+    }
+  }
+});
+var ASTEROID = canvasOf(26, 22, function (g) {  // gray rock w/ craters
+  var rng = mulberry(5);
+  for (var y = 0; y < 22; y++) for (var x = 0; x < 26; x++) {
+    var dx = (x - 13) / 13, dy = (y - 11) / 11;
+    if (dx * dx + dy * dy < 0.85 + rng() * 0.25) {
+      g.fillStyle = PAL[dx + dy < 0 ? C_LGRAY : C_DGRAY];
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  g.fillStyle = PAL[C_DGRAY]; g.fillRect(8, 7, 4, 3); g.fillRect(15, 12, 3, 2);
+});
+
+var HEAD = canvasOf(16, 16, function (g) {   // status-bar Keen bust
+  g.fillStyle = PAL[C_YELLOW]; g.fillRect(3, 1, 10, 6);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(7, 1, 2, 6);
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(2, 7, 12, 1);
+  g.fillStyle = PAL[C_LGRAY]; g.fillRect(4, 8, 8, 5);
+  g.fillStyle = PAL[C_BLACK]; g.fillRect(5, 9, 1, 2); g.fillRect(10, 9, 1, 2);
+  g.fillStyle = PAL[C_RED]; g.fillRect(7, 12, 2, 1);
+  g.fillStyle = PAL[C_GREEN]; g.fillRect(3, 13, 10, 2);
+});
+var GUNICO = canvasOf(12, 8, function (g) {
+  g.fillStyle = PAL[C_RED]; g.fillRect(2, 2, 8, 3);
+  g.fillStyle = PAL[C_WHITE]; g.fillRect(10, 2, 2, 3);
+  g.fillStyle = PAL[C_BROWN]; g.fillRect(3, 5, 3, 3);
+});
+
+var BOSS_HEAD = canvasOf(150, 132, function (g) {
+  // the grinning Vorticommander, straight off the box
+  var cx = 74, cy = 62, i, x, y;
+  // ribbed hoses behind
+  for (var hy = 70; hy < 132; hy += 6) {
+    g.fillStyle = PAL[C_BLACK]; g.fillRect(6, hy, 16, 5); g.fillRect(126, hy, 16, 5);
+    g.fillStyle = PAL[C_DGRAY]; g.fillRect(6, hy, 16, 1);
+  }
+  // purple helmet dome
+  for (y = -52; y <= 52; y++) for (x = -60; x <= 60; x++) {
+    var u = x / 60, v = y / 52;
+    if (u * u + v * v > 1) continue;
+    var top = v < 0;
+    g.fillStyle = PAL[top && u * u + (v + 0.5) * (v + 0.5) < 0.35 ? C_PINK : C_MAG];
+    g.fillRect(cx + x, cy + y, 1, 1);
+  }
+  g.fillStyle = PAL[C_BLACK];
+  // brow ridge
+  g.fillStyle = PAL[C_BLACK];
+  g.fillRect(cx - 52, cy - 18, 104, 4);
+  // eyes: yellow-green, slit pupils
+  [[-26, 0], [26, 0]].forEach(function (e) {
+    for (y = -12; y <= 10; y++) for (x = -14; x <= 14; x++) {
+      if ((x / 14) * (x / 14) + (y / 11) * (y / 11) <= 1) {
+        g.fillStyle = PAL[C_LGREEN];
+        if (Math.abs(x) < 3 && Math.abs(y) < 10) g.fillStyle = PAL[C_BLACK];
+        g.fillRect(cx + e[0] + x, cy - 8 + y, 1, 1);
+      }
+    }
+  });
+  // silver snout with the big toothy grin
+  for (y = 8; y <= 40; y++) for (x = -48; x <= 48; x++) {
+    var u2 = x / 48, v2 = (y - 24) / 16;
+    if (u2 * u2 + v2 * v2 > 1) continue;
+    g.fillStyle = PAL[y < 24 ? C_LGRAY : C_WHITE];
+    g.fillRect(cx + x, cy + y, 1, 1);
+  }
+  g.fillStyle = PAL[C_BLACK];
+  g.fillRect(cx - 44, cy + 22, 88, 3);                 // grin line
+  for (x = -40; x <= 40; x += 8) g.fillRect(cx + x, cy + 16, 1, 6);  // teeth gaps top
+  for (x = -36; x <= 36; x += 8) g.fillRect(cx + x, cy + 25, 1, 5);  // teeth gaps bottom
+});
+
+// ---------------------------------------------------------------- world state
+var score = 0, lives = 3, levelIdx = 0, loops = 0, deathsTotal = 0;
+var state = 'title', stateT = 0, frame = 0;
+var L = null, grid = null, mapW = 0, theme = 'space';
+var keen = null, foes = [], shots = [], eshots = [], items = [], parts = [], pops = [];
+var doorRect = null, cam = 0;
+var manualUntil = -1, keys = {};
+
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function aabb(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function solid(tx, ty) {
+  if (tx < 0 || tx >= mapW) return true;
+  if (ty < 0 || ty >= 11) return false;
+  var ch = grid[ty][tx];
+  return ch === '#' || ch === '=';
+}
+function isIck(tx, ty) {
+  if (tx < 0 || tx >= mapW || ty < 0 || ty >= 11) return false;
+  return grid[ty][tx] === '^';
+}
+
+function resetLevel() {
+  L = LEVELS[levelIdx];
+  grid = L.map.grid; mapW = L.map.w; theme = L.theme;
+  foes = []; shots = []; eshots = []; items = []; parts = []; pops = [];
+  doorRect = null;
+  for (var i = 0; i < L.map.ents.length; i++) {
+    var e = L.map.ents[i], x = e.c * T, y = (e.r + 1) * T;
+    if (e.t === 'P') keen = mkKeen(x + 2, y);
+    else if (e.t === 'V') foes.push({ type: 'V', x: x + 1, y: y - 13, w: 14, h: 13, dir: i % 2 ? -1 : 1, vx: 0, vy: 0, alive: true, home: x + 8, anim: i * 7, hopT: 40 + i * 11, onG: false, hitWall: false });
+    else if (e.t === 'G') foes.push({ type: 'G', x: x + 1, y: y - 13, w: 15, h: 13, dir: -1, vx: 0, vy: 0, alive: true, home: x + 8, anim: 0, cd: 80 + i * 13, onG: true, hitWall: false });
+    else if (e.t === 'c') items.push({ type: 'c', x: x + 1, y: y - 14, w: 14, h: 14, taken: false });
+    else if (e.t === 'L') items.push({ type: 'L', x: x, y: y - 16, w: 16, h: 16, taken: false });
+    else if (e.t === 'D') doorRect = { x: x - 2, y: y - 42, w: 20, h: 42 };
+  }
+  cam = clamp(keen.x - 140, 0, mapW * T - W);
+}
+function mkKeen(x, footY) {
+  return { x: x, y: footY - 28, w: 13, h: 28, vx: 0, vy: 0, onG: false,
+           face: -1, anim: 0, idle: 0, flat: 0, flatT: 0, shootT: 0, want: 1, wantJump: false, hunt: false, dead: false };
+}
+function setFlat(f) {
+  if (!!f === !!keen.flat) return;
+  if (f) { keen.y += keen.h - 12; keen.h = 12; keen.flat = 1; keen.vx = 0; }
+  else { keen.y -= keen.h; keen.h = 28; keen.y += keen.h; keen.y -= 28; keen.flat = 0; }
+}
+function keenShoot() {
+  var by = keen.flat ? keen.y + keen.h - 10 : keen.y + keen.h - 13;
+  shots.push({ x: keen.face < 0 ? keen.x - 9 : keen.x + keen.w, y: by - 2, w: 9, h: 4, vx: 3.5 * keen.face, ttl: 90 });
+  sfx.shoot();
+}
+
+// ---------------------------------------------------------------- physics
+function collideX(e) {
+  e.hitWall = false;
+  e.x += e.vx;
+  var ty0 = Math.floor(e.y / T), ty1 = Math.floor((e.y + e.h - 1) / T), ty;
+  if (e.vx > 0) {
+    var tx = Math.floor((e.x + e.w - 1) / T);
+    for (ty = ty0; ty <= ty1; ty++) if (solid(tx, ty)) { e.x = tx * T - e.w; e.vx = 0; e.hitWall = true; break; }
+  } else if (e.vx < 0) {
+    var tx2 = Math.floor(e.x / T);
+    for (ty = ty0; ty <= ty1; ty++) if (solid(tx2, ty)) { e.x = (tx2 + 1) * T; e.vx = 0; e.hitWall = true; break; }
+  }
+}
+function collideY(e) {
+  e.y += e.vy;
+  var tx0 = Math.floor(e.x / T), tx1 = Math.floor((e.x + e.w - 1) / T), tx;
+  e.onG = false;
+  if (e.vy > 0) {
+    var ty = Math.floor((e.y + e.h) / T);
+    for (tx = tx0; tx <= tx1; tx++) if (solid(tx, ty)) { e.y = ty * T - e.h; e.vy = 0; e.onG = true; break; }
+  } else if (e.vy < 0) {
+    var ty2 = Math.floor(e.y / T);
+    for (tx = tx0; tx <= tx1; tx++) if (solid(tx, ty2)) { e.y = (ty2 + 1) * T; e.vy = 0; break; }
+  }
+}
+
+// ---------------------------------------------------------------- the bot
+function botBrain() {
+  var kx = keen.x + keen.w / 2, kb = keen.y + keen.h, i;
+  keen.want = 1; keen.wantJump = false; keen.hunt = false;
+
+  // leap over incoming enemy fire (early, like a wary player)
+  for (i = 0; i < eshots.length; i++) {
+    var b = eshots[i], bx = b.x + 3 - kx;
+    if (keen.onG && Math.abs(b.y + 3 - (keen.y + keen.h / 2)) < 16 && Math.abs(bx) < 72 && bx * b.vx < 0)
+      keen.wantJump = true;
+  }
+  // nearest foe at our floor level: close in, stop, lie flat, pew
+  var tgt = null, td = 1e9;
+  for (i = 0; i < foes.length; i++) {
+    var f = foes[i];
+    if (!f.alive) continue;
+    var fx = f.x + f.w / 2, d = fx - kx;
+    if (Math.abs(f.y + f.h - kb) < (f.type === 'G' ? 26 : 16) && Math.abs(d) < 84 && Math.abs(d) < td) { tgt = f; td = Math.abs(d); }
+  }
+  if (tgt) {
+    keen.hunt = true;
+    if (td > 52) keen.want = tgt.x + tgt.w / 2 > kx ? 1 : -1;
+    else { keen.want = 0; keen.face = tgt.x + tgt.w / 2 > kx ? 1 : -1; }
+  }
+  // grab floaty prizes with a hop — but never hop into a live foe
+  for (i = 0; i < items.length; i++) {
+    var it = items[i];
+    if (it.taken) continue;
+    var foeNear = false;
+    for (var q = 0; q < foes.length; q++)
+      if (foes[q].alive && Math.abs(foes[q].x - keen.x) < 90) foeNear = true;
+    if (!foeNear && Math.abs(it.x + it.w / 2 - kx) < 9 && it.y + it.h < kb - 24 && keen.onG && !keen.flat)
+      keen.wantJump = true;
+  }
+  // terrain reading: walls, ick, gaps
+  var ahead = Math.floor((keen.x + keen.w + 5) / T);
+  var kneeTy = Math.floor((kb - 8) / T);
+  if (solid(ahead, kneeTy) || isIck(ahead, kneeTy) || isIck(ahead, Math.floor((kb - 2) / T))) {
+    keen.want = 1; if (keen.onG) keen.wantJump = true;
+  }
+  var ahead2 = Math.floor((keen.x + keen.w + 10) / T);
+  var footTy = Math.floor((kb + 2) / T);
+  if (!solid(ahead2, footTy)) {
+    var stepDown = solid(ahead2, footTy + 1) || solid(ahead2, footTy + 2);
+    if (!stepDown) { keen.want = 1; if (keen.onG) keen.wantJump = true; }
+  }
+  // SAFETY: never drift or walk onto a foe. In the air: kill forward speed if
+  // anything live is within 60px; on the ground: hard stop at point-blank.
+  for (var q2 = 0; q2 < foes.length; q2++) {
+    var f2 = foes[q2];
+    if (!f2.alive) continue;
+    if (Math.abs((f2.y + f2.h) - kb) > 30) continue; // foe on another level: not our problem
+    var d2 = f2.x + f2.w / 2 - kx;
+    if (!keen.onG && Math.abs(d2) < 60) { keen.want = 0; break; }
+    if (keen.onG && Math.abs(d2) < 36) { keen.want = 0; keen.face = d2 > 0 ? 1 : -1; break; }
+  }
+}
+
+// ---------------------------------------------------------------- keen update
+function keenAct() {
+  var manual = performance.now() < manualUntil;
+  var want = 0, wantJump = false;
+  if (manual) {
+    if (keys.left) want = -1; else if (keys.right) want = 1;
+    wantJump = !!keys.jump;
+    if (keys.fire && keen.shootT <= 0 && !keen.flat) { keenShoot(); keen.shootT = 24; }
+  } else {
+    botBrain();
+    want = keen.want; wantJump = keen.wantJump;
+    // walking shot at a targeted foe — authentic Keen pew while moving
+    if (keen.hunt && !keen.flat && Math.abs(keen.vx) > 0.5 && keen.shootT <= 0) {
+      keenShoot(); keen.shootT = 18;
+    }
+  }
+  keen.shootT = Math.max(0, keen.shootT - 1);
+
+  if (keen.flat) {
+    keen.vx = 0;
+    if (keen.shootT <= 0) { keenShoot(); keen.shootT = 26; }
+    keen.flatT++;
+    if (!keen.hunt || keen.flatT > 82 || (manual && want !== 0)) {
+      setFlat(false); keen.flatT = 0; keen.idle = 0;
+    }
+  } else {
+    if (want > 0) { keen.vx = Math.min(2.1, keen.vx + 0.18); keen.face = 1; }
+    else if (want < 0) { keen.vx = Math.max(-2.1, keen.vx - 0.18); keen.face = -1; }
+    else { keen.vx *= 0.76; if (Math.abs(key_vx_guard()) < 0.06) keen.vx = 0; }
+  }
+  // idle -> point, then lie flat and shoot (authentic Keen habit)
+  if (!keen.flat && keen.onG && want === 0) {
+    if (++keen.idle >= 22 && keen.hunt) { setFlat(true); keen.flatT = 0; }
+  } else if (want !== 0) keen.idle = 0;
+
+  if (wantJump && keen.onG && !keen.flat) { keen.vy = -6.3; sfx.jump(); }
+  keen.anim += Math.abs(key_vx_guard());
+}
+function key_vx_guard() { return keen ? keen.vx : 0; }
+
+// ---------------------------------------------------------------- foes
+function foesUpdate() {
+  for (var i = 0; i < foes.length; i++) {
+    var f = foes[i];
+    if (!f.alive) continue;
+    if (f.type === 'V') {
+      f.vx = f.dir * 0.35;
+      collideX(f);
+      if (f.hitWall) f.dir = -f.dir;
+      var footX = f.dir > 0 ? f.x + f.w + 1 : f.x - 1;
+      if (f.onG && !solid(Math.floor(footX / T), Math.floor((f.y + f.h + 2) / T))) f.dir = -f.dir;
+      if (Math.abs(f.x + f.w / 2 - f.home) > 30 && f.onG) f.dir = f.x + f.w / 2 > f.home ? -1 : 1;
+      f.vy = Math.min(7, f.vy + 0.32);
+      collideY(f);
+      if (--f.hopT <= 0 && f.onG) { f.vy = -2.3; f.hopT = 70 + (f.anim % 40); }
+      f.anim++;
+    } else {
+      if (--f.cd <= 0 && keen && !keen.dead) {
+        var kx = keen.x + keen.w / 2, kb2 = keen.y + keen.h / 2;
+        var dx = kx - (f.x + 2), dy = kb2 - (f.y + 6), len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 45 && len < 170 && f.x > cam - 40 && f.x < cam + 360) {
+          eshots.push({ x: f.x + 2, y: f.y + 6, w: 7, h: 7, vx: dx / len * 1.2, vy: dy / len * 1.2, ttl: 320 });
+          f.cd = 185 + (f.anim++ * 7) % 60;
+        } else f.cd = 40;
+      }
+    }
+  }
+}
+function shotsUpdate() {
+  var i;
+  for (i = shots.length - 1; i >= 0; i--) {
+    var s = shots[i];
+    s.x += s.vx; s.ttl--;
+    var tx = Math.floor((s.x + (s.vx > 0 ? s.w : 0)) / T), ty = Math.floor((s.y + 2) / T);
+    if (solid(tx, ty) || s.ttl <= 0 || s.x < cam - 40 || s.x > cam + W + 40) { shots.splice(i, 1); continue; }
+    var hit = false;
+    for (var j = 0; j < foes.length; j++) {
+      var f = foes[j];
+      if (!f.alive) continue;
+      if (aabb(s, f)) {
+        f.alive = false; hit = true;
+        score = (score + 200) % 1000000;
+        pops.push({ x: f.x, y: f.y - 8, txt: '+200', ttl: 70 });
+        for (var p = 0; p < 7; p++)
+          parts.push({ x: f.x + f.w / 2, y: f.y + f.h / 2, vx: (Math.random() - 0.5) * 2.6, vy: -Math.random() * 2.4, ci: p % 2 ? C_MAG : C_PINK, ttl: 40 });
+        sfx.kill();
+        break;
+      }
+    }
+    if (hit) shots.splice(i, 1);
+  }
+  for (i = eshots.length - 1; i >= 0; i--) {
+    var b = eshots[i];
+    b.x += b.vx; b.y += b.vy; b.ttl--;
+    if (solid(Math.floor((b.x + 3) / T), Math.floor((b.y + 3) / T)) || b.ttl <= 0 || b.x < cam - 60 || b.x > cam + W + 60 || b.y > VH)
+      eshots.splice(i, 1);
+  }
+}
+function itemsUpdate() {
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    if (it.taken || !keen || keen.dead) continue;
+    if (aabb(keen, it)) {
+      it.taken = true;
+      if (it.type === 'c') { score = (score + 500) % 1000000; pops.push({ x: it.x, y: it.y - 6, txt: '+500', ttl: 70 }); sfx.item(); }
+      else { lives = Math.min(99, lives + 1); pops.push({ x: it.x, y: it.y - 6, txt: '1UP', ttl: 80 }); sfx.life(); }
+    }
+  }
+}
+function keenHazards() {
+  if (!keen || keen.dead) return;
+  var i;
+  for (i = 0; i < foes.length; i++) if (foes[i].alive && aabb(keen, foes[i])) return die();
+  for (i = 0; i < eshots.length; i++) if (aabb(keen, eshots[i])) return die();
+  var tx0 = Math.floor(keen.x / T), tx1 = Math.floor((keen.x + keen.w - 1) / T);
+  var ty0 = Math.floor(keen.y / T), ty1 = Math.floor((keen.y + keen.h - 1) / T);
+  for (var tx = tx0; tx <= tx1; tx++) for (var ty = ty0; ty <= ty1; ty++) if (isIck(tx, ty)) return die();
+  if (keen.y > VH + 6) return die();
+}
+function die() {
+  state = 'dying'; stateT = 0; deathsTotal++;
+  setFlat(false);
+  keen.dead = true; keen.vx = 0; keen.vy = -4.2;
+  sfx.death();
+}
+
+// ---------------------------------------------------------------- state machine
+function startCard() { state = 'card'; stateT = 0; sfx.tick(); }
+function updatePlay() {
+  keenAct();
+  keen.vy = Math.min(7, keen.vy + 0.32);
+  collideX(keen); collideY(keen);
+  foesUpdate(); shotsUpdate(); itemsUpdate(); keenHazards();
+  if (state === 'play' && doorRect && keen && !keen.dead && aabb(keen, doorRect)) {
+    state = 'door'; stateT = 0; sfx.door();
+  }
+  var target = clamp(keen ? keen.x - 140 : cam, 0, mapW * T - W);
+  cam += (target - cam) * 0.09;
+}
+function updateDying() {
+  stateT++;
+  keen.vy += 0.3; keen.y += keen.vy;
+  if (keen.y + 7 > VH - 2 && keen.vy > 0) keen.vy *= -0.55;
+  if (stateT >= 150) {
+    lives--;
+    if (lives > 0) { resetLevel(); state = 'play'; stateT = 0; }
+    else { state = 'gameover'; stateT = 0; }
+  }
+}
+function updateDoor() {
+  stateT++;
+  if (doorRect) keen.x += 0.55;
+  if (stateT >= 60) {
+    levelIdx++;
+    if (levelIdx >= LEVELS.length) { levelIdx = 0; loops++; }
+    startCard();
+  }
+}
+
+// ---------------------------------------------------------------- render
+function blit(img, x, y, flip, alpha) {
+  x = Math.round(x); y = Math.round(y);
+  if (alpha !== undefined && alpha < 1) { ctx.save(); ctx.globalAlpha = Math.max(0.05, alpha); }
+  if (!flip) ctx.drawImage(img, x, y);
+  else { ctx.save(); ctx.translate(x + img.width, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore(); }
+  if (alpha !== undefined && alpha < 1) ctx.restore();
+}
+var ASTEROIDS = [{ x: 420, y: 22 }, { x: 980, y: 64 }, { x: 1650, y: 30 }, { x: 2260, y: 74 }];
+var TWINKLES = [{ x: 190, y: 34 }, { x: 760, y: 18 }, { x: 1500, y: 44 }, { x: 2150, y: 22 }, { x: 2650, y: 40 }];
+
+function drawWorld() {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, BAR, W, VH); ctx.clip();
+  ctx.drawImage(SKY[theme], 0, BAR);
+  var o1 = ((cam * 0.18) % 640 + 640) % 640, o2 = ((cam * 0.32) % 640 + 640) % 640, i;
+  ctx.drawImage(STARS_FAR, -o1, BAR); ctx.drawImage(STARS_FAR, 640 - o1, BAR);
+  ctx.drawImage(STARS_NEAR, -o2, BAR); ctx.drawImage(STARS_NEAR, 640 - o2, BAR);
+  if (theme === 'space') {
+    blit(EARTH, 20 - cam * 0.3, BAR + 62);
+    for (i = 0; i < ASTEROIDS.length; i++)
+      blit(ASTEROID, ASTEROIDS[i].x - cam * 0.55, ASTEROIDS[i].y + BAR);
+  } else {
+    var hx = 1960 - cam * 0.92;
+    if (hx < W && hx > -150) {
+      var a = clamp((W - hx) / 140, 0, 1);
+      ctx.save(); ctx.globalAlpha = Math.max(0.08, a) * 0.92;
+      blit(BOSS_HEAD, hx, BAR + 16);
+      ctx.restore();
+    }
+  }
+  for (i = 0; i < TWINKLES.length; i++)
+    blit(SPARK, TWINKLES[i].x - cam * 0.4, TWINKLES[i].y + BAR);
+
+  // tiles
+  var c0 = Math.max(0, Math.floor(cam / T)), c1 = Math.min(mapW - 1, Math.floor((cam + W) / T));
+  for (var cx2 = c0; cx2 <= c1; cx2++) for (var ry = 0; ry < 11; ry++) {
+    var ch = grid[ry][cx2], sx = cx2 * T - Math.round(cam), sy = ry * T + BAR;
+    if (ch === '#') ctx.drawImage(TILE_ROCK, sx, sy);
+    else if (ch === '=') ctx.drawImage(TILE_METAL, sx, sy);
+    else if (ch === '^') ctx.drawImage(TILE_ICK, sx, sy);
+  }
+  if (doorRect) blit(DOOR, doorRect.x - cam, doorRect.y + BAR);
+  // items
+  for (i = 0; i < items.length; i++) {
+    var it = items[i]; if (it.taken) continue;
+    blit(it.type === 'c' ? CUP : ONEUP, it.x - cam, it.y + BAR);
+  }
+  // foes
+  for (i = 0; i < foes.length; i++) {
+    var f = foes[i]; if (!f.alive) continue;
+    if (f.type === 'V') blit(f.anim % 20 < 10 ? VORT1 : VORT2, f.x - 1 - cam, f.y + f.h - 16 + BAR);
+    else blit(VGUN, f.x - 3 - cam, f.y - 2 + BAR, f.x + f.w / 2 < keen.x);
+  }
+  // shots
+  for (i = 0; i < shots.length; i++) blit(BULLET, shots[i].x - cam, shots[i].y + BAR, shots[i].vx < 0);
+  for (i = 0; i < eshots.length; i++) blit(EBULLET, eshots[i].x - cam, eshots[i].y + BAR);
+  // keen
+  if (keen) {
+    var spr, flip = keen.face === 1, ky;
+    if (keen.dead) { spr = KEEN_DEAD; ky = keen.y; }
+    else if (keen.flat) { spr = KEEN_FLAT; ky = keen.y + keen.h - 11; }
+    else if (!keen.onG) { spr = KEEN_JUMP; ky = keen.y + keen.h - 27; }
+    else { spr = (Math.floor(keen.anim / 8) % 2 && Math.abs(keen.vx) > 0.4) ? KEEN_WALK : KEEN_IDLE; ky = keen.y + keen.h - 31; }
+    var kxp = keen.x + keen.w / 2 - spr.width / 2 - cam;
+    var alpha = state === 'door' ? 1 - stateT / 60 : undefined;
+    blit(spr, kxp, ky + BAR, keen.dead ? false : flip, alpha);
+  }
+  // particles + popups
+  for (i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    ctx.fillStyle = PAL[p.ci];
+    ctx.fillRect(Math.round(p.x - cam), Math.round(p.y + BAR), 2, 2);
+  }
+  for (i = 0; i < pops.length; i++) {
+    var po = pops[i];
+    drawText(po.txt, Math.round(po.x - cam), Math.round(po.y + BAR), C_PINK, 1);
+  }
+  ctx.restore();
+  drawHUD();
+}
+function pad(n, len) { var s = String(n); while (s.length < len) s = '0' + s; return s; }
+function drawHUD() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, BAR);
+  ctx.fillStyle = PAL[C_DGRAY]; ctx.fillRect(0, BAR - 1, W, 1);
+  ctx.drawImage(HEAD, 4, 4);
+  drawText('X' + pad(lives, 2), 24, 9, C_CYAN, 1);
+  drawText('SCORE', 58, 9, C_BLUE, 1);
+  drawText(pad(score, 6), 96, 9, C_LBLUE, 1);
+  ctx.drawImage(GUNICO, 148, 8);
+  drawText('RAY GUN', 164, 9, C_LGRAY, 1);
+  drawText('EPISODE 4', 234, 9, C_GREEN, 1);
+}
+
+function render() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  if (state === 'title') { renderTitle(); return; }
+  if (state === 'card') { renderCard(); return; }
+  if (state === 'gameover') { renderGameOver(); return; }
+  if (state === 'play' || state === 'dying' || state === 'door') drawWorld();
+}
+function renderTitle() {
+  ctx.drawImage(SKY.space, 0, 0);
+  var i;
+  for (i = 0; i < 20; i++) ctx.drawImage(TILE_ROCK, i * 16, H - 16);
+  blit(EARTH, -46, H - 128);
+  blit(KEEN_IDLE, 130, H - 16 - 31, true);
+  blit(VORT1, 186, H - 16 - 16);
+  draw3D('COMMANDER KEEN', (W - textW('COMMANDER KEEN', 3)) / 2 | 0, 20, 3);
+  drawTextC('THE GALAXY FRANGETRAP', 160, 56, C_LRED, 1);
+  if (frame % 40 < 26) drawTextC('PRESS ANY KEY TO START', 160, 78, C_WHITE, 1);
+  drawTextC('THIS DEMO PLAYS ITSELF', 160, 94, C_CYAN, 1);
+  drawTextC('ARROWS MOVE  SPACE FIRES', 160, 108, C_LGRAY, 1);
+  drawTextC('FAN TRIBUTE - ONE FILE - 16 COLORS', 160, 156, C_DGRAY, 1);
+}
+function renderCard() {
+  drawTextC(LEVELS[levelIdx].label, 160, 58, C_CYAN, 1);
+  var name = LEVELS[levelIdx].name;
+  var sc = textW(name, 3) <= 308 ? 3 : 2;
+  draw3D(name, (W - textW(name, sc)) / 2 | 0, 76, sc);
+  if (frame % 40 < 26) drawTextC('GET READY', 160, 128, C_PINK, 1);
+}
+function renderGameOver() {
+  if (frame % 30 < 20) draw3D('GAME OVER', (W - textW('GAME OVER', 3)) / 2 | 0, 70, 3, C_BLUE);
+  drawTextC('SCORE ' + pad(score, 6), 160, 120, C_CYAN, 1);
+  drawTextC('THE COUNCIL WAITS', 160, 140, C_LGRAY, 1);
+}
+
+// ---------------------------------------------------------------- loop / probe
+function step() {
+  frame++;
+  if (state === 'title') { stateT++; if (stateT > 300) startCard(); }
+  else if (state === 'card') { stateT++; if (stateT >= 150) { resetLevel(); state = 'play'; stateT = 0; } }
+  else if (state === 'play') updatePlay();
+  else if (state === 'dying') updateDying();
+  else if (state === 'door') updateDoor();
+  else if (state === 'gameover') {
+    stateT++;
+    if (stateT > 260) { score = 0; lives = 3; state = 'title'; stateT = 0; }
+  }
+  // particles & popups
+  if (parts.length) for (var i = parts.length - 1; i >= 0; i--) {
+    var p = parts[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.18; if (--p.ttl <= 0) parts.splice(i, 1);
+  }
+  if (pops.length) for (var j = pops.length - 1; j >= 0; j--) {
+    var po = pops[j]; po.y -= 0.35; if (--po.ttl <= 0) pops.splice(j, 1);
+  }
+  probe();
+}
+function probe() {
+  var alive = 0, i;
+  for (i = 0; i < foes.length; i++) if (foes[i].alive) alive++;
+  window.__demo = {
+    frame: frame, state: state, level: levelIdx, levelName: LEVELS[levelIdx].name,
+    loops: loops, deaths: deathsTotal, score: score, lives: lives,
+    foesAlive: alive, shots: shots.length + eshots.length,
+    keenX: keen ? Math.round(keen.x) : 0, cam: Math.round(cam), audio: !!AC
+  };
+}
+
+// audio fns need AC — wrap so silent runs never crash
+(function () {
+  for (var k in sfx) (function (fn) {
+    sfx[k] = function () { if (AC) { try { fn(); } catch (e) { /* noop */ } } };
+  })(sfx[k]);
+})();
+
+// ---------------------------------------------------------------- input / boot
+var KEYMAP = {
+  ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
+  ArrowUp: 'jump', w: 'jump', W: 'jump', z: 'jump', Z: 'jump',
+  ' ': 'fire', Control: 'fire', f: 'fire', F: 'fire'
+};
+document.addEventListener('keydown', function (e) {
+  ensureAudio();
+  if (state === 'title' && stateT > 40) stateT = 301;
+  var k = KEYMAP[e.key];
+  if (k) { keys[k] = true; manualUntil = performance.now() + 3000; }
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].indexOf(e.key) >= 0) e.preventDefault();
+});
+document.addEventListener('keyup', function (e) {
+  var k = KEYMAP[e.key];
+  if (k) keys[k] = false;
+});
+window.addEventListener('pointerdown', function () {
+  ensureAudio();
+  if (state === 'title' && stateT > 40) stateT = 301;
+});
+
+function fit() {
+  var s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  s = Math.max(0.4, s);
+  cv.style.width = Math.floor(W * s) + 'px';
+  cv.style.height = Math.floor(H * s) + 'px';
+}
+window.addEventListener('resize', fit);
+fit();
+
+if (SKIP_TITLE) stateT = 301;
+for (var ffi = 0; ffi < FF; ffi++) step();
+
+var last = performance.now(), acc = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  acc += Math.min(120, now - last); last = now;
+  var n = 0;
+  while (acc >= 1000 / 60 && n < 5) { step(); acc -= 1000 / 60; n++; }
+  render();
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
