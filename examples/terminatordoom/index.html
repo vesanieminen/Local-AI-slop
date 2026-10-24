@@ -19,10 +19,17 @@
   #btnW { width:11vmin; height:11vmin; right:calc(27vmin + env(safe-area-inset-right));
     bottom:calc(17vmin + env(safe-area-inset-bottom)); }
   body.touch .btn { display:block; }
+  #startBtn { position:fixed; left:50%; bottom:10%; transform:translateX(-50%); z-index:11;
+    display:none; padding:14px 34px; background:#180b08; border:2px solid #ff4a3c;
+    color:#ff5a3c; font:bold 16px monospace; letter-spacing:3px; cursor:pointer;
+    box-shadow:0 0 18px rgba(255,60,30,.35); -webkit-tap-highlight-color:transparent; }
+  #startBtn:hover { background:#2c110b; box-shadow:0 0 28px rgba(255,60,30,.6); }
+  body.boot #startBtn { display:block; }
 </style>
 </head>
-<body>
+<body class="boot">
 <canvas id="c"></canvas>
+<button id="startBtn">► START</button>
 <button id="btnFire" class="btn">FIRE</button>
 <button id="btnW" class="btn">WPN</button>
 <script>
@@ -329,7 +336,7 @@ function initAudio(){
     const d=nbuf.getChannelData(0);const r=mulberry(5);
     for(let i=0;i<d.length;i++)d[i]=r()*2-1;
     humOn=true;
-  }catch(e){AC=null;}
+  }catch(e){AC=null;dbg.audioErr=String((e&&e.message)||e);}
 }
 function aNoise(dur,freq,vol,sweep){
   if(!AC||AC.state!=='running')return;
@@ -481,6 +488,7 @@ let announceT=0;
 // ---------- input ----------
 const keys={};
 addEventListener('keydown',e=>{
+  if(AC&&AC.state==='suspended')AC.resume().catch(()=>{});
   if(state==='boot'){start();return;}
   if(state==='dead'){resetWave(wave);state='play';return;}
   if(state==='inter'){start();return;}
@@ -493,6 +501,7 @@ addEventListener('keyup',e=>{keys[e.code]=false;});
 let locked=false,fireHeld=false;
 function lockPointer(){try{const p=cv.requestPointerLock&&cv.requestPointerLock();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
 addEventListener('mousedown',()=>{
+  if(AC&&AC.state==='suspended')AC.resume().catch(()=>{});
   if(state==='boot'){start();return;}
   if(state==='dead'){resetWave(wave);state='play';return;}
   if(state==='inter'){start();return;}
@@ -506,6 +515,7 @@ const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch)document.body.classList.add('touch');
 let joy=null,look=null;
 addEventListener('touchstart',e=>{
+  if(AC&&AC.state==='suspended')AC.resume().catch(()=>{});
   if(state==='boot'){start();return;}
   if(state==='dead'){resetWave(wave);state='play';return;}
   if(state==='inter'){start();return;}
@@ -533,12 +543,15 @@ bf.addEventListener('pointercancel',()=>{fireHeld=false;});
 bw.addEventListener('pointerdown',e=>{e.preventDefault();switchGun(P.weapon?0:1);});
 
 function start(){
+  document.body.classList.remove('boot');
+  if(window.__perf)window.__perf.state='play';
   initAudio();
   if(AC&&AC.state==='suspended')AC.resume().catch(()=>{});
   resetWave(STARTWAVE);kills=0;
   P.key=false;P.hasGun=false;P.cells=0;P.weapon=0;P.hp=100;
   state='play';
 }
+document.getElementById('startBtn').addEventListener('click',()=>{if(state==='boot')start();});
 function switchGun(w){
   if(w===1&&!P.hasGun){msg('NOT OWNED — PLASMA CARBINE IS SOMEWHERE IN THE SECTOR');SFX.denied();return;}
   P.weapon=w;SFX.pick();
@@ -1096,6 +1109,7 @@ function renderBoot(t){
     'WASD MOVE   MOUSE AIM   CLICK FIRE   SHIFT RUN',
     '1/2 WEAPONS   9MM INFINITE   FIND THE PLASMA CARBINE',
     'TOUCH: LEFT=MOVE  RIGHT=LOOK  FIRE=BUTTON',
+    'PRESS START — SOUND TURNS ON WITH IT',
   ];
   const totalChars=lines.reduce((a,l)=>a+l.length,0);
   const shown=Math.floor(t*46);
@@ -1110,10 +1124,6 @@ function renderBoot(t){
       else ctx.fillText(l.slice(0,vis),30,40+i*14);
     }
     ci+=l.length;
-  }
-  if(shown>totalChars&&Math.sin(t*6)>-0.3){
-    ctx.fillStyle='#ff5a3c';ctx.font='bold 13px monospace';
-    ctx.fillText(isTouch?'TAP TO ENGAGE':'CLICK TO ENGAGE',W/2-62,H-34);
   }
   ctx.fillStyle='rgba(255,20,10,0.05)';
   for(let y=0;y<H;y+=3)ctx.fillRect(0,y,W,1);
@@ -1145,8 +1155,10 @@ window.__test={
   all:()=>{P.key=true;P.hasGun=true;P.cells=99;},
   clear:()=>{for(const e of enemies)if(e.st<2){e.st=2;e.dieT=0;}spawnQ.length=0;},
   state:()=>state,
+  audioState:()=>AC?AC.state:'none',
+  audioErr:()=>dbg.audioErr||'',
 };
-window.__perf={fps:0,frame:0,wave:STARTWAVE,enemies:0,hp:100,kills:0,mean:0,var:0,state:'boot'};
+window.__perf={fps:0,frame:0,wave:STARTWAVE,enemies:0,hp:100,kills:0,mean:0,var:0,state:'boot',audio:'off'};
 let last=performance.now(),ema=16.7,probeN=0,qCool=0;
 function frame(now){
   requestAnimationFrame(frame);
@@ -1185,7 +1197,8 @@ function frame(now){
       mean:Math.round(mean),var:Math.round(m2-mean*mean),state,
       pos:[+P.x.toFixed(2),+P.y.toFixed(2)],
       e:enemies.map(e=>[+e.x.toFixed(2),+e.y.toFixed(2),e.st]),
-      shots:dbg.shots,hits:dbg.hits,btn:dbg.btn||0,res:W,msg:msgT>0?msgText:''};
+      shots:dbg.shots,hits:dbg.hits,btn:dbg.btn||0,res:W,msg:msgT>0?msgText:'',
+      audio:AC?AC.state:'off',audioErr:dbg.audioErr||''};
   }
 }
 requestAnimationFrame(frame);
