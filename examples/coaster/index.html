@@ -19,6 +19,7 @@
   #speed { left: 14px; top: calc(10px + env(safe-area-inset-top)); font-size: 30px; font-weight: 700; line-height: 1; }
   #speed small { font-size: 12px; font-weight: 400; opacity: .8; }
   #stats { left: 14px; top: calc(52px + env(safe-area-inset-top)); font-size: 11px; opacity: .85; line-height: 1.55; }
+  #fps { left: 14px; top: calc(96px + env(safe-area-inset-top)); font-size: 11px; opacity: .6; }
   #name { left: 14px; bottom: calc(12px + env(safe-area-inset-bottom)); font-size: 12px; opacity: .8; max-width: 60vw; }
   #gbox { right: 16px; top: calc(14px + env(safe-area-inset-top)); width: 26px; height: 130px;
           border: 1px solid rgba(255,255,255,.5); border-radius: 4px; background: rgba(0,0,0,.35); }
@@ -58,6 +59,7 @@
 <div id="vig"></div>
 <div class="hud" id="speed">0 <small>km/h</small></div>
 <div class="hud" id="stats"></div>
+<div class="hud" id="fps"></div>
 <div class="hud" id="gbox"><div id="gfill"></div></div>
 <div class="hud" id="gtxt">1.0G</div>
 <div class="hud" id="name"></div>
@@ -442,7 +444,7 @@ var T=null;                 // current track
 var state='boot';           // boot | ride | done
 var sPos=0,vel=0,rideT=0,airT=0,airTotal=0,gVert=1,clankAcc=0,chainDist=0;
 var maxVRun=0,maxGRun=-9;
-var renderScale=(qs.has('scale')?(parseFloat(qs.get('scale'))||1):1),emaFrame=16,drawDist=360;
+var renderScale=(qs.has('scale')?(parseFloat(qs.get('scale'))||1):1),emaFrame=16,drawDist=380;
 
 function resetRide(){sPos=0;vel=0;rideT=0;airT=0;airTotal=0;gVert=1;clankAcc=0;chainDist=0;maxVRun=0;maxGRun=-9;}
 function buildCoaster(newSeed){
@@ -533,7 +535,7 @@ function resize(){
   var dpr=Math.min(window.devicePixelRatio||1,2);
   // hard pixel budget: full-screen 2D fills are the bottleneck on retina panels
   var px=innerWidth*innerHeight;
-  if(px*dpr*dpr>2600000)dpr=Math.sqrt(2600000/px);
+  if(px*dpr*dpr>1700000)dpr=Math.sqrt(1700000/px);
   W=Math.round(innerWidth*dpr*renderScale);H=Math.round(innerHeight*dpr*renderScale);
   cv.width=W;cv.height=H;
   fl=(H/2)/Math.tan(0.62);   // ~71° vertical fov
@@ -692,6 +694,15 @@ function drawScenery(){
     ctx.fill();
   }
   // mountains (ring around the world, drawn as near-plane-clipped runs)
+  // horizon first: the ground polygon below it covers everything the mountains
+  // draw under there, so mountains only need to fill down to the horizon line
+  var fhx=fx,fhy=0,fhz=fz;var l=Math.hypot(fhx,fhz)||1;fhx/=l;fhz/=l;
+  var rhx=fhz,rhz=-fhx; // horizontal right
+  var A1=projPt([camX+(fhx+rhx)*8000,camY,camZ+(fhz+rhz)*8000]);
+  var A2=projPt([camX+(fhx-rhx)*8000,camY,camZ+(fhz-rhz)*8000]);
+  var hy=H*0.5;
+  if(A1&&A2)hy=(A1[1]+A2[1])/2;
+  var mbottom=Math.max(-50,Math.min(H+40,hy+6));
   var mrun=[];
   var prevM=null;
   var ringPts=[];
@@ -708,8 +719,8 @@ function drawScenery(){
       ctx.beginPath();
       ctx.moveTo(mrun[0][0],mrun[0][1]);
       for(var q=1;q<mrun.length;q++)ctx.lineTo(mrun[q][0],mrun[q][1]);
-      ctx.lineTo(mrun[mrun.length-1][0],H+40);
-      ctx.lineTo(mrun[0][0],H+40);
+      ctx.lineTo(mrun[mrun.length-1][0],mbottom);
+      ctx.lineTo(mrun[0][0],mbottom);
       ctx.closePath();ctx.fill();
     }
     mrun=[];
@@ -739,12 +750,8 @@ function drawScenery(){
   }
   flushRun();
   // ground: horizon polygon (two far points at camera height + screen bottom corners)
-  var fhx=fx,fhy=0,fhz=fz;var l=Math.hypot(fhx,fhz)||1;fhx/=l;fhz/=l;
-  var rhx=fhz,rhz=-fhx; // horizontal right
-  var A1=projPt([camX+(fhx+rhx)*8000,camY,camZ+(fhz+rhz)*8000]);
-  var A2=projPt([camX+(fhx-rhx)*8000,camY,camZ+(fhz-rhz)*8000]);
-  var hy=H*0.5;
-  if(A1&&A2){hy=(A1[1]+A2[1])/2;
+  // A1/A2/hy were computed before the mountains
+  if(A1&&A2){
     var gg=ctx.createLinearGradient(0,hy,0,H);
     gg.addColorStop(0,rgb(SKY2));gg.addColorStop(.18,rgb([134,170,96]));gg.addColorStop(1,rgb([88,128,62]));
     ctx.fillStyle=gg;
@@ -766,6 +773,8 @@ function drawStationBase(a,b){ // platform + skirt: ground layer, drawn before t
   var ST=20; // ~7 m slices: segmented quads never tear across the frame the way one huge slab did
   for(var i=s0;i<s1;i+=ST){
     var j=Math.min(s1,i+ST);
+    if(sPos>i*DS-1.5&&sPos<j*DS+1.5)continue; // only the slice directly under the seat:
+    // it projects across the whole canvas and hides behind deck + hood anyway
     fillQuad(projWorld(i,-4.4,0.05),projWorld(j,-4.4,0.05),projWorld(j,4.4,0.05),projWorld(i,4.4,0.05),fogS(i,j,[152,150,146]));
     // side skirt down to the ground so the platform sits on the earth, not floating over it
     for(var side=-1;side<=1;side+=2){
@@ -810,6 +819,7 @@ function drawStationEndBase(a,b){
   var ST=20;
   for(var i=s0;i<s1;i+=ST){
     var j=Math.min(s1,i+ST);
+    if(sPos>i*DS-1.5&&sPos<j*DS+1.5)continue; // slice under the seat: whole-canvas fill, hidden anyway
     fillQuad(projWorld(i,-4.4,0.05),projWorld(j,-4.4,0.05),projWorld(j,4.4,0.05),projWorld(i,4.4,0.05),fogS(i,j,[152,150,146]));
     for(var side=-1;side<=1;side+=2){
       var w1=worldOf(i,4.4*side,0.05,0),w2=worldOf(j,4.4*side,0.05,0);
@@ -867,6 +877,7 @@ function drawChunk(a,b){
   ctx.strokeStyle=fogb([122,88,60],depth);
   ctx.lineWidth=Math.max(1,Math.min(6,fl*0.26/Math.max(10,depth)));
   ctx.beginPath();
+  if(depth<130) // past ~130 m ties blur into the deck: skip the stroke segments
   for(var i=i0;i<=i1;i++){
     if(i%Math.round(1.8/DS)!==0)continue; // denser ties: the main foreground speed cue
     var p1=projWorld(i,-0.8,0.02),p2=projWorld(i,0.8,0.02);
@@ -1060,10 +1071,11 @@ function render(){
 
 /* ---------- HUD ---------- */
 var elSpeed=document.getElementById('speed'),elStats=document.getElementById('stats'),
-    elG=document.getElementById('gtxt'),elGfill=document.getElementById('gfill');
+    elG=document.getElementById('gtxt'),elGfill=document.getElementById('gfill'),elFps=document.getElementById('fps');
 function hud(){
   if(!T)return;
   elSpeed.innerHTML=(vel*3.6).toFixed(0)+' <small>km/h</small>';
+  elFps.textContent=Math.round(1000/Math.max(1,emaFrame))+' fps';
   var airish=gVert<0.2&&state==='ride'&&sPos>T.chainEnd;
   elStats.innerHTML=(state==='ride'?(sPos/1|0):0)+' m of '+(T.total|0)+' m<br>'+
     'airtime <span class="'+(airish?'air':'')+'">'+airTotal.toFixed(2)+'s</span>'+
@@ -1075,7 +1087,7 @@ function hud(){
 }
 
 /* ---------- main loop ---------- */
-var lastT=performance.now(),probeN=0;
+var lastT=performance.now(),probeN=0,slowN=0,fastN=0;
 window.__perf={state:'boot',seed:0,name:'',s:0,v:0,g:1,phase:'boot',dist:0,total:0,air:0,fps:0,audio:'off',frame:0};
 function loop(now){
   // generous clamp: physics is cheap 240Hz substeps, so even a struggling device
@@ -1085,14 +1097,15 @@ function loop(now){
   for(var k=0;k<steps;k++)step(1/240);
   render();
   hud();
-  // adaptive resolution + draw distance
-  emaFrame=emaFrame*0.8+(now-loop._t0)*0.2;
-  if(state!=='boot'&&(probeN%8)===0){
-    var target=renderScale;
-    if(emaFrame>28)target=Math.max(0.5,renderScale*0.85);
-    else if(emaFrame<13)target=Math.min(1,renderScale*1.06); // never supersample past native
-    drawDist=emaFrame>28?300:440;
-    if(Math.abs(target-renderScale)>0.02){renderScale=target;resize();}
+  // adaptive resolution + draw distance — debounced and quantized: every resize()
+  // reallocates the canvas + sky buffer, so a twitchy controller IS the stutter
+  emaFrame=emaFrame*0.8+Math.min(60,(now-loop._t0))*0.2;
+  if(state!=='boot'&&(probeN%16)===0&&probeN>40){
+    var slow=emaFrame>30,fast=emaFrame<15;
+    slowN=slow?slowN+1:0;fastN=fast?fastN+1:0;
+    if(slowN>=3&&renderScale>0.5){renderScale=Math.max(0.5,renderScale*0.7);resize();slowN=0;}
+    else if(fastN>=8&&renderScale<1){renderScale=Math.min(1,renderScale*1.4);resize();fastN=0;}
+    drawDist=emaFrame>30?260:380;
   }
   probeN++;
   window.__perf={state:state,seed:seed>>>0,name:T?T.name:'',s:sPos|0,v:+vel.toFixed(2),g:+gVert.toFixed(2),
