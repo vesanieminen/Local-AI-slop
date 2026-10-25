@@ -702,15 +702,23 @@ function drawScenery(){
     ctx.ellipse(p[0]+rw*.5,p[1]+rw*.08,rw*.65,rw*.27,0,0,6.283);
     ctx.fill();
   }
-  // mountains (ring around the world, drawn as near-plane-clipped runs)
-  // horizon first: the ground polygon below it covers everything the mountains
-  // draw under there, so mountains only need to fill down to the horizon line
-  var fhx=fx,fhy=0,fhz=fz;var l=Math.hypot(fhx,fhz)||1;fhx/=l;fhz/=l;
+  // horizon line, computed from DIRECTIONAL vanishing points (never frustum-culled):
+  // any far horizontal direction v maps to y = H/2-(v.camUp)/(v.fwd)*fl. The old
+  // two 8 km sample points fell out of the frustum once pitch passed the half-FOV,
+  // which put the horizon at H/2: green band across the sky looking up, pale
+  // mountains painting over the real ground looking down.
+  var fhx=fx,fhz=fz;var l=Math.hypot(fhx,fhz)||1;fhx/=l;fhz/=l;
   var rhx=fhz,rhz=-fhx; // horizontal right
-  var A1=projPt([camX+(fhx+rhx)*8000,camY,camZ+(fhz+rhz)*8000]);
-  var A2=projPt([camX+(fhx-rhx)*8000,camY,camZ+(fhz-rhz)*8000]);
-  var hy=H*0.5;
-  if(A1&&A2)hy=(A1[1]+A2[1])/2;
+  var vf=Math.max(1e-4,fhx*fx+fhz*fz); // cos(pitch)
+  var h1x=W/2+((fhx*crx+fhz*crz)/vf)*fl, h1y=H/2-((fhx*cux+fhz*cuz)/vf)*fl;
+  var gx=fhx+rhx,gz=fhz+rhz,gv=Math.max(1e-4,gx*fx+gz*fz);
+  var h2x=W/2+((gx*crx+gz*crz)/gv)*fl, h2y=H/2-((gx*cux+gz*cuz)/gv)*fl;
+  var yL,yR;
+  if(Math.abs(h2x-h1x)<1){yL=yR=h1y;}
+  else{var mh=(h2y-h1y)/(h2x-h1x);yL=h1y-h1x*mh;yR=yL+mh*W;}
+  var hy=(yL+yR)/2;
+  // mountains (ring around the world, drawn as near-plane-clipped runs). The ground
+  // polygon below the horizon covers anything they draw underneath, so clip at hy.
   var mbottom=Math.max(-50,Math.min(H+40,hy+6));
   var mrun=[];
   var prevM=null;
@@ -758,22 +766,15 @@ function drawScenery(){
     prevM={d:d,w:mp};
   }
   flushRun();
-  // ground: horizon polygon (two far points at camera height + screen bottom corners)
-  // A1/A2/hy were computed before the mountains
-  if(A1&&A2){
-    var hq=Math.round(hy/4)*4; // quantize horizon: cache the ground gradient instead of rebuilding per frame
+  // ground: trapezoid between the horizon line and the bottom of the screen
+  if(!(yL>H+4&&yR>H+4)){ // horizon entirely below the screen: pure sky, nothing to paint
+    var hq=Math.round(hy/4)*4; // quantize horizon: cache the gradient instead of rebuilding per frame
     if(hq!==ggHy){ggHy=hq;ggCache=ctx.createLinearGradient(0,hq,0,H);
       ggCache.addColorStop(0,rgb(SKY2));ggCache.addColorStop(.18,rgb([134,170,96]));ggCache.addColorStop(1,rgb([88,128,62]));}
     ctx.fillStyle=ggCache;
     ctx.beginPath();
-    ctx.moveTo(A2[0],A2[1]);ctx.lineTo(A1[0],A1[1]);
-    ctx.lineTo(Math.max(A1[0],A2[0])+W*3,Math.max(A1[1],A2[1])+80);
-    ctx.lineTo(Math.max(A1[0],A2[0])+W*3,H+60);
-    ctx.lineTo(Math.min(A1[0],A2[0])-W*3,H+60);
-    ctx.lineTo(Math.min(A1[0],A2[0])-W*3,Math.min(A1[1],A2[1])+80);
+    ctx.moveTo(0,yL);ctx.lineTo(W,yR);ctx.lineTo(W,H+60);ctx.lineTo(0,H+60);
     ctx.closePath();ctx.fill();
-  }else{
-    ctx.fillStyle=rgb([110,148,78]);ctx.fillRect(0,hy,W,H-hy);
   }
 }
 
