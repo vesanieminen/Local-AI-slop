@@ -525,7 +525,12 @@ function draw() {
 let lastPointer = null;
 function toUv(e) {
   const r = canvas.getBoundingClientRect();
-  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  // CSS y runs down, but the simulation's texture space has y = 0 at the bottom
+  // (the full-screen quad maps vUv.y = 0 to the bottom of the canvas), so flip it.
+  return {
+    x: (e.clientX - r.left) / r.width,
+    y: 1 - (e.clientY - r.top) / r.height,
+  };
 }
 function pour(p, q) {
   const dx = p.x - q.x, dy = p.y - q.y;
