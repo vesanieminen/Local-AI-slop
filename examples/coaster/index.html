@@ -281,8 +281,8 @@ function tryGen(rnd,attempt,seedBase){
     var s=i*DS,g=gaA[i];
     if(s<stationEnd)v=3.6;
     else if(s<chainEnd)v=Math.max(v,7.0);
-    else if(s>=brakeStart&&s<brakeEnd)v=Math.max(0.55,v-2.4*DS/Math.max(1,v));
-    else if(s>=brakeEnd)v=1.5;
+    else if(s>=brakeStart&&s<brakeEnd)v=Math.max(0.9,v-2.4*DS/Math.max(1,v));
+    else if(s>=brakeEnd)v=2.6;
     else{
       var a=-G0*Math.sin(g)-0.004*v-0.00035*v*v;
       var v2=v*v+2*a*DS;v=v2>0?Math.sqrt(v2):0;
@@ -487,8 +487,8 @@ function step(dt){
   if(sPos<T.stationEnd){vel=3.6;}
   else if(sPos<T.chainEnd){vel=Math.max(vel,7.0);clankAcc+=vel*dt/1.6;chainDist+=vel*dt;
     if(clankAcc>=1){clankAcc-=1;clank();}}
-  else if(sPos>=T.brakeStart&&sPos<T.brakeEnd){vel=Math.max(0.55,vel-2.4*dt);}
-  else if(sPos>=T.brakeEnd){vel=1.5;}
+  else if(sPos>=T.brakeStart&&sPos<T.brakeEnd){vel=Math.max(0.9,vel-2.4*dt);}
+  else if(sPos>=T.brakeEnd){vel=2.6;}
   else{
     var a=-G0*Math.sin(g)-0.004*vel-0.00035*vel*vel;
     vel=Math.max(0,vel+a*dt);
@@ -549,6 +549,15 @@ function fogb(base,depth){var f=1-Math.exp(-depth/620);
   return'rgb('+Math.round(base[0]+(SKY2[0]-base[0])*f)+','+Math.round(base[1]+(SKY2[1]-base[1])*f)+','+Math.round(base[2]+(SKY2[2]-base[2])*f)+')';}
 function railb(depth){ // steel rails fade to haze faster so distant track reads as one soft line
   return fogb([226,231,237],depth*1.9);}
+// fog by ACTUAL distance from the camera — stations sit late in track-s space, and
+// fogging by s made the end station permanently ghost-pale while the start one
+// stayed unnaturally crisp at 500 m
+function fogS(i,j,base){
+  var m=(i+j)>>1,dx=T.X[m]-camX,dy=T.Y[m]-camY,dz=T.Z[m]-camZ;
+  return fogb(base,Math.sqrt(dx*dx+dy*dy+dz*dz));}
+function fogP(i,base){
+  var dx=T.X[i]-camX,dy=T.Y[i]-camY,dz=T.Z[i]-camZ;
+  return fogb(base,Math.sqrt(dx*dx+dy*dy+dz*dz));}
 
 // scratch projection
 var camX=0,camY=0,camZ=0,fx=0,fy=0,fz=0,crx=0,cry=0,crz=0,cux=0,cuy=0,cuz=0;
@@ -757,12 +766,12 @@ function drawStationBase(a,b){ // platform + skirt: ground layer, drawn before t
   var ST=20; // ~7 m slices: segmented quads never tear across the frame the way one huge slab did
   for(var i=s0;i<s1;i+=ST){
     var j=Math.min(s1,i+ST);
-    fillQuad(projWorld(i,-4.4,0.05),projWorld(j,-4.4,0.05),projWorld(j,4.4,0.05),projWorld(i,4.4,0.05),fogb([152,150,146],i*DS));
+    fillQuad(projWorld(i,-4.4,0.05),projWorld(j,-4.4,0.05),projWorld(j,4.4,0.05),projWorld(i,4.4,0.05),fogS(i,j,[152,150,146]));
     // side skirt down to the ground so the platform sits on the earth, not floating over it
     for(var side=-1;side<=1;side+=2){
       var w1=worldOf(i,4.4*side,0.05,0),w2=worldOf(j,4.4*side,0.05,0);
       var w4=[T.X[i],terrain(T.X[i],T.Z[i])-0.3,T.Z[i]],w3=[T.X[j],terrain(T.X[j],T.Z[j])-0.3,T.Z[j]];
-      fillQuad(projPt(w1),projPt(w2),projPt(w3),projPt(w4),fogb([118,116,112],i*DS));
+      fillQuad(projPt(w1),projPt(w2),projPt(w3),projPt(w4),fogS(i,j,[118,116,112]));
     }
   }
 }
@@ -774,10 +783,10 @@ function drawStationTop(a,b){ // canopy, fascia beams, posts, pennant: drawn aft
     var j=Math.min(s1,i+ST);
     // red canopy: reads from outside the station; hide while the seat is under it
     if(sPos>54){
-      fillQuad(projWorld(i,-5.4,5.1),projWorld(j,-5.4,5.1),projWorld(j,5.4,5.1),projWorld(i,5.4,5.1),fogb([186,62,52],i*DS));
+      fillQuad(projWorld(i,-5.4,5.1),projWorld(j,-5.4,5.1),projWorld(j,5.4,5.1),projWorld(i,5.4,5.1),fogS(i,j,[186,62,52]));
       // fascia beams along the roof line too: bare beams over the seat read as giant red slashes
       for(var side=-1;side<=1;side+=2)
-        strokeLine(i,j,5.2*side,4.95,0,fogb([150,50,42],i*DS),2);
+        strokeLine(i,j,5.2*side,4.95,0,fogS(i,j,[150,50,42]),2);
     }
   }
   // posts holding the roof line, every ~8 m
@@ -785,13 +794,13 @@ function drawStationTop(a,b){ // canopy, fascia beams, posts, pennant: drawn aft
   for(var ip=Math.round(4/DS);ip<=Math.round(42/DS);ip+=pstep){
     if(ip<a||ip>b)continue;
     for(var side2=-1;side2<=1;side2+=2)
-      wline(worldOf(ip,4.4*side2,0.05,0),worldOf(ip,5.0*side2,4.9,0),fogb([120,116,112],ip*DS),3);
+      wline(worldOf(ip,4.4*side2,0.05,0),worldOf(ip,5.0*side2,4.9,0),fogP(ip,[120,116,112]),3);
   }
   var fp=projWorld(Math.round(42/DS),0,8.6),fp2=projWorld(Math.round(42/DS),0,6.4);
   if(fp&&fp2){
-    wline(worldOf(Math.round(42/DS),0,6.4,0),worldOf(Math.round(42/DS),0,8.6,0),fogb([120,116,112],42*DS),2);
+    wline(worldOf(Math.round(42/DS),0,6.4,0),worldOf(Math.round(42/DS),0,8.6,0),fogP(Math.round(42/DS),[120,116,112]),2);
     var wob=Math.sin(performance.now()/240)*3;
-    ctx.fillStyle=fogb([255,207,74],42*DS);
+    ctx.fillStyle=fogP(Math.round(42/DS),[255,207,74]);
     ctx.beginPath();ctx.moveTo(fp[0],fp[1]);ctx.lineTo(fp[0]+18+wob,fp[1]+5);ctx.lineTo(fp[0],fp[1]+11);ctx.closePath();ctx.fill();
   }
 }
@@ -801,11 +810,11 @@ function drawStationEndBase(a,b){
   var ST=20;
   for(var i=s0;i<s1;i+=ST){
     var j=Math.min(s1,i+ST);
-    fillQuad(projWorld(i,-4.4,0.05),projWorld(j,-4.4,0.05),projWorld(j,4.4,0.05),projWorld(i,4.4,0.05),fogb([152,150,146],i*DS));
+    fillQuad(projWorld(i,-4.4,0.05),projWorld(j,-4.4,0.05),projWorld(j,4.4,0.05),projWorld(i,4.4,0.05),fogS(i,j,[152,150,146]));
     for(var side=-1;side<=1;side+=2){
       var w1=worldOf(i,4.4*side,0.05,0),w2=worldOf(j,4.4*side,0.05,0);
       var w4=[T.X[i],terrain(T.X[i],T.Z[i])-0.3,T.Z[i]],w3=[T.X[j],terrain(T.X[j],T.Z[j])-0.3,T.Z[j]];
-      fillQuad(projPt(w1),projPt(w2),projPt(w3),projPt(w4),fogb([118,116,112],i*DS));
+      fillQuad(projPt(w1),projPt(w2),projPt(w3),projPt(w4),fogS(i,j,[118,116,112]));
     }
   }
 }
@@ -816,9 +825,9 @@ function drawStationEndTop(a,b){
   for(var i=s0;i<s1;i+=ST){
     var j=Math.min(s1,i+ST);
     if(sPos<T.total-46){ // blue canopy only from outside
-      fillQuad(projWorld(i,-5.4,5.1),projWorld(j,-5.4,5.1),projWorld(j,5.4,5.1),projWorld(i,5.4,5.1),fogb([64,110,186],i*DS));
+      fillQuad(projWorld(i,-5.4,5.1),projWorld(j,-5.4,5.1),projWorld(j,5.4,5.1),projWorld(i,5.4,5.1),fogS(i,j,[64,110,186]));
       for(var side=-1;side<=1;side+=2)
-        strokeLine(i,j,5.2*side,4.95,0,fogb([48,84,146],i*DS),2);
+        strokeLine(i,j,5.2*side,4.95,0,fogS(i,j,[48,84,146]),2);
     }
   }
 }
@@ -859,7 +868,7 @@ function drawChunk(a,b){
   ctx.lineWidth=Math.max(1,Math.min(6,fl*0.26/Math.max(10,depth)));
   ctx.beginPath();
   for(var i=i0;i<=i1;i++){
-    if(i%Math.round(2.6/DS)!==0)continue;
+    if(i%Math.round(1.8/DS)!==0)continue; // denser ties: the main foreground speed cue
     var p1=projWorld(i,-0.8,0.02),p2=projWorld(i,0.8,0.02);
     if(p1&&p2){ctx.moveTo(p1[0],p1[1]);ctx.lineTo(p2[0],p2[1]);}
   }
