@@ -632,11 +632,6 @@ function strokeLine(i0,i1,oR,oU,oF,col,lw){
 var _pp=new Array(8),_pi=0;
 for(var _k=0;_k<8;_k++)_pp[_k]=[0,0,0];
 function _slot(){_pi=(_pi+1)&7;return _pp[_pi];}
-// project an already near-plane point to screen
-function crossLerp(wx,wy,wz){
-  var s2=fl/ZNEAR;
-  return[W/2+(wx*crx+wy*cry+wz*crz)*s2,H/2-(wx*cux+wy*cuy+wz*cuz)*s2];
-}
 
 // world-space 2-point line with the same near+side clipping as strokeLine,
 // so posts and beams near the seat can never slash across the frame
@@ -677,6 +672,7 @@ function fillQuad(a,b,c,d,col){
 
 var CHUNK=56; // samples per draw chunk (~19.6m)
 var CS=DS*CHUNK;
+var _dlx=new Array(CHUNK+2),_dly=new Array(CHUNK+2),_drx=new Array(CHUNK+2),_dry=new Array(CHUNK+2);
 
 function drawScenery(){
   // sky
@@ -713,15 +709,16 @@ function drawScenery(){
   var h1x=W/2+((fhx*crx+fhz*crz)/vf)*fl, h1y=H/2-((fhx*cux+fhz*cuz)/vf)*fl;
   var gx=fhx+rhx,gz=fhz+rhz,gv=Math.max(1e-4,gx*fx+gz*fz);
   var h2x=W/2+((gx*crx+gz*crz)/gv)*fl, h2y=H/2-((gx*cux+gz*cuz)/gv)*fl;
-  var yL,yR;
-  if(Math.abs(h2x-h1x)<1){yL=yR=h1y;}
-  else{var mh=(h2y-h1y)/(h2x-h1x);yL=h1y-h1x*mh;yR=yL+mh*W;}
+  var yL,yR,mh=0;
+  if(Math.abs(h2x-h1x)>=1){mh=(h2y-h1y)/(h2x-h1x);yL=h1y-h1x*mh;yR=yL+mh*W;}
+  else{yL=yR=h1y;}
   var hy=(yL+yR)/2;
+  function mbx(x){return Math.min(H+40,yL+mh*x+6);} // horizon line +6, for closing mountain runs
   // mountains (ring around the world, drawn as near-plane-clipped runs). The ground
-  // polygon below the horizon covers anything they draw underneath, so clip at hy.
-  var mbottom=Math.max(-50,Math.min(H+40,hy+6));
+  // polygon below the horizon covers anything they draw underneath, so their bottoms
+  // must close along the (possibly tilted, when banked) horizon — a flat bottom used
+  // to leave sky wedges and pale steps along the ground edge in banked turns.
   var mrun=[];
-  var prevM=null;
   var ringPts=[];
   for(var a=0;a<=120;a++){
     var az2=a/120*6.283+0.3;
@@ -736,40 +733,52 @@ function drawScenery(){
       ctx.beginPath();
       ctx.moveTo(mrun[0][0],mrun[0][1]);
       for(var q=1;q<mrun.length;q++)ctx.lineTo(mrun[q][0],mrun[q][1]);
-      ctx.lineTo(mrun[mrun.length-1][0],mbottom);
-      ctx.lineTo(mrun[0][0],mbottom);
+      ctx.lineTo(mrun[mrun.length-1][0],mbx(mrun[mrun.length-1][0]));
+      ctx.lineTo(mrun[0][0],mbx(mrun[0][0]));
       ctx.closePath();ctx.fill();
     }
     mrun=[];
   }
-  for(var a=0;a<ringPts.length;a++){
-    var mp=ringPts[a];
+  // clip every ring edge against near + 4 side frustum planes (Liang-Barsky, same
+  // as the rails). Near-plane culling alone left ring points near the camera's
+  // lateral plane projecting to ±16,000 px: the self-crossing strip then winding-
+  // cancelled into holes that let sky show between mountains and ground.
+  function mprj(d,r,u){var s2=fl/d;return[W/2+r*s2,H/2-u*s2];}
+  var prevD=0,prevR=0,prevU=0,haveP=false,MCL=2;
+  for(var a2=0;a2<ringPts.length;a2++){
+    var mp=ringPts[a2];
     var wx=mp[0]-camX,wy=mp[1]-camY,wz=mp[2]-camZ;
-    var d=wx*fx+wy*fy+wz*fz;
-    if(d>=ZNEAR){
-      var s2=fl/d;
-      var XP=W/2+(wx*crx+wy*cry+wz*crz)*s2,YP=H/2-(wx*cux+wy*cuy+wz*cuz)*s2;
-      if(prevM&&prevM.d<ZNEAR){ // entering: add intersection
-        var t=(ZNEAR-prevM.d)/(d-prevM.d);
-        var iw=[prevM.w[0]+(mp[0]-prevM.w[0])*t,prevM.w[1]+(mp[1]-prevM.w[1])*t,prevM.w[2]+(mp[2]-prevM.w[2])*t];
-        var ip=crossLerp(iw[0]-camX,iw[1]-camY,iw[2]-camZ);
-        mrun.push(ip);
-      }
-      mrun.push([XP,YP]);
-    }else if(prevM&&prevM.d>=ZNEAR){ // leaving: run ends at intersection
-      var t2=(ZNEAR-prevM.d)/(d-prevM.d);
-      var iw2=[prevM.w[0]+(mp[0]-prevM.w[0])*t2,prevM.w[1]+(mp[1]-prevM.w[1])*t2,prevM.w[2]+(mp[2]-prevM.w[2])*t2];
-      var ip2=crossLerp(iw2[0]-camX,iw2[1]-camY,iw2[2]-camZ);
-      mrun.push(ip2);
-      flushRun();
+    var d=wx*fx+wy*fy+wz*fz,r=wx*crx+wy*cry+wz*crz,u=wx*cux+wy*cuy+wz*cuz;
+    if(haveP){
+      var dd=d-prevD,dr=r-prevR,du=u-prevU,t0=0,t1=1,ok2=true,A,B;
+      A=dd;B=prevD-ZNEAR;
+      if(A===0){if(B<0)ok2=false;}else{if(A>0){if(-B/A>t0)t0=-B/A;}else{if(-B/A<t1)t1=-B/A;}}
+      if(ok2){A=dd*FRW-dr;B=prevD*FRW+MCL-prevR;
+        if(A===0){if(B<0)ok2=false;}else{if(A>0){if(-B/A>t0)t0=-B/A;}else{if(-B/A<t1)t1=-B/A;}}}
+      if(ok2){A=dd*FRW+dr;B=prevD*FRW+MCL+prevR;
+        if(A===0){if(B<0)ok2=false;}else{if(A>0){if(-B/A>t0)t0=-B/A;}else{if(-B/A<t1)t1=-B/A;}}}
+      if(ok2){A=dd*FRH-du;B=prevD*FRH+MCL-prevU;
+        if(A===0){if(B<0)ok2=false;}else{if(A>0){if(-B/A>t0)t0=-B/A;}else{if(-B/A<t1)t1=-B/A;}}}
+      if(ok2){A=dd*FRH+du;B=prevD*FRH+MCL+prevU;
+        if(A===0){if(B<0)ok2=false;}else{if(A>0){if(-B/A>t0)t0=-B/A;}else{if(-B/A<t1)t1=-B/A;}}}
+      if(ok2&&t1>t0+1e-7){
+        var P=mprj(prevD+dd*t0,prevR+dr*t0,prevU+du*t0),Q=mprj(prevD+dd*t1,prevR+dr*t1,prevU+du*t1);
+        if(mrun.length){var e=mrun[mrun.length-1];
+          if(Math.abs(e[0]-P[0])>0.01||Math.abs(e[1]-P[1])>0.01)flushRun();} // gap: separate run
+        mrun.push(P,Q);
+      }else if(mrun.length)flushRun();
     }
-    prevM={d:d,w:mp};
+    prevD=d;prevR=r;prevU=u;haveP=true;
   }
   flushRun();
   // ground: trapezoid between the horizon line and the bottom of the screen
   if(!(yL>H+4&&yR>H+4)){ // horizon entirely below the screen: pure sky, nothing to paint
-    var hq=Math.round(hy/4)*4; // quantize horizon: cache the gradient instead of rebuilding per frame
-    if(hq!==ggHy){ggHy=hq;ggCache=ctx.createLinearGradient(0,hq,0,H);
+    // quantize horizon + tilt so the gradient is rebuilt only when the view actually shifts
+    var gkey=Math.round(hy/4)*1000+Math.round((yR-yL)/8);
+    if(gkey!==ggHy){ggHy=gkey;
+      var lenT=Math.hypot(W,yR-yL)||1,nx=-(yR-yL)/lenT,ny=W/lenT; // gradient runs perpendicular to the horizon
+      if(ny<0){nx=-nx;ny=-ny;}
+      ggCache=ctx.createLinearGradient(W/2,hy,W/2+nx*H*1.2,hy+ny*H*1.2);
       ggCache.addColorStop(0,rgb(SKY2));ggCache.addColorStop(.18,rgb([134,170,96]));ggCache.addColorStop(1,rgb([88,128,62]));}
     ctx.fillStyle=ggCache;
     ctx.beginPath();
@@ -873,17 +882,28 @@ function drawChunk(a,b){
   // station ground layer first, so the deck rails run over the platform, not under it
   if(a<=Math.round(46/DS))drawStationBase(a,b);
   if(b>=T.N-96)drawStationEndBase(a,b);
-  // spine deck: one quad per segment (robust to near-plane gaps)
+  // spine deck: one strip polygon per visible run (left edge out, right edge back).
+  // Per-segment quads in one path CANCEL each other (nonzero winding) wherever the
+  // track wraps past the view direction — e.g. foreshortened at the lift crest —
+  // punching sky-coloured holes that read as transparent track; their shared
+  // antialiased edges also dithered the deck into pale stripes.
   ctx.fillStyle=fogb([58,46,38],depth);
-  ctx.beginPath();
-  var any=false;
-  for(var i=i0;i<i1;i++){
-    var q1=projWorld(i,-0.85,0),q2=projWorld(i+1,-0.85,0),q3=projWorld(i+1,0.85,0),q4=projWorld(i,0.85,0);
-    if(!q1||!q2||!q3||!q4)continue;
-    ctx.moveTo(q1[0],q1[1]);ctx.lineTo(q2[0],q2[1]);ctx.lineTo(q3[0],q3[1]);ctx.lineTo(q4[0],q4[1]);ctx.closePath();
-    any=true;
+  var nr=0;
+  function flushDeck(){
+    if(nr>1){
+      ctx.beginPath();ctx.moveTo(_dlx[0],_dly[0]);
+      for(var q=1;q<nr;q++)ctx.lineTo(_dlx[q],_dly[q]);
+      for(var q3=nr-1;q3>=0;q3--)ctx.lineTo(_drx[q3],_dry[q3]);
+      ctx.closePath();ctx.fill();
+    }
+    nr=0;
   }
-  if(any)ctx.fill();
+  for(var i=i0;i<=i1;i++){
+    var qL=projWorld(i,-0.85,0),qR=projWorld(i,0.85,0);
+    if(qL&&qR&&nr<CHUNK+1){_dlx[nr]=qL[0];_dly[nr]=qL[1];_drx[nr]=qR[0];_dry[nr]=qR[1];nr++;}
+    else flushDeck();
+  }
+  flushDeck();
   // ties
   ctx.strokeStyle=fogb([122,88,60],depth);
   ctx.lineWidth=Math.max(1,Math.min(6,fl*0.26/Math.max(10,depth)));
