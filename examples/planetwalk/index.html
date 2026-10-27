@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
 <meta name="description" content="An infinite procedurally generated alien planet you walk on, raymarched per pixel: WebGL2, zero libraries, zero assets. A new planet every tap." />
 <title>Planetwalk — a new alien planet every tap</title>
 <style>
@@ -129,13 +129,22 @@ const pnameEl = document.getElementById('pname');
 const flash = document.getElementById('flash');
 
 const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false, alpha: false });
-if (!gl) {
+function showFatal(msg) {
   const el = document.getElementById('fatal');
   el.style.display = 'grid';
-  el.textContent = 'This demo needs WebGL2 — try a current Chrome, Firefox, Safari or Edge.';
+  el.textContent = msg;
   hud.style.display = 'none'; document.getElementById('bar').style.display = 'none';
+}
+if (!gl) {
+  showFatal('This demo needs WebGL2 — try a current Chrome, Firefox, Safari or Edge.');
   throw new Error('WebGL2 unavailable');
 }
+let dead = false;
+canvas.addEventListener('webglcontextlost', e => {
+  e.preventDefault();                       // browsers will try to restore; the loop can't resume mid-shader
+  dead = true;
+  showFatal('The graphics context was lost — reload the page to keep walking.');
+});
 
 const VS = `#version 300 es
 in vec2 aPos;
@@ -342,8 +351,11 @@ void main() {
   vec3 ro = uCamPos;
   vec3 rd = normalize(uCamF + uTanF * (uv.x * uCamR + uv.y * uCamU));
 
-  const float MAXD = 300.0, MAXH = 138.0;   // MAXH > tallest possible peak (~135 m)
+  const float MAXD = 300.0, MAXH = 138.0;   // MAXH > tallest possible peak (133.8 m)
   float tW = (rd.y < 0.0 && ro.y > uSea) ? (uSea - ro.y) / rd.y : 1e9;
+  // legal early bound: a climbing ray is above every peak past this distance,
+  // because H itself has a hard global ceiling (MAXH)
+  float tEnd = rd.y > 0.0 ? min(MAXD, max(0.0, (MAXH - ro.y) / rd.y)) : MAXD;
   float t = 0.3, tPrev = 0.3;
   float hitH = 0.0;
   bool hit = false;
@@ -353,7 +365,7 @@ void main() {
     if (p.y > MAXH) {                          // above every peak: bound-march, no noise
       if (rd.y > 0.0) { t = MAXD + 1.0; break; }
       t += max((p.y - MAXH + 1.0) * 0.5, t * 0.02 + 0.3);
-      if (t > MAXD) break;
+      if (t > tEnd) break;
       continue;                                // tPrev stays at the last sampled point
     }
     float wD = 1.0 - smoothstep(24.0, 34.0, t);   // detail octave fades out with distance
@@ -371,13 +383,15 @@ void main() {
       hit = true;
       break;
     }
-    if (rd.y > 0.0 && d > 40.0) { t = MAXD + 1.0; break; }   // climbing into clear sky
+    // (no cheap "clear sky" shortcut here: H has no *local* bound — a ray
+    //  skimming high ground can still meet a taller peak ahead. The only
+    //  legal miss-above is the MAXH ceiling branch at the top of the loop.)
     if (p.y < uSea - 1.0) { t = tW + 0.5; break; }           // sank below sea level: ocean covers it
     // conservative (|grad H| ≲ 2.6) but capped by travel distance, so far
     // peaks are never one-shot skipped: no ghost ledges at the horizon
     tPrev = t;
     t += min(max(d * 0.27, t * 0.02 + 0.08), t * 0.15 + 0.5);
-    if (t > MAXD) break;
+    if (t > tEnd) break;
   }
 
   vec3 col;
@@ -579,7 +593,9 @@ function Hcpu(x, z) {
 // ── camera + walking ─────────────────────────────────────────────────────────
 const cam = { x: 0, y: 5, z: 0, yaw: 0, pitch: 0.05, vy: 0, grounded: true, walkDist: 0, bob: 0 };
 let planet = null;
-const tPin = qs.has('t') ? +qs.get('t') : null;
+// URL numbers, NaN-proof: ?px=abc used to poison uniforms and the canvas size
+const numq = (k, def) => { if (!qs.has(k)) return def; const v = +qs.get(k); return Number.isFinite(v) ? v : def; };
+const tPin = numq('t', null);
 
 function camBasis() {
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
@@ -764,12 +780,13 @@ btnMute.onclick = e => { initAudio(); muted = !muted; btnMute.textContent = mute
 // ── adaptive quality: quantized render scale, debounced controller ──────────
 const LADDER = [0.35, 0.45, 0.55, 0.7, 0.85, 1.0, 1.2, 1.45, 1.75, 2.0];
 const maxScale = Math.min(devicePixelRatio || 1, isCoarse ? 1.45 : 2.0);
-const wantScale = qs.has('px') ? +qs.get('px') : (isCoarse ? 0.55 : 0.85);
+const wantPx = qs.has('px') ? +qs.get('px') : NaN;
+const pinScale = Number.isFinite(wantPx);
+const wantScale = pinScale ? Math.max(0.05, Math.min(4, wantPx)) : (isCoarse ? 0.55 : 0.85);
 let scaleIdx = LADDER.findIndex(v => v >= wantScale);
 if (scaleIdx < 0) scaleIdx = LADDER.length - 1;
-const pinScale = qs.has('px');
-const pinnedPx = pinScale ? Math.max(0.05, Math.min(4, +qs.get('px'))) : 1;
-const steps = Math.max(16, Math.min(130, qs.has('steps') ? +qs.get('steps') : 96));
+const pinnedPx = wantScale;
+const steps = Math.max(16, Math.min(130, numq('steps', 96)));
 
 let cssW = 0, cssH = 0;
 function resize() {
@@ -873,6 +890,7 @@ function draw(now) {
 }
 
 function frame(now) {
+  if (dead) return;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   emaMs = emaMs * 0.88 + Math.min(400, now - prevNow) * 0.12; prevNow = now;
 
