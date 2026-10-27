@@ -817,8 +817,18 @@ function stepPhysics(dt) {
     const fy = fwd / mag, sx = str / mag;
     const speed = (run ? 9.5 : 4.6) * sp;
     const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
-    cam.x += (sy * fy + cy * sx) * speed * dt;
-    cam.z += (cy * fy - sy * sx) * speed * dt;
+    const mx = (sy * fy + cy * sx) * speed * dt;
+    const mz = (cy * fy - sy * sx) * speed * dt;
+    // Legs, not teleport: the ground may only rise ~56° under you per stride.
+    // Without this the camera just rides any cliff face up through mountains.
+    // Framerate-independent because both the stride and the rise budget scale
+    // with dt. Airborne you (feet higher) hop onto ledges you'd jump for.
+    const feet = cam.y - 1.75;
+    const maxRise = 1.5 * Math.hypot(mx, mz) + 0.02;
+    const walkable = (nx, nz) => Hcpu(nx, nz) - feet <= maxRise;
+    if (walkable(cam.x + mx, cam.z + mz)) { cam.x += mx; cam.z += mz; }
+    else if (walkable(cam.x + mx, cam.z)) cam.x += mx;     // slide along the wall
+    else if (walkable(cam.x, cam.z + mz)) cam.z += mz;
   }
 
   if (keys.has('Space') && cam.grounded) { cam.vy = 5.3; cam.grounded = false; }
