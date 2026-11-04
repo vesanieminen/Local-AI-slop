@@ -60,14 +60,45 @@ const STARTMAP=clamp(parseInt(params.get('map')||'0',10)||0,0,2);
 // ---------- canvas / buffers ----------
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 let W=400,H=250,BAR=40,VH=H-BAR;
+let PLANE=0.66,VF=210;
 let img,buf32,zbuf;
 function setRes(w,h){
-  W=w;H=h;BAR=Math.round(H*0.16);VH=H-BAR;
+  W=w;H=h;
+  BAR=Math.round(Math.min(H*0.16,W*0.20)); // keep the bar proportional to the narrow axis
+  if(BAR<28)BAR=28;
+  VH=H-BAR;
+  // on tall screens use a pinhole-consistent camera (equal horizontal/vertical
+  // focal lengths) so nothing stretches; wide displays keep the classic look
+  const tall=VH>W*1.3;
+  PLANE=tall?clamp(W/VH,0.35,0.9):0.66;
+  VF=tall?VH/2:VH;
   cv.width=W;cv.height=H;
   img=ctx.createImageData(W,H);buf32=new Uint32Array(img.data.buffer);
   zbuf=new Float32Array(W);
 }
-if(FORCE_RES>=200)setRes(FORCE_RES,Math.round(FORCE_RES*0.625));else setRes(400,250);
+// pick an internal resolution matching the screen's aspect, so portrait
+// phones fill the whole screen instead of letterboxing into a tiny strip
+let qK=1; // quality step: 1, then 0.64 when frames run slow
+function pickRes(k){
+  const ar=clamp(window.innerWidth/Math.max(1,window.innerHeight),0.4,2.2);
+  let w=Math.round(400*k),h=Math.round(w/ar);
+  if(h>520*k){h=Math.round(520*k);w=Math.round(h*ar);}
+  if(w*h>112000*k*k){const f=Math.sqrt(112000*k*k/(w*h));w=Math.round(w*f);h=Math.round(h*f);}
+  return[w,h];
+}
+function applyAutoRes(){const[w,h]=pickRes(qK);setRes(w,h);}
+if(FORCE_RES>=200)setRes(FORCE_RES,Math.round(FORCE_RES*0.625));else applyAutoRes();
+let rzT=0;
+window.addEventListener('resize',()=>{
+  if(FORCE_RES>=200)return;
+  clearTimeout(rzT);rzT=setTimeout(applyAutoRes,120);
+});
+// screen coords -> canvas buffer coords (for touch overlays)
+function canvasPt(cx,cy){
+  const r=cv.getBoundingClientRect();
+  const s=Math.min(r.width/W,r.height/H);
+  return[(cx-r.left-(r.width-W*s)/2)/s,(cy-r.top-(r.height-H*s)/2)/s];
+}
 
 // ---------- textures (64x64 Uint32) ----------
 const TS=64;
@@ -666,7 +697,7 @@ function computeFlow(){
 }
 
 // ---------- audio ----------
-let AC=null,master=null,dbg={audioErr:'',shots:0};
+let AC=null,master=null,dbg={audioErr:'',shots:0,freeze:false};
 function audioInit(){
   if(AC)return;
   try{
@@ -742,6 +773,14 @@ window.addEventListener('mouseup',()=>{mouse.down=false;});
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch)document.body.classList.add('touch');
 const stick={id:-1,ox:0,oy:0,dx:0,dy:0}, look={id:-1,lx:0};
+function stickSet(t){
+  const R=Math.max(48,innerWidth*0.16);
+  let dx=(t.clientX-stick.ox)/R, dy=(t.clientY-stick.oy)/R;
+  const m=Math.hypot(dx,dy);
+  if(m>1){dx/=m;dy/=m;}
+  if(m<0.16){dx=0;dy=0;} // dead zone so a resting thumb doesn't creep
+  stick.dx=dx;stick.dy=dy;
+}
 cv.addEventListener('touchstart',e=>{
   if(state==='boot'){start();return;}
   for(const t of e.changedTouches){
@@ -752,10 +791,8 @@ cv.addEventListener('touchstart',e=>{
 },{passive:false});
 cv.addEventListener('touchmove',e=>{
   for(const t of e.changedTouches){
-    if(t.identifier===stick.id){
-      stick.dx=clamp((t.clientX-stick.ox)/(innerWidth*0.08),-1,1);
-      stick.dy=clamp((t.clientY-stick.oy)/(innerWidth*0.08),-1,1);
-    }else if(t.identifier===look.id){P.a+=(t.clientX-look.lx)*0.006;look.lx=t.clientX;}
+    if(t.identifier===stick.id)stickSet(t);
+    else if(t.identifier===look.id){P.a+=(t.clientX-look.lx)*0.006;look.lx=t.clientX;}
   }
   e.preventDefault();
 },{passive:false});
@@ -767,10 +804,23 @@ function touchEnd(e){
 }
 cv.addEventListener('touchend',touchEnd);cv.addEventListener('touchcancel',touchEnd);
 const btnFire=document.getElementById('btnFire'), btnUse=document.getElementById('btnUse');
-let fireHeld=false;
-btnFire.addEventListener('touchstart',e=>{e.preventDefault();audioInit();fireHeld=true;fireTapT=0.4;},{passive:false});
-btnFire.addEventListener('touchend',e=>{e.preventDefault();fireHeld=false;},{passive:false});
-btnUse.addEventListener('touchstart',e=>{e.preventDefault();if(state==='play')useAction();},{passive:false});
+let fireHeld=false, fireId=-1;
+btnFire.addEventListener('touchstart',e=>{
+  e.preventDefault();audioInit();
+  if(state==='boot'){start();return;}
+  fireHeld=true;fireTapT=0.4;
+  if(e.changedTouches.length)fireId=e.changedTouches[0].identifier;
+},{passive:false});
+btnFire.addEventListener('touchend',e=>{e.preventDefault();if(e.changedTouches.length&&e.changedTouches[0].identifier!==fireId)return;fireHeld=false;},{passive:false});
+// a cancelled gesture (iOS hijack) must never leave the trigger stuck
+window.addEventListener('touchcancel',e=>{
+  for(const t of e.changedTouches)if(t.identifier===fireId){fireHeld=false;fireId=-1;}
+});
+btnUse.addEventListener('touchstart',e=>{
+  e.preventDefault();audioInit();
+  if(state==='boot'){start();return;}
+  useAction();
+},{passive:false});
 document.getElementById('startBtn').addEventListener('click',start);
 
 // ---------- game state ----------
@@ -1010,8 +1060,7 @@ function stepEnemy(e,dx,dy){
 let dirX=1,dirY=0,plX=0,plY=0;
 function renderWorld(t){
   dirX=Math.cos(P.a);dirY=Math.sin(P.a);
-  const fov=0.66;
-  const planeX=-dirY*fov,planeY=dirX*fov;
+  const planeX=-dirY*PLANE,planeY=dirX*PLANE;
   const flick=1+Math.sin(t*7.3)*0.015+Math.sin(t*3.1)*0.02;
   const horizon=VH*0.5;
   // floor + ceiling cast
@@ -1019,7 +1068,7 @@ function renderWorld(t){
     const dy=y-horizon;
     if(dy===0){continue;}
     const below=y>horizon;
-    const rowDist=(0.5*VH)/Math.abs(dy);
+    const rowDist=(0.5*VF)/Math.abs(dy);
     const tex=below?texFloorBmp:texCeilBmp;
     const rdx0=dirX-planeX,rdy0=dirY-planeY;
     const rdx1=dirX+planeX,rdy1=dirY+planeY;
@@ -1051,7 +1100,7 @@ function renderWorld(t){
     }
     const dist=side===0?sdx-ddx:sdy-ddy;
     zbuf[x]=dist;
-    let lineH=VH/Math.max(0.0001,dist);
+    let lineH=VF/Math.max(0.0001,dist);
     let y0=horizon-lineH/2, y1=horizon+lineH/2;
     const ty0=y0<0?0:y0|0, ty1=y1>VH?VH:y1|0;
     const wallX=side===0?P.y+dist*rdy:P.x+dist*rdx;
@@ -1097,15 +1146,15 @@ function renderWorld(t){
 }
 function drawSprite(tex,ex,ey,sc,offY,flash,flick){
   const sx=ex-P.x,sy=ey-P.y;
-  const planeX=-dirY*0.66,planeY=dirX*0.66;
+  const planeX=-dirY*PLANE,planeY=dirX*PLANE;
   const invDet=1/(planeX*dirY-dirX*planeY);
   const tX=invDet*(dirY*sx-dirX*sy);
   const tY=invDet*(-planeY*sx+planeX*sy);
   if(tY<0.15)return;
   const scrX=(W*0.5)*(1+tX/tY);
-  const sizeY=Math.abs(VH/tY)*sc;
+  const sizeY=Math.abs(VF/tY)*sc;
   const sizeX=sizeY*(tex.w/tex.h);
-  const bot=VH*0.5+(0.5*VH)/tY;
+  const bot=VH*0.5+(0.5*VF)/tY;
   const top=bot-sizeY;
   const x0=Math.max(0,Math.ceil(scrX-sizeX/2)),x1=Math.min(W-1,Math.floor(scrX+sizeX/2));
   const y0=Math.max(0,Math.ceil(top)),y1=Math.min(VH-1,Math.floor(bot));
@@ -1125,7 +1174,7 @@ function drawSprite(tex,ex,ey,sc,offY,flash,flick){
 }
 function renderWeapon(t){
   const tex=P.gun===1?wpnMG:wpnPistol;
-  const s=P.gun===1?2.9:3.1;
+  const s=(P.gun===1?2.9:3.1)*(VH/210); // keep the gun the same share of the view in portrait
   const bob=Math.sin(P.bobT*2)*3*P.bobAmt;
   const kick=P.fireT>0.3?(P.gun?1:4):0;
   const wpx=tex.w*s,hpx=tex.h*s;
@@ -1143,7 +1192,7 @@ function renderWeapon(t){
   }
   if(gflash){
     // muzzle flash star near top of gun
-    const fx=Math.round(W*0.5+(P.gun===1?-W*0.18:0)),fy=Math.round(oy-2);
+    const fx=Math.round(W*0.5+(P.gun===1?-W*0.18:0)),fy=Math.round(oy-2*(VH/210));
     const r=6+Math.random()*5;
     for(let a=0;a<8;a++){
       const ang=a*Math.PI/4+Math.random();
@@ -1187,56 +1236,69 @@ function drawText(s,x,y,col,size){
   ctx.fillStyle=col;ctx.fillText(s,x,y);
 }
 function renderBar(t){
+  const narrow=W<320; // portrait phones: tighter columns, capped bar height
   const y0=VH;
   ctx.fillStyle='#241c14';ctx.fillRect(0,y0,W,BAR);
   ctx.fillStyle='#3a2f20';ctx.fillRect(0,y0,W,2);
   ctx.fillStyle='#12100c';ctx.fillRect(0,y0+BAR-2,W,2);
   const cy=y0+BAR*0.42;
+  const lab=Math.max(7,Math.round(BAR*0.2)),num=Math.round(BAR*0.34);
   ctx.textAlign='center';
-  drawText('AMMO',W*0.10,y0+10,'#9a8a5a',8);drawText(fmt(P.ammo),W*0.10,cy+8,'#e8d89a',Math.round(BAR*0.34));
-  drawText('HEALTH',W*0.26,y0+10,'#9a8a5a',8);drawText(fmt(Math.round(P.hp)),W*0.26,cy+8,P.hp<=25?'#e05040':'#e8d89a',Math.round(BAR*0.34));
-  drawText('GOLD',W*0.845,y0+10,'#9a8a5a',8);drawText(fmt(P.gold),W*0.845,cy+8,'#e8c25a',Math.round(BAR*0.34));
-  drawText('KILLS',W*0.955,y0+10,'#9a8a5a',8);drawText(fmt(P.kills),W*0.955,cy+8,'#e8d89a',Math.round(BAR*0.34));
+  drawText('AMMO',W*0.09,y0+Math.round(BAR*0.26),'#9a8a5a',lab);drawText(fmt(P.ammo),W*0.09,cy+Math.round(BAR*0.13),'#e8d89a',num);
+  drawText('HEALTH',W*0.25,y0+Math.round(BAR*0.26),'#9a8a5a',lab);drawText(fmt(Math.round(P.hp)),W*0.25,cy+Math.round(BAR*0.13),P.hp<=25?'#e05040':'#e8d89a',num);
+  if(!narrow)drawText('KILLS',W*0.955,y0+10,'#9a8a5a',8);
+  const gx=narrow?W*0.72:W*0.845;
+  drawText('GOLD',gx,y0+Math.round(BAR*0.26),'#9a8a5a',lab);drawText(fmt(P.gold),gx,cy+Math.round(BAR*0.13),'#e8c25a',num);
+  if(!narrow){drawText(fmt(P.kills),W*0.955,cy+8,'#e8d89a',Math.round(BAR*0.34));}
   // face
   let face=faceNorm;
   if(state==='dead'||P.hp<=0)face=faceDead;
   else if(P.hurtT>0.1)face=faceHit;
   else if(P.hp<=25)face=faceEvil;
-  const fs=Math.max(2,Math.floor((BAR-8)/faceNorm.h));
-  const fx=W*0.425-face.w*fs/2+(P.turnT?P.turnT*2:0);
+  const fs=Math.max(2,Math.floor(Math.min((BAR-8)/faceNorm.h,W*0.22/faceNorm.w)));
+  const fx=W*(narrow?0.46:0.425)-face.w*fs/2+(P.turnT?P.turnT*2:0);
   drawArtC(face,fx|0,y0+((BAR-face.h*fs)/2|0),fs);
   // lives as mini faces
-  const lf=Math.max(2,Math.round(BAR*0.06));
-  for(let i=0;i<Math.min(P.lives,4);i++)drawArtC(faceNorm,W*0.52+i*(faceNorm.w*lf+4)|0,y0+BAR*0.18|0,lf);
+  const lf=Math.max(2,Math.round(Math.min(BAR*0.06,fs*0.62)));
+  for(let i=0;i<Math.min(P.lives,narrow?2:4);i++)drawArtC(faceNorm,W*(narrow?0.56:0.52)+i*(faceNorm.w*lf+4)|0,y0+BAR*0.18|0,lf);
   // gold key icon
-  if(P.key)drawArtC(keyItem,W*0.345|0,y0+BAR*0.22|0,2);
+  if(P.key)drawArtC(keyItem,W*0.345|0,y0+BAR*0.22|0,narrow?1:2);
   // weapon name
-  drawText(P.gun===1?'KETTENGEWEHR':'PISTOLE',W*0.68,y0+BAR-3,'#9a8a5a',8);
+  drawText(P.gun===1?'KETTENGEWEHR':'PISTOLE',narrow?W*0.10:W*0.68,y0+BAR-Math.max(3,Math.round(BAR*0.08)),'#9a8a5a',lab);
   // message
   if(msgT>0){
     ctx.textAlign='center';
-    drawText(msgText,W*0.5,VH-10,'#e8d89a',Math.max(9,Math.round(W*0.024)));
+    drawText(msgText,W*0.5,VH-10,'#e8d89a',Math.max(9,Math.round(Math.min(W,VH)*0.035)));
   }
   ctx.textAlign='left';
 }
 function renderBoot(t){
   ctx.fillStyle='#0a0806';ctx.fillRect(0,0,W,H);
   ctx.textAlign='center';
-  const big=Math.round(W*0.072);
+  const portrait=H>W*1.15;
+  const big=Math.round(W*(portrait?0.085:0.072));
   ctx.font='bold '+big+'px monospace';
-  ctx.fillStyle='#000';ctx.fillText('WOLFENSTEIN',W/2+3,H*0.24+3);
-  ctx.fillStyle='#a8201c';ctx.fillText('WOLFENSTEIN',W/2,H*0.24);
+  ctx.fillStyle='#000';ctx.fillText('WOLFENSTEIN',W/2+3,H*(portrait?0.14:0.24)+3);
+  ctx.fillStyle='#a8201c';ctx.fillText('WOLFENSTEIN',W/2,H*(portrait?0.14:0.24));
   ctx.font='bold '+Math.round(big*0.8)+'px monospace';
-  ctx.fillStyle='#000';ctx.fillText('3D',W/2+3,H*0.24+big+3);
-  ctx.fillStyle='#e8c25a';ctx.fillText('3D',W/2,H*0.24+big);
-  drawText('EPISODE 1: WOLFSGRUBE — AN UNAUTHORISED CLONE',W/2,H*0.42,'#9a8a5a',Math.round(W*0.022));
-  const s=Math.max(2,Math.round(W/110));
-  drawArtC(guardStand,W*0.28-guardStand.w*s/2|0,H*0.5,Math.round(s*1.6));
-  drawArtC(offStand,W*0.44-offStand.w*s/2|0,H*0.5,Math.round(s*1.6));
-  drawArtC(dogA,W*0.62-dogA.w*s/2|0,H*0.5+20,Math.round(s*2.2));
-  drawArtC(goldBars,W*0.74-goldBars.w*s/2|0,H*0.5+34,Math.round(s*2));
-  if(Math.floor(t*2)%2)drawText('CLICK OR PRESS ANY KEY TO BEGIN',W/2,H*0.82,'#e8d89a',Math.round(W*0.026));
-  drawText('MOVE WASD/ARROWS  TURN MOUSE/ARROWS  FIRE CLICK/SPACE  USE E  —  STRAFE Q/A',W/2,H*0.9,'#6a5f45',Math.round(W*0.019));
+  ctx.fillStyle='#000';ctx.fillText('3D',W/2+3,H*(portrait?0.14:0.24)+big+3);
+  ctx.fillStyle='#e8c25a';ctx.fillText('3D',W/2,H*(portrait?0.14:0.24)+big);
+  const sub=Math.round(W*(portrait?0.03:0.022));
+  drawText(portrait?'EPISODE 1: WOLFSGRUBE':'EPISODE 1: WOLFSGRUBE — AN UNAUTHORISED CLONE',W/2,H*(portrait?0.24:0.42),'#9a8a5a',sub);
+  const s=Math.max(2,Math.round(W/(portrait?120:110)));
+  const rowY=H*(portrait?0.34:0.5);
+  drawArtC(guardStand,W*0.28-guardStand.w*s/2|0,rowY,Math.round(s*1.6));
+  drawArtC(offStand,W*0.44-offStand.w*s/2|0,rowY,Math.round(s*1.6));
+  drawArtC(dogA,W*0.62-dogA.w*s/2|0,rowY+20,Math.round(s*2.2));
+  drawArtC(goldBars,W*0.74-goldBars.w*s/2|0,rowY+34,Math.round(s*2));
+  if(Math.floor(t*2)%2)drawText(portrait?'TAP TO BEGIN':'CLICK OR PRESS ANY KEY TO BEGIN',W/2,H*0.82,'#e8d89a',Math.round(W*(portrait?0.04:0.026)));
+  const hh=Math.round(W*(portrait?0.028:0.019));
+  if(portrait){
+    drawText('DRAG LEFT: MOVE   DRAG RIGHT: TURN',W/2,H*0.9,'#6a5f45',hh);
+    drawText('FIRE AND USE ARE THE BUTTONS',W/2,H*0.94,'#6a5f45',hh);
+  }else{
+    drawText('MOVE WASD/ARROWS  TURN MOUSE/ARROWS  FIRE CLICK/SPACE  USE E  —  STRAFE Q/A',W/2,H*0.9,'#6a5f45',hh);
+  }
   ctx.textAlign='left';
 }
 function renderLevelClear(t){
@@ -1271,10 +1333,11 @@ window.__test={
   open:()=>{for(let i=0;i<MW*MH;i++)if(grid[i]>=5&&grid[i]<=7)grid[i]=0;},
   next:()=>{if(state==='play')clearLevel();},
   state:()=>state,
+  freeze:v=>{dbg.freeze=!!v;},
   audioState:()=>AC?AC.state:'none',
   audioErr:()=>dbg.audioErr||'',
 };
-window.__perf={fps:0,frame:0,level:0,enemies:0,hp:100,kills:0,gold:0,ammo:0,mean:0,var:0,state:'boot',audio:'off',pos:[0,0],res:0};
+window.__perf={fps:0,frame:0,level:0,enemies:0,hp:100,kills:0,gold:0,ammo:0,mean:0,var:0,state:'boot',audio:'off',pos:[0,0],a:0,res:0};
 let last=performance.now(),ema=16.7,probeN=0,qCool=0;
 function frame(now){
   requestAnimationFrame(frame);
@@ -1284,16 +1347,15 @@ function frame(now){
   ema=ema*0.9+dt*1000*0.1;
   qCool-=dt;
   if(!FORCE_RES){
-    if(ema>34&&W>320&&qCool<=0){setRes(320,200);qCool=5;}
-    else if(ema>48&&W>256&&qCool<=0){setRes(256,160);qCool=5;}
-    else if(ema<21&&W<400&&qCool<=0){setRes(400,250);qCool=5;}
+    if(ema>36&&qK>0.9&&qCool<=0){qK=0.64;applyAutoRes();qCool=5;}
+    else if(ema<20&&qK<0.9&&qCool<=0){qK=1;applyAutoRes();qCool=5;}
   }
   msgT=Math.max(0,msgT-dt);
   if(state==='boot'){
     if(AUTOSTART)start();
     else{renderBoot(t);return;}
   }
-  if(state==='play'){updatePlayer(dt);updateEnemies(dt);}
+  if(state==='play'&&!dbg.freeze){updatePlayer(dt);updateEnemies(dt);}
   if(state==='level'){stateT+=dt;if(stateT>2.8)nextLevel();}
   if(state==='dead'){stateT+=dt;if(stateT>2.2)respawn();}
   if(state==='over'){if(stateT>3){loadLevel(STARTMAP);resetPlayer(true);state='play';}}
@@ -1319,7 +1381,7 @@ function frame(now){
     window.__perf={fps:Math.round(1000/Math.max(1,ema)),frame:probeN,level,
       enemies:enemies.filter(e=>e.st<3).length,hp:Math.round(P.hp),kills:P.kills,
       gold:P.gold,ammo:P.ammo,mean:Math.round(mean),var:Math.round(m2-mean*mean),
-      state,pos:[+P.x.toFixed(2),+P.y.toFixed(2)],res:W,shots:dbg.shots,
+      state,pos:[+P.x.toFixed(2),+P.y.toFixed(2)],a:+P.a.toFixed(3),res:W,shots:dbg.shots,
       audio:AC?AC.state:'off',audioErr:dbg.audioErr||''};
   }
 }
