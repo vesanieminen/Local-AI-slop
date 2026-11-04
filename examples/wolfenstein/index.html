@@ -18,6 +18,14 @@
     bottom:calc(6vmin + env(safe-area-inset-bottom)); font-size:16px; }
   #btnUse { width:12vmin; height:12vmin; right:calc(26vmin + env(safe-area-inset-right));
     bottom:calc(16vmin + env(safe-area-inset-bottom)); }
+  #stickPad { position:fixed; z-index:9; display:none; pointer-events:none;
+    left:calc(6vmin + env(safe-area-inset-left)); bottom:calc(6vmin + env(safe-area-inset-bottom));
+    width:26vmin; height:26vmin; border-radius:50%;
+    border:2px solid rgba(138,106,42,.75); background:rgba(30,26,12,.3); }
+  #stickKnob { position:absolute; left:50%; top:50%; width:11vmin; height:11vmin;
+    margin:-5.5vmin 0 0 -5.5vmin; border-radius:50%; border:2px solid #8a6a2a;
+    background:rgba(140,105,40,.55); }
+  body.touch #stickPad { display:block; }
   body.touch .btn { display:block; }
   #startBtn { position:fixed; left:50%; bottom:12%; transform:translateX(-50%); z-index:11;
     display:none; padding:14px 34px; background:#141008; border:2px solid #c8a24a;
@@ -32,6 +40,7 @@
 <button id="startBtn">&#9658; START</button>
 <button id="btnFire" class="btn">FIRE</button>
 <button id="btnUse" class="btn">USE</button>
+<div id="stickPad"><div id="stickKnob"></div></div>
 <script>
 'use strict';
 /* ============ WOLFENSTEIN 3D — the honest clone ============
@@ -773,6 +782,15 @@ window.addEventListener('mouseup',()=>{mouse.down=false;});
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch)document.body.classList.add('touch');
 const stick={id:-1,ox:0,oy:0,dx:0,dy:0}, look={id:-1,lx:0};
+const stickPad=document.getElementById('stickPad'), stickKnob=document.getElementById('stickKnob');
+function padCenter(){
+  const r=stickPad.getBoundingClientRect();
+  return[r.left+r.width/2,r.top+r.height/2,r.width/2];
+}
+function knobDraw(){
+  const pr=stickPad.offsetWidth?stickPad.offsetWidth/2*0.72:0;
+  stickKnob.style.transform='translate('+(stick.dx*pr)+'px,'+(stick.dy*pr)+'px)';
+}
 function stickSet(t){
   const R=Math.max(48,innerWidth*0.16);
   let dx=(t.clientX-stick.ox)/R, dy=(t.clientY-stick.oy)/R;
@@ -780,11 +798,20 @@ function stickSet(t){
   if(m>1){dx/=m;dy/=m;}
   if(m<0.16){dx=0;dy=0;} // dead zone so a resting thumb doesn't creep
   stick.dx=dx;stick.dy=dy;
+  knobDraw();
 }
 cv.addEventListener('touchstart',e=>{
   if(state==='boot'){start();return;}
   for(const t of e.changedTouches){
-    if(t.clientX<innerWidth*0.45&&stick.id<0){stick.id=t.identifier;stick.ox=t.clientX;stick.oy=t.clientY;stick.dx=0;stick.dy=0;}
+    if(t.clientX<innerWidth*0.45&&stick.id<0){
+      stick.id=t.identifier;
+      // on the pad: the visible stick is the anchor; elsewhere the touch itself is,
+      // so a stray tap in the left field never jumps at full deflection
+      const pc=padCenter();
+      const onPad=pc[2]>0&&Math.hypot(t.clientX-pc[0],t.clientY-pc[1])<=pc[2]*1.35;
+      stick.ox=onPad?pc[0]:t.clientX; stick.oy=onPad?pc[1]:t.clientY;
+      stick.dx=0;stick.dy=0;knobDraw();
+    }
     else if(look.id<0){look.id=t.identifier;look.lx=t.clientX;}
   }
   e.preventDefault();
@@ -798,7 +825,7 @@ cv.addEventListener('touchmove',e=>{
 },{passive:false});
 function touchEnd(e){
   for(const t of e.changedTouches){
-    if(t.identifier===stick.id){stick.id=-1;stick.dx=0;stick.dy=0;}
+    if(t.identifier===stick.id){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();}
     if(t.identifier===look.id)look.id=-1;
   }
 }
@@ -1294,7 +1321,7 @@ function renderBoot(t){
   if(Math.floor(t*2)%2)drawText(portrait?'TAP TO BEGIN':'CLICK OR PRESS ANY KEY TO BEGIN',W/2,H*0.82,'#e8d89a',Math.round(W*(portrait?0.04:0.026)));
   const hh=Math.round(W*(portrait?0.028:0.019));
   if(portrait){
-    drawText('DRAG LEFT: MOVE   DRAG RIGHT: TURN',W/2,H*0.9,'#6a5f45',hh);
+    drawText('STICK: MOVE   DRAG RIGHT: TURN',W/2,H*0.9,'#6a5f45',hh);
     drawText('FIRE AND USE ARE THE BUTTONS',W/2,H*0.94,'#6a5f45',hh);
   }else{
     drawText('MOVE WASD/ARROWS  TURN MOUSE/ARROWS  FIRE CLICK/SPACE  USE E  —  STRAFE Q/A',W/2,H*0.9,'#6a5f45',hh);
