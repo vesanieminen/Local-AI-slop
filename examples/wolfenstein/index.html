@@ -783,7 +783,7 @@ window.addEventListener('mouseup',()=>{mouse.down=false;});
 // touch/pointer input
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch)document.body.classList.add('touch');
-const stick={id:-1,ox:0,oy:0,dx:0,dy:0}, look={id:-1,lx:0};
+const stick={id:null,ox:0,oy:0,dx:0,dy:0}, look={id:null,lx:0}; // null=unset: iOS pointerIds can be negative, never trust >=0 or -1 sentinels
 const stickPad=document.getElementById('stickPad'), stickKnob=document.getElementById('stickKnob');
 function padCenter(){
   const r=stickPad.getBoundingClientRect();
@@ -811,12 +811,12 @@ function stickDown(x,y,id){
   stick.dx=0;stick.dy=0;knobDraw();
 }
 function classifyDown(x,y,id){
-  if(x<innerWidth*0.45&&stick.id<0)stickDown(x,y,id);
-  else if(look.id<0){look.id=id;look.lx=x;}
+  if(x<innerWidth*0.45&&stick.id===null)stickDown(x,y,id);
+  else if(look.id===null){look.id=id;look.lx=x;}
 }
 function releaseId(id){
-  if(id===stick.id){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();}
-  if(id===look.id)look.id=-1;
+  if(id!==null&&id===stick.id){stick.id=null;stick.dx=0;stick.dy=0;knobDraw();}
+  if(id!==null&&id===look.id)look.id=null;
 }
 const evCount={down:0,move:0,end:0,cancel:0};
 const usePointer='PointerEvent'in window;
@@ -974,7 +974,7 @@ function updatePlayer(dt){
     if(keys['arrowleft']||keys['arrowright'])turn=0;
   }
   if(keys['shift'])mvF*=1.55;
-  if(stick.id>=0){mvF+=-stick.dy;mvS+=stick.dx;}
+  if(stick.id!==null){mvF+=-stick.dy;mvS+=stick.dx;}
   if(turn){P.a+=turn*2.6*dt;P.turnT=turn;}else P.turnT=0;
   mvS=clamp(mvS,-1.4,1.4);mvF=clamp(mvF,-1.55,1.55);
   const speed=3.1;
@@ -1451,8 +1451,8 @@ function frame(now){
       state,pos:[+P.x.toFixed(2),+P.y.toFixed(2)],a:+P.a.toFixed(3),res:W,shots:dbg.shots,
       audio:AC?AC.state:'off',audioErr:dbg.audioErr||''};
     if(dbgEl)dbgEl.textContent='in ev d/m/e/c:'+evCount.down+'/'+evCount.move+'/'+evCount.end+'/'+evCount.cancel
-      +'  stick:'+(stick.id>=0?stick.id:'-')+' '+(+stick.dx.toFixed(2))+','+(+stick.dy.toFixed(2))
-      +'  look:'+(look.id>=0?look.id:'-')+'  pad:'+Math.round(stickPad.getBoundingClientRect().left)+','+Math.round(stickPad.getBoundingClientRect().top)
+      +'  stick:'+(stick.id===null?'-':stick.id)+' '+(+stick.dx.toFixed(2))+','+(+stick.dy.toFixed(2))
+      +'  look:'+(look.id===null?'-':look.id)+'  pad:'+Math.round(stickPad.getBoundingClientRect().left)+','+Math.round(stickPad.getBoundingClientRect().top)
       +'  vw:'+innerWidth+'  ptr:'+('PointerEvent'in window);
   }
 }
