@@ -66,6 +66,7 @@ const AUTOSTART=params.get('autostart')==='1';
 const SHOT=params.get('shot')==='1';
 const FORCE_RES=parseInt(params.get('res')||'0',10);
 const STARTMAP=clamp(parseInt(params.get('map')||'0',10)||0,0,2);
+const DEBUG=params.get('dbg')==='1'; // on-screen input telemetry for phone bug reports
 
 // ---------- canvas / buffers ----------
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
@@ -779,7 +780,7 @@ let fireTapT=0;
 cv.addEventListener('mousedown',()=>{mouse.down=true;fireTapT=0.4;});
 window.addEventListener('mouseup',()=>{mouse.down=false;});
 
-// touch
+// touch/pointer input
 const isTouch=('ontouchstart'in window)||navigator.maxTouchPoints>0;
 if(isTouch)document.body.classList.add('touch');
 const stick={id:-1,ox:0,oy:0,dx:0,dy:0}, look={id:-1,lx:0};
@@ -792,56 +793,81 @@ function knobDraw(){
   const pr=stickPad.offsetWidth?stickPad.offsetWidth/2*0.72:0;
   stickKnob.style.transform='translate('+(stick.dx*pr)+'px,'+(stick.dy*pr)+'px)';
 }
-function stickSet(t){
+function stickSetXY(x,y){
   const R=Math.max(48,innerWidth*0.16);
-  let dx=(t.clientX-stick.ox)/R, dy=(t.clientY-stick.oy)/R;
+  let dx=(x-stick.ox)/R, dy=(y-stick.oy)/R;
   const m=Math.hypot(dx,dy);
   if(m>1){dx/=m;dy/=m;}
   if(m<0.16){dx=0;dy=0;} // dead zone so a resting thumb doesn't creep
   stick.dx=dx;stick.dy=dy;
   knobDraw();
 }
-// indexed loops: TouchList is not iterable in Safari — for..of would throw and
-// silently kill every canvas touch handler on iOS
-cv.addEventListener('touchstart',e=>{
-  if(state==='boot'){e.preventDefault();start();return;}
-  const ts=e.changedTouches;
-  for(let i=0;i<ts.length;i++){
-    const t=ts[i];
-    if(t.clientX<innerWidth*0.45&&stick.id<0){
-      stick.id=t.identifier;
-      // on the pad: the visible stick is the anchor; elsewhere the touch itself is,
-      // so a stray tap in the left field never jumps at full deflection
-      const pc=padCenter();
-      const onPad=pc[2]>0&&Math.hypot(t.clientX-pc[0],t.clientY-pc[1])<=pc[2]*1.35;
-      stick.ox=onPad?pc[0]:t.clientX; stick.oy=onPad?pc[1]:t.clientY;
-      stick.dx=0;stick.dy=0;knobDraw();
-    }
-    else if(look.id<0){look.id=t.identifier;look.lx=t.clientX;}
-  }
-  e.preventDefault();
-},{passive:false});
-cv.addEventListener('touchmove',e=>{
-  const ts=e.changedTouches;
-  for(let i=0;i<ts.length;i++){
-    const t=ts[i];
-    if(t.identifier===stick.id)stickSet(t);
-    else if(t.identifier===look.id){P.a+=(t.clientX-look.lx)*0.006;look.lx=t.clientX;}
-  }
-  e.preventDefault();
-},{passive:false});
-function touchEnd(e){
-  const ts=e.changedTouches;
-  for(let i=0;i<ts.length;i++){
-    const t=ts[i];
-    if(t.identifier===stick.id){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();}
-    if(t.identifier===look.id)look.id=-1;
-  }
+function stickDown(x,y,id){
+  // on the pad: the visible stick is the anchor; elsewhere the touch itself is,
+  // so a stray tap in the left field never jumps at full deflection
+  const pc=padCenter();
+  const onPad=pc[2]>0&&Math.hypot(x-pc[0],y-pc[1])<=pc[2]*1.35;
+  stick.id=id;stick.ox=onPad?pc[0]:x;stick.oy=onPad?pc[1]:y;
+  stick.dx=0;stick.dy=0;knobDraw();
 }
-cv.addEventListener('touchend',touchEnd);cv.addEventListener('touchcancel',touchEnd);
-// iOS can also take a gesture via the pointer layer (pointercancel) — never leave states stuck
-function allHandsUp(){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();look.id=-1;fireHeld=false;fireId=-1;}
-window.addEventListener('pointercancel',allHandsUp);
+function classifyDown(x,y,id){
+  if(x<innerWidth*0.45&&stick.id<0)stickDown(x,y,id);
+  else if(look.id<0){look.id=id;look.lx=x;}
+}
+function releaseId(id){
+  if(id===stick.id){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();}
+  if(id===look.id)look.id=-1;
+}
+const evCount={down:0,move:0,end:0,cancel:0};
+const usePointer='PointerEvent'in window;
+if(usePointer){
+  // pointer events + capture: the only input contract that guarantees the stick
+  // keeps getting its moves on mobile browsers (no gesture retargeting, no lost
+  // moves when the thumb slides across DOM elements)
+  cv.addEventListener('pointerdown',e=>{
+    evCount.down++;
+    if(e.pointerType==='mouse')return; // desktop uses mouse/pointer-lock path
+    if(state==='boot'){e.preventDefault();start();return;}
+    classifyDown(e.clientX,e.clientY,e.pointerId);
+    if(stick.id===e.pointerId||look.id===e.pointerId){try{cv.setPointerCapture(e.pointerId);}catch(_){}}
+    e.preventDefault();
+  },{passive:false});
+  cv.addEventListener('pointermove',e=>{
+    if(e.pointerType==='mouse')return;
+    evCount.move++;
+    if(e.pointerId===stick.id)stickSetXY(e.clientX,e.clientY);
+    else if(e.pointerId===look.id){P.a+=(e.clientX-look.lx)*0.006;look.lx=e.clientX;}
+  },{passive:false});
+  const pEnd=e=>{evCount.end++;releaseId(e.pointerId);};
+  const pCancel=e=>{evCount.cancel++;releaseId(e.pointerId);};
+  cv.addEventListener('pointerup',pEnd);cv.addEventListener('pointercancel',pCancel);
+  cv.addEventListener('lostpointercapture',pEnd);
+}else{
+  // legacy touch fallback (indexed loops: TouchList iteration is not guaranteed)
+  cv.addEventListener('touchstart',e=>{
+    evCount.down++;
+    if(state==='boot'){e.preventDefault();start();return;}
+    const ts=e.changedTouches;
+    for(let i=0;i<ts.length;i++)classifyDown(ts[i].clientX,ts[i].clientY,ts[i].identifier);
+    e.preventDefault();
+  },{passive:false});
+  cv.addEventListener('touchmove',e=>{
+    evCount.move++;
+    const ts=e.changedTouches;
+    for(let i=0;i<ts.length;i++){
+      const t=ts[i];
+      if(t.identifier===stick.id)stickSetXY(t.clientX,t.clientY);
+      else if(t.identifier===look.id){P.a+=(t.clientX-look.lx)*0.006;look.lx=t.clientX;}
+    }
+    e.preventDefault();
+  },{passive:false});
+  function touchEnd(e){
+    evCount.end++;
+    const ts=e.changedTouches;
+    for(let i=0;i<ts.length;i++)releaseId(ts[i].identifier);
+  }
+  cv.addEventListener('touchend',touchEnd);cv.addEventListener('touchcancel',e=>{evCount.cancel++;touchEnd(e);});
+}
 const btnFire=document.getElementById('btnFire'), btnUse=document.getElementById('btnUse');
 let fireHeld=false, fireId=-1;
 btnFire.addEventListener('touchstart',e=>{
@@ -851,6 +877,7 @@ btnFire.addEventListener('touchstart',e=>{
   if(e.changedTouches.length)fireId=e.changedTouches[0].identifier;
 },{passive:false});
 btnFire.addEventListener('touchend',e=>{e.preventDefault();if(e.changedTouches.length&&e.changedTouches[0].identifier!==fireId)return;fireHeld=false;},{passive:false});
+btnFire.addEventListener('pointercancel',()=>{fireHeld=false;fireId=-1;});
 // a cancelled gesture (iOS hijack) must never leave the trigger stuck
 window.addEventListener('touchcancel',e=>{
   const ts=e.changedTouches;
@@ -1423,7 +1450,18 @@ function frame(now){
       gold:P.gold,ammo:P.ammo,mean:Math.round(mean),var:Math.round(m2-mean*mean),
       state,pos:[+P.x.toFixed(2),+P.y.toFixed(2)],a:+P.a.toFixed(3),res:W,shots:dbg.shots,
       audio:AC?AC.state:'off',audioErr:dbg.audioErr||''};
+    if(dbgEl)dbgEl.textContent='in ev d/m/e/c:'+evCount.down+'/'+evCount.move+'/'+evCount.end+'/'+evCount.cancel
+      +'  stick:'+(stick.id>=0?stick.id:'-')+' '+(+stick.dx.toFixed(2))+','+(+stick.dy.toFixed(2))
+      +'  look:'+(look.id>=0?look.id:'-')+'  pad:'+Math.round(stickPad.getBoundingClientRect().left)+','+Math.round(stickPad.getBoundingClientRect().top)
+      +'  vw:'+innerWidth+'  ptr:'+('PointerEvent'in window);
   }
+}
+let dbgEl=null;
+if(DEBUG){
+  dbgEl=document.createElement('div');
+  dbgEl.setAttribute('style','position:fixed;left:4px;top:4px;z-index:40;pointer-events:none;'+
+    'background:rgba(0,0,0,.75);color:#7fe07f;font:bold 10px/1.5 monospace;padding:4px 8px;border-radius:4px;max-width:92vw;white-space:pre-wrap');
+  document.body.appendChild(dbgEl);
 }
 requestAnimationFrame(frame);
 </script>
