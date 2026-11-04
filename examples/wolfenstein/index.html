@@ -9,7 +9,8 @@
   html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden;
     touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; }
   #c { position:fixed; inset:0; width:100%; height:100%; image-rendering:pixelated;
-    image-rendering:crisp-edges; cursor:crosshair; object-fit:contain; background:#000; }
+    image-rendering:crisp-edges; cursor:crosshair; object-fit:contain; background:#000;
+    touch-action:none; } /* touch-action does NOT inherit — the canvas needs its own */
   .btn { position:fixed; z-index:10; display:none; border-radius:50%;
     border:2px solid #8a6a2a; background:rgba(30,26,12,.5); color:#e8c25a;
     font:bold 12px monospace; touch-action:none; -webkit-tap-highlight-color:transparent; }
@@ -18,7 +19,7 @@
     bottom:calc(6vmin + env(safe-area-inset-bottom)); font-size:16px; }
   #btnUse { width:12vmin; height:12vmin; right:calc(26vmin + env(safe-area-inset-right));
     bottom:calc(16vmin + env(safe-area-inset-bottom)); }
-  #stickPad { position:fixed; z-index:9; display:none; pointer-events:none;
+  #stickPad { position:fixed; z-index:9; display:none; pointer-events:none; touch-action:none;
     left:calc(6vmin + env(safe-area-inset-left)); bottom:calc(6vmin + env(safe-area-inset-bottom));
     width:26vmin; height:26vmin; border-radius:50%;
     border:2px solid rgba(138,106,42,.75); background:rgba(30,26,12,.3); }
@@ -800,9 +801,13 @@ function stickSet(t){
   stick.dx=dx;stick.dy=dy;
   knobDraw();
 }
+// indexed loops: TouchList is not iterable in Safari — for..of would throw and
+// silently kill every canvas touch handler on iOS
 cv.addEventListener('touchstart',e=>{
-  if(state==='boot'){start();return;}
-  for(const t of e.changedTouches){
+  if(state==='boot'){e.preventDefault();start();return;}
+  const ts=e.changedTouches;
+  for(let i=0;i<ts.length;i++){
+    const t=ts[i];
     if(t.clientX<innerWidth*0.45&&stick.id<0){
       stick.id=t.identifier;
       // on the pad: the visible stick is the anchor; elsewhere the touch itself is,
@@ -817,19 +822,26 @@ cv.addEventListener('touchstart',e=>{
   e.preventDefault();
 },{passive:false});
 cv.addEventListener('touchmove',e=>{
-  for(const t of e.changedTouches){
+  const ts=e.changedTouches;
+  for(let i=0;i<ts.length;i++){
+    const t=ts[i];
     if(t.identifier===stick.id)stickSet(t);
     else if(t.identifier===look.id){P.a+=(t.clientX-look.lx)*0.006;look.lx=t.clientX;}
   }
   e.preventDefault();
 },{passive:false});
 function touchEnd(e){
-  for(const t of e.changedTouches){
+  const ts=e.changedTouches;
+  for(let i=0;i<ts.length;i++){
+    const t=ts[i];
     if(t.identifier===stick.id){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();}
     if(t.identifier===look.id)look.id=-1;
   }
 }
 cv.addEventListener('touchend',touchEnd);cv.addEventListener('touchcancel',touchEnd);
+// iOS can also take a gesture via the pointer layer (pointercancel) — never leave states stuck
+function allHandsUp(){stick.id=-1;stick.dx=0;stick.dy=0;knobDraw();look.id=-1;fireHeld=false;fireId=-1;}
+window.addEventListener('pointercancel',allHandsUp);
 const btnFire=document.getElementById('btnFire'), btnUse=document.getElementById('btnUse');
 let fireHeld=false, fireId=-1;
 btnFire.addEventListener('touchstart',e=>{
@@ -841,7 +853,8 @@ btnFire.addEventListener('touchstart',e=>{
 btnFire.addEventListener('touchend',e=>{e.preventDefault();if(e.changedTouches.length&&e.changedTouches[0].identifier!==fireId)return;fireHeld=false;},{passive:false});
 // a cancelled gesture (iOS hijack) must never leave the trigger stuck
 window.addEventListener('touchcancel',e=>{
-  for(const t of e.changedTouches)if(t.identifier===fireId){fireHeld=false;fireId=-1;}
+  const ts=e.changedTouches;
+  for(let i=0;i<ts.length;i++)if(ts[i].identifier===fireId){fireHeld=false;fireId=-1;}
 });
 btnUse.addEventListener('touchstart',e=>{
   e.preventDefault();audioInit();
