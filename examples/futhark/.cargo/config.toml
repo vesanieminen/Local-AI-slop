@@ -1,0 +1,5 @@
+# Native builds need libxkbcommon (winit). The runtime .so.0 is installed but
+# the -dev symlink is not, and there's no sudo here — point the linker at a
+# local symlink. Web/wasm builds ignore this (no xkbcommon on wasm).
+[build]
+rustflags = ["-L", "/home/dev/.local/lib"]
