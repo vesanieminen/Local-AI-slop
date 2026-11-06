@@ -134,6 +134,7 @@ async function probe(name, url, { width, height, hasTouch = false, mobile = fals
 
 await probe('web-desktop-load', '', { width: 1280, height: 800, wantSubmits: 'ambient' });
 await probe('web-desktop-cast', '?mode=cast&seed=7&auto', { width: 1280, height: 800, wantSubmits: 40, settle: 1000 });
+await probe('web-ledger', '?mode=tasks', { width: 1280, height: 800, wantSubmits: 'ambient' });
 await probe('web-mobile-load', '', { width: 390, height: 844, hasTouch: true, mobile: true, wantSubmits: 'ambient' });
 await probe('web-mobile-cast', '?mode=cast&seed=3&auto', { width: 390, height: 844, hasTouch: true, mobile: true, wantSubmits: 40, settle: 1000 });
 

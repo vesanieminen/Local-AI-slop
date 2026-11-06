@@ -9,7 +9,10 @@ gradient, bevelled edges, inset lips), letters are engraved three-deep (ember ri
 dark recess, pale face), the 24 Elder Futhark runes are cut as dark grooves with a
 **molten core and a spark at the chisel tip**, magma veins pulse in the floor, and
 embers drift up the hall on a torch-flicker clock. The Cast tab draws three runes —
-past, present, future — on glowing slabs.
+past, present, future — on glowing slabs. And **THE LEDGER** is the todo list the
+hall demands: carve a task and leave it untouched, and its heat bar fills as the
+slab slides toward the magma line — then it cracks, glows and crumbles into the
+floor. Strike tasks down to seal them in gold first.
 
 The Rust source is in `src/`. The site serves the prebuilt `dist/` so Pages CI stays
 fast; rebuild locally:
@@ -46,6 +49,7 @@ node verify.mjs --png /tmp/snaps/cast-1280x800.png /tmp/snaps/alphabet-390x844.p
 The hub thumbnail is one of those native snaps (same view code, same layout engine).
 
 Screenshot / test hooks: `?mode=cast` `?seed=NNN` `?auto` (staggered cast animation)
-`?rune=NN` `?beat`; natively `FUTHARK_CAST=1 FUTHARK_SEED=7 FUTHARK_RUNE=NN`.
+`?mode=tasks` (pre-heated ledger) `?rune=NN` `?beat`; natively `FUTHARK_CAST=1
+FUTHARK_SEED=7 FUTHARK_RUNE=NN FUTHARK_TASKS=1`.
 
 Pinned Rune rev: `781e2b6d87cd5f32d6f4365956fad4baaf24ee50` (dev, 2026-11-06).

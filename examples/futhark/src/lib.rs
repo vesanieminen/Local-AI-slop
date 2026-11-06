@@ -9,7 +9,7 @@
 //! a WebGPU canvas.
 
 use rune::tok::TextStyle;
-use rune::{canvas, col, el, row, text, AppSpec, Color, Cx, El, LineCap, ScrollSpec, Shadow, Shape, Tx};
+use rune::{canvas, col, el, row, text, text_input, AppSpec, Color, Cx, El, LineCap, ScrollSpec, Shadow, Shape, TextEdit, Tx};
 
 /// A rune in the 100 × 140 view box, as strokes of connected points.
 struct Rune {
@@ -271,6 +271,7 @@ const CARVE_SECS: f64 = 1.4;
 enum Mode {
     Alphabet,
     Cast,
+    Ledger,
 }
 
 struct Cast {
@@ -278,6 +279,25 @@ struct Cast {
     start: f64,
     p: [f32; 3],
 }
+
+/// A task carved on the ledger. An untouched task slides toward the magma
+/// line as its heat bar fills, then cracks, glows and crumbles (`melt` is
+/// the 0..1 burn past its deadline). A done task seals in gold, then fades
+/// into the wall.
+struct Task {
+    label: String,
+    born: f64,
+    /// 0..=1 toward the lava; frozen once done.
+    sink: f32,
+    done: bool,
+    done_at: f64,
+}
+
+const TASK_LIFE: f64 = 90.0;
+const BURN_SECS: f64 = 0.9;
+const SEAL_SECS: f64 = 7.0;
+const MAX_TASKS: usize = 7;
+const SINK_DROP: f32 = 22.0;
 
 pub struct State {
     mode: Mode,
@@ -292,6 +312,8 @@ pub struct State {
     seed: u64,
     /// `?beat`: present every frame even when static — a capture hook only.
     beat: bool,
+    tasks: Vec<Task>,
+    draft: TextEdit,
 }
 
 impl Default for State {
@@ -306,8 +328,10 @@ impl Default for State {
             clock: 0.0,
             seed: 0,
             beat: false,
+            tasks: Vec::new(),
+            draft: TextEdit::new(""),
         };
-        // Native headless tooling (`--snap`): FUTHARK_SEED / FUTHARK_RUNE / FUTHARK_CAST.
+        // Native headless tooling (`--snap`): FUTHARK_SEED / FUTHARK_RUNE / FUTHARK_CAST / FUTHARK_TASKS.
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Ok(v) = std::env::var("FUTHARK_SEED") {
@@ -319,6 +343,10 @@ impl Default for State {
             if std::env::var("FUTHARK_CAST").is_ok() {
                 s.mode = Mode::Cast;
                 do_cast(&mut s);
+            }
+            if std::env::var("FUTHARK_TASKS").is_ok() {
+                s.mode = Mode::Ledger;
+                seed_tasks(&mut s, true);
             }
         }
         s
@@ -530,6 +558,76 @@ fn do_cast(s: &mut State) {
     s.cast = Some(Cast { runes: picked, start: -1.0, p: [0.0; 3] });
 }
 
+/// Ledger mode: dwarves do not procrastinate; the magma does it for them.
+/// `aged` seeds pre-heated tasks for deterministic snapshots.
+fn seed_tasks(s: &mut State, aged: bool) {
+    const PRESETS: [(&str, f64, bool); 4] = [
+        ("re-lit the braziers in the deep hall", 14.0, false),
+        ("pay the smith three silver", 4.0, true),
+        ("count the silver in shaft nine", 52.0, false),
+        ("mend the magma-channel gate", 88.0, false),
+    ];
+    let t = s.clock;
+    for (label, age, done) in PRESETS {
+        if s.tasks.len() >= MAX_TASKS {
+            break;
+        }
+        let born = if aged { t - age } else { t };
+        let sink = if aged { (age / TASK_LIFE) as f32 } else { 0.0 };
+        s.tasks.push(Task { label: label.into(), born, sink, done, done_at: t });
+    }
+}
+
+fn add_task(s: &mut State) {
+    let text = s.draft.text.trim().to_owned();
+    if text.is_empty() || s.tasks.len() >= MAX_TASKS {
+        return;
+    }
+    s.tasks.push(Task { label: text, born: s.clock, sink: 0.0, done: false, done_at: 0.0 });
+    s.draft.replace_text("");
+}
+
+fn task_press(s: &mut State, i: usize) {
+    if let Some(t) = s.tasks.get_mut(i) {
+        if t.done {
+            // Un-seal: back on the slab, at the heat it had earned.
+            t.done = false;
+            t.born = s.clock - f64::from(t.sink) * TASK_LIFE;
+        } else {
+            t.done = true;
+            t.done_at = s.clock;
+            t.sink = ((s.clock - t.born) / TASK_LIFE) as f32;
+        }
+    }
+}
+
+/// Burning cracks across a slab too close to the magma.
+fn crackle(sink: f32, seed: usize, t: f64) -> Shape {
+    let mut s = Shape::new().view_box(300.0, 56.0);
+    let heat = flick(t, seed as f64 * 5.0);
+    let a = ((sink - 0.62) * 2.4).clamp(0.0, 1.0);
+    for k in 0..5 {
+        let x0 = hash((seed * 9 + k) as u64) * 240.0;
+        let y0 = 12.0 + hash((seed * 9 + k + 1) as u64) * 30.0;
+        let mut p = [x0, y0];
+        for j in 0..4 {
+            let q = [
+                p[0] + 8.0 + hash((seed * 40 + k * 4 + j) as u64) * 18.0,
+                (p[1] + (j as f32 - 1.5) * 7.0).clamp(9.0, 46.0),
+            ];
+            s = s.line(p, q, 5.5, LineCap::Round, LAVA.alpha(0.16 * a * heat));
+            s = s.line(p, q, 1.2, LineCap::Round, EMBER.alpha(0.7 * a));
+            p = q;
+        }
+    }
+    s
+}
+
+/// The seal-mark check for a done task.
+fn check_shape() -> Shape {
+    Shape::new().view_box(18.0, 18.0).line([4.5, 9.5], [7.8, 13.0], 2.4, LineCap::Round, BASALT_BOT).line([7.8, 13.0], [13.8, 5.2], 2.4, LineCap::Round, BASALT_BOT)
+}
+
 fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
     s.clock = t;
     let mut animating = false;
@@ -553,6 +651,20 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
         }
         animating |= !done;
     }
+    // The ledger: untouched tasks creep toward the magma; melted ones crumble
+    // away, sealed ones fade into the wall.
+    for t in &mut s.tasks {
+        if !t.done {
+            t.sink = ((s.clock - t.born) / TASK_LIFE) as f32;
+        }
+    }
+    s.tasks.retain(|t| {
+        if t.done {
+            s.clock - t.done_at < SEAL_SECS
+        } else {
+            s.clock - t.born < TASK_LIFE + BURN_SECS
+        }
+    });
     // The hall is never quite still: veins pulse and embers climb, so the frame
     // clock keeps a slow ambient beat even at rest (the runtime only requests
     // frames while work is pending, so the app schedules its own next beat).
@@ -637,11 +749,13 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
     };
     const TO_ALPHA: fn(&mut State) = |s: &mut State| s.mode = Mode::Alphabet;
     const TO_CAST: fn(&mut State) = |s: &mut State| s.mode = Mode::Cast;
+    const TO_LEDGER: fn(&mut State) = |s: &mut State| s.mode = Mode::Ledger;
     let tabs = row()
         .w_full()
         .gap(10.0)
         .child(tab("ALPHABET", "tab-alphabet", s.mode == Mode::Alphabet, TO_ALPHA))
-        .child(tab("THE CAST", "tab-cast", s.mode == Mode::Cast, TO_CAST));
+        .child(tab("THE CAST", "tab-cast", s.mode == Mode::Cast, TO_CAST))
+        .child(tab("THE LEDGER", "tab-ledger", s.mode == Mode::Ledger, TO_LEDGER));
 
     let body = match s.mode {
         Mode::Alphabet => {
@@ -840,6 +954,125 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                 .color(INK_DIM.alpha(0.8));
             col().w_full().grow(1.0).min_h(0.0).gap(14.0).center().child(cards).child(button).child(hint)
         }
+        Mode::Ledger => {
+            let field = slab(
+                el()
+                    .key("task-field")
+                    .w_full()
+                    .h(48.0)
+                    .radius(11.0)
+                    .px(12.0)
+                    .gap(10.0)
+                    .center_y()
+                    .fill(BLACK.alpha(0.5))
+                    .child(
+                        text_input(&s.draft, TextStyle::new(14.0, 400.0))
+                            .key("task-input")
+                            .color(INK)
+                            .placeholder("carve a new task…", INK_DIM.alpha(0.55))
+                            .single_line()
+                            .grow(1.0)
+                            .min_w(0.0)
+                            .on_edit(|s: &mut State| &mut s.draft)
+                            .on_submit(|s: &mut State, _tx| add_task(s)),
+                    )
+                    .child(
+                        el()
+                            .key("task-add")
+                            .h(32.0)
+                            .px(12.0)
+                            .center()
+                            .radius(8.0)
+                            .press_scale(0.94)
+                            .fill(GOLD.alpha(0.14))
+                            .border(1.0, GOLD.alpha(0.55))
+                            .child(engrave("STRIKE", 11.0, 700.0, 1.5, GOLD))
+                            .on_press(add_task),
+                    ),
+            );
+            let mut board = col().w_full().gap(9.0).pt(4.0);
+            for (i, task) in s.tasks.iter().enumerate() {
+                let melt = if task.done { -1.0 } else { ((s.clock - task.born) - TASK_LIFE) / BURN_SECS };
+                let seal = if task.done { (SEAL_SECS - (s.clock - task.done_at)) / 1.4 } else { 1.0 };
+                let mut card = slab(
+                    col()
+                        .key(format!("task-{i}"))
+                        .w_full()
+                        .radius(11.0)
+                        .corners([11.0, 11.0, 6.0, 6.0])
+                        .px(12.0)
+                        .py(10.0)
+                        .gap(7.0)
+                        .press_scale(0.98)
+                        .mt(task.sink.max(0.0) * SINK_DROP)
+                        .rotate(task.sink * 0.03)
+                        .opacity(if task.done {
+                            seal.clamp(0.0, 1.0) as f32
+                        } else {
+                            (1.0 - melt.max(0.0) as f32 * 0.92).max(0.0)
+                        }),
+                );
+                if task.done {
+                    card = card
+                        .border(1.5, GOLD.alpha(0.6))
+                        .box_shadow(Shadow { x: 0.0, y: 0.0, blur: 12.0, spread: 1.0, color: GOLD.alpha(0.16), inset: true });
+                } else if task.sink > 0.5 {
+                    card = card.border(1.5, EMBER.alpha(((task.sink - 0.5) * 1.6).min(0.9)));
+                }
+                if !task.done && task.sink > 0.6 {
+                    card = card.shape(crackle(task.sink, i, t));
+                }
+                let mut mark = el()
+                    .size(18.0, 18.0)
+                    .radius(9.0)
+                    .fill(if task.done { GOLD.alpha(0.9) } else { BLACK.alpha(0.55) })
+                    .border(1.2, if task.done { GOLD } else { EDGE_HI.alpha(0.5) })
+                    .box_shadow(Shadow { x: 0.0, y: 0.0, blur: 8.0, spread: 1.0, color: EMBER.alpha(((task.sink - 0.35) * 1.3 * heat).min(0.9)), inset: true })
+                    .center();
+                if task.done {
+                    mark = mark.child(canvas(check_shape()).size(18.0, 18.0));
+                }
+                let mut label = text(task.label.clone())
+                    .w_full()
+                    .wrap()
+                    .font(TextStyle::new(13.5, 450.0).lh(18.0))
+                    .color(if task.done { GOLD.alpha(0.85) } else { INK });
+                if task.done {
+                    label = label.strike(0, task.label.len(), Some(GOLD.alpha(0.7)));
+                }
+                card = card
+                    .on_press(move |s: &mut State| task_press(s, i))
+                    .child(row().w_full().gap(10.0).center_y().child(mark).child(label.grow(1.0).min_w(0.0)));
+                if !task.done {
+                    card = card.child(
+                        row()
+                            .w_full()
+                            .h(3.0)
+                            .gap(0.0)
+                            .radius(2.0)
+                            .fill(BLACK.alpha(0.5))
+                            .child(el().grow(task.sink.clamp(0.002, 1.0)).radius(2.0).fill(LAVA.alpha(0.6 + 0.35 * heat)))
+                            .child(el().grow((1.0 - task.sink).clamp(0.002, 1.0))),
+                    );
+                }
+                board = board.child(card);
+            }
+            let scroll = col()
+                .key("ledger")
+                .w_full()
+                .grow(1.0)
+                .shrink()
+                .min_h(0.0)
+                .scroll(ScrollSpec { stick_bottom: false })
+                .scroll_edge_fade(16.0)
+                .child(board);
+            let hint = text("an untouched task slides into the magma — strike it down or lose it to the hall")
+                .w_full()
+                .wrap()
+                .font(TextStyle::new(12.5, 400.0).lh(17.0))
+                .color(INK_DIM.alpha(0.8));
+            col().w_full().grow(1.0).min_h(0.0).gap(12.0).child(field).child(hint).child(scroll)
+        }
     };
 
     let inner = col()
@@ -891,6 +1124,10 @@ fn apply_url_args(s: &mut State) {
         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
         match k {
             "mode" if v == "cast" => s.mode = Mode::Cast,
+            "mode" if v == "tasks" => {
+                s.mode = Mode::Ledger;
+                seed_tasks(s, true);
+            }
             "seed" => s.seed = v.parse().unwrap_or(0),
             "rune" => s.selected = v.parse::<usize>().unwrap_or(0).min(RUNES.len() - 1),
             "auto" => do_cast(s),
