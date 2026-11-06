@@ -20,15 +20,17 @@ a fixed top-left light and rasterizes the result once into a `Pixels` image — 
 bump/displacement map baked to RGB, shared by every slab (`Pixels` +
 `SurfaceFit::Fill`). The floor adds real relief: each flagstone is drawn with a
 dark sunk copy under its face, a lit top edge and chips, courses overlapping
-into depth. And the hall's lower half is a **flowing magma landscape**: river
-polylines drawn as six nested strokes — far heat bleed down to a thin white-hot
-seam — so every channel is a pure gradient of heat like the wall cracks, with
-hot dashes walking downstream by arc length (`sub_polyline`), quadratic-Bezier
-flame tongues licking from the banks and vents, a flowing magma lake at the
-bottom edge and a 58-ember field on a torch-flicker clock. One gotcha worth
-knowing: an element that sizes one axis from content takes the *image's* aspect
-ratio once it carries pixels — fixed sizes or `aspect_ratio(1e6)` keep content
-in charge.
+into depth. And the hall's lower half is a **flowing magma landscape** — but
+the channels are not stroked at all: at startup a per-pixel distance field
+against the river/lake segments is baked into a 440 × 800 `Pixels` image
+through a five-scale Gaussian falloff and a continuous linear-light heat ramp
+(crust red → lava → ember → white-hot), then stretched over the hall as one
+image (`El::pin` + `pixels()`), so the glow is genuinely smooth — no terraced
+bands from stacked strokes. Animated light (downstream surges via
+`sub_polyline`, Bézier flame tongues, crack pulses, embers) paints as a second
+shape layer over the texture. One gotcha worth knowing: an element that sizes
+one axis from content takes the *image's* aspect ratio once it carries pixels
+— fixed sizes or `aspect_ratio(1e6)` keep content in charge.
 
 The Rust source is in `src/`. The site serves the prebuilt `dist/` so Pages CI stays
 fast; rebuild locally:

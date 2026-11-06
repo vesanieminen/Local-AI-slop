@@ -320,6 +320,8 @@ pub struct State {
     /// Seamless basalt faces, shared by every slab in the hall.
     rock_a: Pixels,
     rock_b: Pixels,
+    /// The hall's baked magma glow field: rivers and lake, smooth per-pixel.
+    magma: Pixels,
 }
 
 impl Default for State {
@@ -338,6 +340,7 @@ impl Default for State {
             draft: TextEdit::new(""),
             rock_a: make_rock(0xA17C3),
             rock_b: make_rock(0x5E3A9),
+            magma: make_magma(),
         };
         // Native headless tooling (`--snap`): FUTHARK_SEED / FUTHARK_RUNE / FUTHARK_CAST / FUTHARK_TASKS.
         #[cfg(not(target_arch = "wasm32"))]
@@ -470,6 +473,98 @@ fn make_rock(seed: u32) -> Pixels {
     p
 }
 
+// ---------------------------------------------------------------------------
+// The baked magma field: instead of stroking each river a dozen times (which
+// bands into terraced rings), the hall's static glow — river channels and the
+// bottom lake — is computed per pixel at startup as a squared-distance field
+// against the channel segments, fed through a smooth multi-scale falloff and a
+// continuous linear-light heat ramp (cooled rock → lava → ember → white-hot),
+// then drawn as one stretched image. Every colour between the ends is present.
+// ---------------------------------------------------------------------------
+fn seg_d2(px: f32, py: f32, a: &[f32; 2], b: &[f32; 2]) -> f32 {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let l2 = dx * dx + dy * dy;
+    let t = if l2 == 0.0 { 0.0 } else { (((px - a[0]) * dx + (py - a[1]) * dy) / l2).clamp(0.0, 1.0) };
+    let (qx, qy) = (a[0] + t * dx, a[1] + t * dy);
+    (px - qx) * (px - qx) + (py - qy) * (py - qy)
+}
+
+fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// Continuous heat → linear-light colour ramp across the stops below.
+fn heat_ramp(t: f32) -> (f32, f32, f32) {
+    const STOPS: &[(f32, (f32, f32, f32))] = &[
+        (0.00, (0.260, 0.0160, 0.0014)), // cooled crust red
+        (0.32, (1.000, 0.1000, 0.0065)), // LAVA
+        (0.66, (1.000, 0.2582, 0.0241)), // EMBER
+        (1.00, (1.000, 0.6939, 0.3466)), // HOT
+    ];
+    let t = t.clamp(0.0, 1.0);
+    for w in STOPS.windows(2) {
+        if t <= w[1].0 {
+            let f = smoothstep((t - w[0].0) / (w[1].0 - w[0].0));
+            let mix = |a: f32, b: f32| a + (b - a) * f;
+            return (mix(w[0].1 .0, w[1].1 .0), mix(w[0].1 .1, w[1].1 .1), mix(w[0].1 .2, w[1].1 .2));
+        }
+    }
+    STOPS[STOPS.len() - 1].1
+}
+
+/// The 440 × 800 glow field for RIVERS plus the lake lines, in view-box units
+/// so it maps exactly like the shape's `view_box`.
+fn make_magma() -> Pixels {
+    const W: usize = 440;
+    const H: usize = 800;
+    let river_segs: Vec<([f32; 2], [f32; 2])> =
+        RIVERS.iter().flat_map(|p| p.windows(2).map(|w| (w[0], w[1]))).collect();
+    let lake_segs: Vec<([f32; 2], [f32; 2])> =
+        [772.0f32, 784.0, 796.0].into_iter().map(|y| ([-24.0, y], [464.0, y + 4.0])).collect();
+    // Multi-scale falloff: white-hot seam, ember core, molten body, apron, far bleed.
+    let (rs, rw) = ([2.4f32, 7.5, 20.0, 44.0, 80.0], [0.62f32, 0.30, 0.19, 0.075, 0.026]);
+    let (ls, lw) = ([9.0f32, 24.0, 58.0], [0.30f32, 0.20, 0.09]);
+    let enc = |v: f32| -> u8 {
+        let v = v.clamp(0.0, 1.0);
+        let s = if v <= 0.0031308 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+        (s * 255.0) as u8
+    };
+    let mut rgba = vec![0u8; W * H * 4];
+    for y in 420..H {
+        for x in 0..W {
+            let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+            let mut d2r = f32::MAX;
+            for (a, b) in &river_segs {
+                d2r = d2r.min(seg_d2(px, py, a, b));
+            }
+            let mut d2l = f32::MAX;
+            for (a, b) in &lake_segs {
+                d2l = d2l.min(seg_d2(px, py, a, b));
+            }
+            let mut heat = 0.0f32;
+            for (r, w) in rs.iter().zip(&rw) {
+                heat += w * (-d2r / (r * r)).exp();
+            }
+            for (r, w) in ls.iter().zip(&lw) {
+                heat += w * (-d2l / (r * r)).exp();
+            }
+            if heat < 0.004 {
+                continue;
+            }
+            let (lr, lg, lb) = heat_ramp(heat.powf(0.82));
+            let i = (y * W + x) * 4;
+            rgba[i] = enc(lr);
+            rgba[i + 1] = enc(lg);
+            rgba[i + 2] = enc(lb);
+            rgba[i + 3] = (heat.min(1.0) * 255.0) as u8;
+        }
+    }
+    let p = Pixels::new();
+    p.set(W as u32, H as u32, rgba);
+    p
+}
+
 /// A torch-like flicker in 0.55..=1.0: incommensurate sines, deterministic per seed,
 /// so headless snapshots at a fixed `--at` catch it mid-flicker exactly like a live frame.
 fn flick(t: f64, seed: f64) -> f32 {
@@ -599,7 +694,9 @@ fn flame(s: Shape, x: f32, y: f32, h: f32, t: f64, seed: u64) -> Shape {
 /// The whole ambient scene behind the UI: a flagstone floor with magma rivers
 /// flowing across it, fire licking from the vents, glowing cracks and a thick
 /// field of embers drifting up the hall.
-fn forge_shape(t: f64) -> Shape {
+/// The static hall floor: flagstones with relief and a few hot seams. It sits
+/// under the magma-field texture; [`forge_live`] paints the moving light over it.
+fn forge_floor(t: f64) -> Shape {
     let mut s = Shape::new().view_box(440.0, 800.0);
     // Flagstones: small jittered quads in crooked courses, each a slightly
     // different grey with a lit top edge — a floor, not a pile of cards.
@@ -644,24 +741,25 @@ fn forge_shape(t: f64) -> Shape {
             }
         }
     }
-    // The magma rivers: the same layered soft glow as the cracks and seams the
-    // UI wears, scaled up to channels — pure gradients of heat, nothing dark
-    // drawn over them.
+    s
+}
+
+/// The moving light over the magma field: river surges and bank flames, crack
+/// pulses, lake streaks, vent fires and the ember field.
+fn forge_live(t: f64) -> Shape {
+    let mut s = Shape::new().view_box(440.0, 800.0);
+    // The magma rivers themselves are baked into the magma-field texture; the
+    // shape only carries their moving light: surges flowing downstream and
+    // flames licking from the banks.
     for (ri, river) in RIVERS.iter().enumerate() {
         let g = flick(t, ri as f64 * 11.0);
-        s = s.stroke(river.to_vec(), 84.0, LAVA.alpha(0.035 + 0.015 * g)); // far heat bleed
-        s = s.stroke(river.to_vec(), 48.0, LAVA.alpha(0.06 + 0.025 * g)); // warm apron
-        s = s.stroke(river.to_vec(), 24.0, LAVA.alpha(0.15 + 0.05 * g)); // molten body
-        s = s.stroke(river.to_vec(), 9.0, EMBER.alpha(0.16 + 0.06 * g)); // core glow
-        s = s.stroke(river.to_vec(), 2.0, EMBER.alpha(0.32)); // core
-        s = s.stroke(river.to_vec(), 0.8, HOT.alpha(0.25 + 0.2 * g)); // seam
         let len = polyline_len(river);
-        // Heat surging downstream: soft bright dashes, no cut-outs.
         for k in 0..4u64 {
             let pos = frac(t * (0.045 + 0.011 * ri as f64) + k as f64 / 4.0) * len;
             let dash = sub_polyline(river, pos, 34.0 + 22.0 * hash(ri as u64 * 7 + k));
-            s = s.stroke(dash.clone(), 13.0, LAVA.alpha(0.12 * g));
-            s = s.stroke(dash, 3.0, EMBER.alpha(0.45));
+            s = s.stroke(dash.clone(), 13.0, LAVA.alpha(0.10 * g));
+            s = s.stroke(dash.clone(), 6.0, EMBER.alpha(0.20 * g));
+            s = s.stroke(dash, 2.2, HOT.alpha(0.45));
         }
         for k in 0..3u32 {
             let p = polyline_at(river, (k as f32 + 0.5) / 3.0);
@@ -682,11 +780,10 @@ fn forge_shape(t: f64) -> Shape {
         let dash = sub_polyline(crack, pos, 26.0);
         s = s.stroke(dash, 1.1, HOT.alpha(0.45 * g));
     }
-    // The magma lake along the bottom edge, flowing.
+    // The magma lake's glow is baked too; the shape carries its flowing streaks.
     for k in 0..3 {
         let y = 772.0 + k as f32 * 12.0;
         let g = flick(t, k as f64 * 6.0 + 2.0);
-        s = s.line([-24.0, y], [464.0, y + 4.0], 30.0 - k as f32 * 8.0, LineCap::Round, LAVA.alpha(0.05 + 0.03 * k as f32 + 0.02 * g));
         let lake = [[-24.0f32, y], [464.0, y + 4.0]];
         for m in 0..4u64 {
             let pos = frac(t * 0.03 + m as f64 / 4.0 + k as f64 * 0.17) * 488.0;
@@ -1389,14 +1486,28 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
         .child(tabs)
         .child(body);
 
-    // The hall itself: basalt fading to soot, magma veins and rising embers
-    // painted as the root element's own visual, with the UI floating on it.
+    // The hall itself: basalt fading to soot, the baked magma field glowing
+    // smoothly over the floor, animated cracks and embers painted on top as
+    // the root element's own visual, with the UI floating on it all.
     el()
         .w_full()
         .h_full()
         .center()
         .linear_gradient(std::f32::consts::PI, [(0.0, BASALT_TOP), (1.0, BASALT_BOT)])
-        .shape(forge_shape(t))
+        .shape(forge_floor(t))
+        .child(
+            el()
+                .key("magma-field")
+                .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
+                .pixels(&s.magma)
+                .opacity(0.86 + 0.14 * flick(t, 4.0)),
+        )
+        .child(
+            el()
+                .key("forge-live")
+                .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
+                .shape(forge_live(t)),
+        )
         .child(inner)
 }
 
