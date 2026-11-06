@@ -7,3 +7,8 @@ examples/futhark/rune
 examples/futhark/rune/
 examples/futhark/target/
 !examples/futhark/dist/
+# cyberdeck: same — hide the Rune checkout and cargo cache, commit dist/
+examples/cyberdeck/rune
+examples/cyberdeck/rune/
+examples/cyberdeck/target/
+!examples/cyberdeck/dist/
