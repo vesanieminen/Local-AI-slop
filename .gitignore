@@ -1,3 +1,9 @@
 node_modules/
 dist/
 site/
+# futhark: keep the pinned Rune checkout and cargo cache out of the repo,
+# but commit its prebuilt dist/ (Pages CI serves it without a Rust toolchain)
+examples/futhark/rune
+examples/futhark/rune/
+examples/futhark/target/
+!examples/futhark/dist/

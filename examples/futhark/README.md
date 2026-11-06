@@ -1,0 +1,47 @@
+# Futhark — a native Rust app in your tab
+
+The hub's first native app: [**Rune**](https://github.com/anomalyco/rune), a GPU-rendered
+Rust UI framework, compiled to WASM and drawn into one WebGPU canvas. No JS UI libraries,
+no DOM widgets — Rune's own renderer, text, layout and springs.
+
+All 24 Elder Futhark runes are drawn from scratch as vector strokes (`Shape` polylines)
+that **carve themselves in, stroke by stroke** — tap a tile, the chisel runs again.
+The Cast tab draws three runes — past, present, future.
+
+The Rust source is in `src/`. The site serves the prebuilt `dist/` so Pages CI stays
+fast; rebuild locally:
+
+```bash
+# one-time toolchain
+rustup target add wasm32-unknown-unknown
+# wasm-bindgen on PATH must match the version in Cargo.lock — release binaries:
+#   https://github.com/rustwasm/wasm-bindgen/releases
+# optional, for --opt: wasm-opt from https://github.com/WebAssembly/binaryen/releases
+
+./build.sh --opt          # clones Rune at the pinned rev into ./rune, builds dist/
+python3 -m http.server 8123 -d dist
+# open http://localhost:8123/  (WebGPU needs localhost or HTTPS)
+```
+
+## Verifying it
+
+Two stages, because headless Chromium here can't screenshot WebGPU canvases
+(every capture path composites them as black — Rune's own `web-hello` has the
+same blind spot, and its proof suite passes anyway):
+
+```bash
+# 1) the live web build: zero console errors, real GPU submissions while a
+#    cast animates, and true idle (no frames) at rest, desktop + mobile:
+node verify.mjs --url http://127.0.0.1:8123/
+
+# 2) pixels, from Rune's native headless agent tooling (software Vulkan):
+./snap.sh /tmp/snaps                     # --snap PNGs + element tree, --at on a virtual clock
+node verify.mjs --png /tmp/snaps/cast-1280x800.png /tmp/snaps/alphabet-390x844.png ...
+```
+
+The hub thumbnail is one of those native snaps (same view code, same layout engine).
+
+Screenshot / test hooks: `?mode=cast` `?seed=NNN` `?auto` (staggered cast animation)
+`?rune=NN` `?beat`; natively `FUTHARK_CAST=1 FUTHARK_SEED=7 FUTHARK_RUNE=NN`.
+
+Pinned Rune rev: `781e2b6d87cd5f32d6f4365956fad4baaf24ee50` (dev, 2026-11-06).
