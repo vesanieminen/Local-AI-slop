@@ -4,9 +4,25 @@ The hub's first native app: [**Rune**](https://github.com/anomalyco/rune), a GPU
 Rust UI framework, compiled to WASM and drawn into one WebGPU canvas. No JS UI libraries,
 no DOM widgets — Rune's own renderer, text, layout and springs.
 
-All 24 Elder Futhark runes are drawn from scratch as vector strokes (`Shape` polylines)
-that **carve themselves in, stroke by stroke** — tap a tile, the chisel runs again.
-The Cast tab draws three runes — past, present, future.
+It's dressed as a dwarven forge hall: every panel is a chiselled stone slab (stone
+gradient, bevelled edges, inset lips), letters are engraved three-deep (ember rim,
+dark recess, pale face), the 24 Elder Futhark runes are cut as dark grooves with a
+**molten core and a spark at the chisel tip**, magma veins pulse in the floor, and
+embers drift up the hall on a torch-flicker clock. The Cast tab draws three runes —
+past, present, future — on glowing slabs. And **THE LEDGER** is the todo list the
+hall demands: carve a task and leave it untouched, and its heat bar fills as the
+slab slides toward the magma line — then it cracks, glows and crumbles into the
+floor. Strike tasks down to seal them in gold first.
+
+Every panel's face is **procedural basalt**: at startup the app grows a seamless
+fractal height field, derives surface normals from it, Lambert-shades them from
+a fixed top-left light and rasterizes the result once into a `Pixels` image — a
+bump/displacement map baked to RGB, shared by every slab (`Pixels` +
+`SurfaceFit::Fill`). The floor adds real relief: each flagstone is drawn with a
+dark sunk copy under its face, a lit top edge and chips, courses overlapping
+into depth. One gotcha worth knowing: an element that sizes one axis from
+content takes the *image's* aspect ratio once it carries pixels — fixed sizes
+or `aspect_ratio(1e6)` keep content in charge.
 
 The Rust source is in `src/`. The site serves the prebuilt `dist/` so Pages CI stays
 fast; rebuild locally:
@@ -31,7 +47,8 @@ same blind spot, and its proof suite passes anyway):
 
 ```bash
 # 1) the live web build: zero console errors, real GPU submissions while a
-#    cast animates, and true idle (no frames) at rest, desktop + mobile:
+#    cast animates, and a slow ambient beat at rest (the forge never fully
+#    stills — veins pulse, embers climb), desktop + mobile:
 node verify.mjs --url http://127.0.0.1:8123/
 
 # 2) pixels, from Rune's native headless agent tooling (software Vulkan):
@@ -42,6 +59,7 @@ node verify.mjs --png /tmp/snaps/cast-1280x800.png /tmp/snaps/alphabet-390x844.p
 The hub thumbnail is one of those native snaps (same view code, same layout engine).
 
 Screenshot / test hooks: `?mode=cast` `?seed=NNN` `?auto` (staggered cast animation)
-`?rune=NN` `?beat`; natively `FUTHARK_CAST=1 FUTHARK_SEED=7 FUTHARK_RUNE=NN`.
+`?mode=tasks` (pre-heated ledger) `?rune=NN` `?beat`; natively `FUTHARK_CAST=1
+FUTHARK_SEED=7 FUTHARK_RUNE=NN FUTHARK_TASKS=1`.
 
 Pinned Rune rev: `781e2b6d87cd5f32d6f4365956fad4baaf24ee50` (dev, 2026-11-06).
