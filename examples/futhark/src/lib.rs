@@ -498,8 +498,111 @@ static CRACKS: &[&[[f32; 2]]] = &[
     poly!([[196., 734.], [210., 688.]]),
 ];
 
-/// The whole ambient scene behind the UI: a basalt flagstone floor with heat
-/// bleeding through the seams, magma veins and a field of embers drifting up.
+/// Magma rivers that flow across the hall floor, in the same 440 × 800 box.
+static RIVERS: &[&[[f32; 2]]] = &[
+    poly!([[-14., 688.], [58., 676.], [118., 694.], [184., 672.], [250., 690.], [316., 668.], [382., 686.], [452., 674.]]),
+    poly!([[-14., 590.], [66., 604.], [148., 584.], [232., 606.], [314., 586.], [398., 608.], [452., 598.]]),
+    poly!([[40., 812.], [78., 758.], [64., 698.], [116., 656.], [104., 596.], [130., 540.]]),
+    poly!([[398., 812.], [368., 764.], [384., 706.], [338., 668.], [352., 616.]]),
+];
+
+fn polyline_len(path: &[[f32; 2]]) -> f32 {
+    path.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum()
+}
+
+/// The point `frac` (0 to 1) of the way along `path` by arc length.
+fn polyline_at(path: &[[f32; 2]], frac: f32) -> [f32; 2] {
+    let target = frac.clamp(0.0, 1.0) * polyline_len(path);
+    let mut acc = 0.0f32;
+    for w in path.windows(2) {
+        let dx = w[1][0] - w[0][0];
+        let dy = w[1][1] - w[0][1];
+        let l = (dx * dx + dy * dy).sqrt();
+        if acc + l >= target {
+            let f = if l == 0.0 { 0.0 } else { ((target - acc) / l).clamp(0.0, 1.0) };
+            return [w[0][0] + dx * f, w[0][1] + dy * f];
+        }
+        acc += l;
+    }
+    *path.last().unwrap()
+}
+
+/// The sub-polyline of `path` from arc-length `from`, spanning `len`.
+fn sub_polyline(path: &[[f32; 2]], from: f32, len: f32) -> Vec<[f32; 2]> {
+    let mut out = Vec::new();
+    let mut acc = 0.0f32;
+    for w in path.windows(2) {
+        let dx = w[1][0] - w[0][0];
+        let dy = w[1][1] - w[0][1];
+        let l = (dx * dx + dy * dy).sqrt();
+        if acc + l < from {
+            acc += l;
+            continue;
+        }
+        let f0 = ((from - acc) / l).clamp(0.0, 1.0);
+        if out.is_empty() {
+            out.push([w[0][0] + dx * f0, w[0][1] + dy * f0]);
+        }
+        let f1 = ((from + len - acc) / l).clamp(0.0, 1.0);
+        if f1 < 1.0 {
+            out.push([w[0][0] + dx * f1, w[0][1] + dy * f1]);
+            return out;
+        }
+        out.push(w[1]);
+        acc += l;
+    }
+    out
+}
+
+/// A licking flame at (x, y): three sampled quadratic teardrops with sway and
+/// height driven by the clock, a hot core inside each tongue.
+fn flame(s: Shape, x: f32, y: f32, h: f32, t: f64, seed: u64) -> Shape {
+    let mut s = s;
+    let g = flick(t, seed as f64);
+    s = s.line([x - 16.0, y], [x + 16.0, y], 8.0, LineCap::Round, LAVA.alpha(0.30 * g));
+    for i in 0..3u32 {
+        let ph = seed as f64 * 2.1 + i as f64 * 1.7;
+        let hh = h * (0.55 + 0.45 * g) * (0.7 + 0.3 * hash(seed * 3 + i as u64));
+        let sway = ((t * 5.5 + ph).sin() + 0.4 * (t * 11.0 + ph * 2.0).sin()) as f32 * 6.0;
+        let bx = x - 6.0 + 3.0 * i as f32;
+        let (tx, ty) = (bx + sway, y - hh);
+        let (cx, cy) = (bx + sway * 0.25, y - hh * 0.55);
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        for k in 0..=6u32 {
+            let u = k as f32 / 6.0;
+            let (iu, du) = (1.0 - u, u);
+            let px = iu * iu * bx + 2.0 * iu * du * cx + du * du * tx;
+            let py = iu * iu * y + 2.0 * iu * du * cy + du * du * ty;
+            let w = 5.2 * (1.0 - u) + 0.3;
+            left.push([px - w, py]);
+            right.push([px + w, py]);
+        }
+        right.reverse();
+        let tongue = [left, right].concat();
+        s = s.stroke([[bx, y], [cx, cy], [tx, ty]].to_vec(), 9.0, LAVA.alpha(0.16 * g));
+        s = s.fill(tongue, EMBER.alpha(0.50 * g));
+        // inner core: same curve, half the width
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        for k in 1..=6u32 {
+            let u = k as f32 / 6.0;
+            let (iu, du) = (1.0 - u, u);
+            let px = iu * iu * bx + 2.0 * iu * du * cx + du * du * tx;
+            let py = iu * iu * y + 2.0 * iu * du * cy + du * du * ty;
+            let w = 2.0 * (1.0 - u);
+            left.push([px - w, py]);
+            right.push([px + w, py]);
+        }
+        right.reverse();
+        s = s.fill([left, right].concat(), HOT.alpha(0.72 * g));
+    }
+    s
+}
+
+/// The whole ambient scene behind the UI: a flagstone floor with magma rivers
+/// flowing across it, fire licking from the vents, glowing cracks and a thick
+/// field of embers drifting up the hall.
 fn forge_shape(t: f64) -> Shape {
     let mut s = Shape::new().view_box(440.0, 800.0);
     // Flagstones: small jittered quads in crooked courses, each a slightly
@@ -545,11 +648,36 @@ fn forge_shape(t: f64) -> Shape {
             }
         }
     }
-    // Heat pool along the floor.
-    for k in 0..3 {
-        let y = 772.0 + k as f32 * 12.0;
-        s = s.line([-24.0, y], [464.0, y + 4.0], 30.0 - k as f32 * 8.0, LineCap::Round, LAVA.alpha(0.035 + 0.02 * k as f32));
+    // The magma rivers: wide molten channels with heat bleeding onto the stone,
+    // dark crust rafts riding downstream, and a glowing seam burning through
+    // the gaps between the plates.
+    for (ri, river) in RIVERS.iter().enumerate() {
+        let g = flick(t, ri as f64 * 11.0);
+        let len = polyline_len(river);
+        s = s.stroke(river.to_vec(), 64.0, LAVA.alpha(0.06 + 0.02 * g)); // heat bleed
+        s = s.stroke(river.to_vec(), 40.0, LAVA.alpha(0.45 + 0.12 * g)); // molten body
+        s = s.stroke(river.to_vec(), 20.0, EMBER.alpha(0.30 + 0.10 * g)); // molten core
+        // Dark crust rafts drifting downstream, breaking the glow into plates.
+        for k in 0..6u64 {
+            let pos = frac(t * (0.02 + 0.006 * ri as f64) + k as f64 / 6.0 + ri as f64 * 0.31) * len;
+            let raft = sub_polyline(river, pos, 22.0 + 30.0 * hash(ri as u64 * 13 + k));
+            s = s.stroke(raft, 17.0, Color { r: 0.006, g: 0.005, b: 0.005, a: 0.72 });
+        }
+        // The seam burns through between the crust, and hot blobs surge along it.
+        s = s.stroke(river.to_vec(), 5.0, EMBER.alpha(0.35 + 0.15 * g));
+        s = s.stroke(river.to_vec(), 1.8, HOT.alpha(0.30 + 0.25 * g));
+        for k in 0..4u64 {
+            let pos = frac(t * (0.045 + 0.011 * ri as f64) + k as f64 / 4.0) * len;
+            let dash = sub_polyline(river, pos, 34.0 + 22.0 * hash(ri as u64 * 7 + k));
+            s = s.stroke(dash.clone(), 9.0, EMBER.alpha(0.30 * g));
+            s = s.stroke(dash, 3.2, HOT.alpha(0.55));
+        }
+        for k in 0..3u32 {
+            let p = polyline_at(river, (k as f32 + 0.5) / 3.0);
+            s = flame(s, p[0], p[1], 26.0 + 16.0 * hash(ri as u64 * 17 + k as u64), t, ri as u64 * 100 + k as u64);
+        }
     }
+    // Wall cracks up high: flicker with a slow pulse crawling along them.
     for (i, crack) in CRACKS.iter().enumerate() {
         let g = flick(t, i as f64 * 7.0);
         for w in crack.windows(2) {
@@ -558,9 +686,28 @@ fn forge_shape(t: f64) -> Shape {
             s = s.line(w[0], w[1], 1.5, LineCap::Round, EMBER.alpha(0.72 * g));
             s = s.line([w[0][0] + 0.4, w[0][1] + 0.6], [w[1][0] + 0.4, w[1][1] + 0.6], 0.6, LineCap::Round, HOT.alpha(0.45 * g));
         }
+        let len = polyline_len(crack);
+        let pos = frac(t * 0.06 + i as f64 / CRACKS.len() as f64) * len;
+        let dash = sub_polyline(crack, pos, 26.0);
+        s = s.stroke(dash, 1.1, HOT.alpha(0.55 * g));
     }
-    // Embers rising off the veins: hash-seeded lanes, sway, fade toward the ceiling.
-    for i in 0..34u64 {
+    // The magma lake along the bottom edge, flowing.
+    for k in 0..3 {
+        let y = 772.0 + k as f32 * 12.0;
+        let g = flick(t, k as f64 * 6.0 + 2.0);
+        s = s.line([-24.0, y], [464.0, y + 4.0], 30.0 - k as f32 * 8.0, LineCap::Round, LAVA.alpha(0.05 + 0.03 * k as f32 + 0.02 * g));
+        let lake = [[-24.0f32, y], [464.0, y + 4.0]];
+        for m in 0..4u64 {
+            let pos = frac(t * 0.03 + m as f64 / 4.0 + k as f64 * 0.17) * 488.0;
+            let dash = sub_polyline(&lake, pos, 60.0 + 30.0 * hash((k * 9 + m as usize) as u64));
+            s = s.stroke(dash, 4.0 - k as f32, EMBER.alpha(0.22 * g));
+        }
+    }
+    for x in [-8.0f32, 96.0, 214.0, 330.0, 442.0] {
+        s = flame(s, x, 792.0, 34.0, t, (x as u64) ^ 0x51ED);
+    }
+    // A thick ember field rising off the hall, some flaring bright.
+    for i in 0..58u64 {
         let x0 = hash(i * 3 + 1) * 440.0;
         let speed = 26.0 + hash(i * 3 + 2) * 42.0;
         let phase = hash(i * 3 + 3) * 880.0;
@@ -569,8 +716,13 @@ fn forge_shape(t: f64) -> Shape {
         let a = (y / 800.0).clamp(0.0, 1.0) * flick(t, i as f64);
         let size = 0.9 + hash(i * 7 + 5) * 1.7;
         s = s.line([x, y], [x, y + size * 2.4], size, LineCap::Round, EMBER.alpha(0.5 * a));
-        if hash(i * 11 + 7) > 0.62 {
+        if hash(i * 11 + 7) > 0.5 {
             s = s.line([x, y], [x, y + size * 1.1], size * 0.55, LineCap::Round, HOT.alpha(0.75 * a));
+        }
+        if hash(i * 13 + 9) > 0.9 {
+            // a rare flare: a bigger, brighter coal with a tail
+            s = s.line([x, y], [x, y + 9.0], 2.6, LineCap::Round, EMBER.alpha(0.85 * a));
+            s = s.line([x, y], [x, y + 4.0], 1.3, LineCap::Round, HOT.alpha(0.95 * a));
         }
     }
     s
