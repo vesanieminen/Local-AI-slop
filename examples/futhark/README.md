@@ -7,7 +7,7 @@ no DOM widgets — Rune's own renderer, text, layout and springs.
 It's dressed as a dwarven forge hall: every panel is a chiselled stone slab (stone
 gradient, bevelled edges, inset lips), letters are engraved three-deep (ember rim,
 dark recess, pale face), the 24 Elder Futhark runes are cut as dark grooves with a
-**molten core and a spark at the chisel tip**, magma veins pulse in the floor, and
+**molten core and a spark at the chisel tip**, magma rivers flow across the floor, and
 embers drift up the hall on a torch-flicker clock. The Cast tab draws three runes —
 past, present, future — on glowing slabs. And **THE LEDGER** is the todo list the
 hall demands: carve a task and leave it untouched, and its heat bar fills as the
@@ -54,7 +54,7 @@ same blind spot, and its proof suite passes anyway):
 ```bash
 # 1) the live web build: zero console errors, real GPU submissions while a
 #    cast animates, and a slow ambient beat at rest (the forge never fully
-#    stills — veins pulse, embers climb), desktop + mobile:
+#    stills — rivers flow, embers climb), desktop + mobile:
 node verify.mjs --url http://127.0.0.1:8123/
 
 # 2) pixels, from Rune's native headless agent tooling (software Vulkan):
