@@ -4,9 +4,12 @@ The hub's first native app: [**Rune**](https://github.com/anomalyco/rune), a GPU
 Rust UI framework, compiled to WASM and drawn into one WebGPU canvas. No JS UI libraries,
 no DOM widgets — Rune's own renderer, text, layout and springs.
 
-All 24 Elder Futhark runes are drawn from scratch as vector strokes (`Shape` polylines)
-that **carve themselves in, stroke by stroke** — tap a tile, the chisel runs again.
-The Cast tab draws three runes — past, present, future.
+It's dressed as a dwarven forge hall: every panel is a chiselled stone slab (stone
+gradient, bevelled edges, inset lips), letters are engraved three-deep (ember rim,
+dark recess, pale face), the 24 Elder Futhark runes are cut as dark grooves with a
+**molten core and a spark at the chisel tip**, magma veins pulse in the floor, and
+embers drift up the hall on a torch-flicker clock. The Cast tab draws three runes —
+past, present, future — on glowing slabs.
 
 The Rust source is in `src/`. The site serves the prebuilt `dist/` so Pages CI stays
 fast; rebuild locally:
@@ -31,7 +34,8 @@ same blind spot, and its proof suite passes anyway):
 
 ```bash
 # 1) the live web build: zero console errors, real GPU submissions while a
-#    cast animates, and true idle (no frames) at rest, desktop + mobile:
+#    cast animates, and a slow ambient beat at rest (the forge never fully
+#    stills — veins pulse, embers climb), desktop + mobile:
 node verify.mjs --url http://127.0.0.1:8123/
 
 # 2) pixels, from Rune's native headless agent tooling (software Vulkan):

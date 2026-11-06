@@ -2,9 +2,10 @@
 //
 //   1) web checks:   NODE_PATH=<dir with playwright> node verify.mjs [--url http://127.0.0.1:PORT/]
 //      headless Chromium + WebGPU: zero console errors, real GPU submissions,
-//      canvas sizing, true idle (no frames at rest), and a lively frame loop
-//      during a cast. Pixels can't be captured from this Chromium's WebGPU
-//      compositing (see README), so visual proof comes from step 2.
+//      canvas sizing, a slow ambient beat at rest (the forge never fully stills)
+//      and a lively frame loop during a cast. Pixels can't be captured from
+//      this Chromium's WebGPU compositing (see README), so visual proof comes
+//      from step 2.
 //   2) pixel checks: node verify.mjs --png snap.png [--png b.png ...]
 //      decodes the PNGs produced by snap.sh (Rune's native headless --snap)
 //      and asserts ink + accent-blue content actually rendered.
@@ -71,7 +72,8 @@ function imgData(path) {
   for (let i = 0; i < data.length; i += bpp) {
     const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
     if (r + g + b > 330) out.ink++;
-    if (b > 110 && b > r + 25 && g > 60 && g < b) out.accent++;
+    // molten accent: hot orange/gold pixels (was blue in the first palette)
+    if (r > 140 && r > b + 40 && g > 60 && g <= r) out.accent++;
   }
   return out;
 }
@@ -119,7 +121,9 @@ async function probe(name, url, { width, height, hasTouch = false, mobile = fals
   const now = await page.evaluate(() => window.__probe.submits);
   const gpuErrors = await page.evaluate(() => window.__probe.gpuErrors);
   const moved = now - early;
-  const submitsOk = wantSubmits === 'idle' ? moved === 0 : moved >= wantSubmits;
+  // The forge never fully stills at rest (vein pulse + ember field on a ~30 ms
+  // beat), so "at rest" means a live-but-slow ambient rate, not zero frames.
+  const submitsOk = wantSubmits === 'ambient' ? moved >= 15 : moved >= wantSubmits;
   const sizeOk = size[0] >= width * 0.9 && size[1] >= height * 0.9;
   const ok = errors.length === 0 && gpuErrors.length === 0 && submitsOk && sizeOk;
   report(name, ok, `canvas=${size.join('x')} submits=${now} (Δ${moved}, want ${wantSubmits}) errors=${errors.length + gpuErrors.length}`);
@@ -128,9 +132,9 @@ async function probe(name, url, { width, height, hasTouch = false, mobile = fals
   await ctx.close();
 }
 
-await probe('web-desktop-load', '', { width: 1280, height: 800, wantSubmits: 'idle' });
+await probe('web-desktop-load', '', { width: 1280, height: 800, wantSubmits: 'ambient' });
 await probe('web-desktop-cast', '?mode=cast&seed=7&auto', { width: 1280, height: 800, wantSubmits: 40, settle: 1000 });
-await probe('web-mobile-load', '', { width: 390, height: 844, hasTouch: true, mobile: true, wantSubmits: 'idle' });
+await probe('web-mobile-load', '', { width: 390, height: 844, hasTouch: true, mobile: true, wantSubmits: 'ambient' });
 await probe('web-mobile-cast', '?mode=cast&seed=3&auto', { width: 390, height: 844, hasTouch: true, mobile: true, wantSubmits: 40, settle: 1000 });
 
 await browser.close();
