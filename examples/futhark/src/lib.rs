@@ -488,14 +488,10 @@ fn hash(i: u64) -> f32 {
 /// Magma veins in the hall floor, authored in a 440 × 800 box that stretches
 /// to the window (Shape `view_box`); edges sit just outside it.
 static CRACKS: &[&[[f32; 2]]] = &[
-    poly!([[-12., 766.], [64., 742.], [128., 760.], [196., 734.], [262., 752.], [338., 726.], [404., 746.], [452., 734.]]),
-    poly!([[128., 760.], [110., 698.], [132., 646.], [114., 588.]]),
-    poly!([[262., 752.], [282., 696.], [266., 650.], [288., 602.]]),
     poly!([[-8., 306.], [44., 322.], [78., 302.], [116., 324.]]),
     poly!([[452., 522.], [404., 506.], [372., 528.], [334., 510.]]),
-    poly!([[36., 812.], [58., 704.], [42., 624.]]),
-    poly!([[408., 812.], [392., 724.], [414., 658.], [398., 602.]]),
-    poly!([[196., 734.], [210., 688.]]),
+    poly!([[36., 812.], [58., 744.], [44., 692.]]),
+    poly!([[408., 812.], [392., 748.], [412., 698.]]),
 ];
 
 /// Magma rivers that flow across the hall floor, in the same 440 × 800 box.
@@ -648,29 +644,24 @@ fn forge_shape(t: f64) -> Shape {
             }
         }
     }
-    // The magma rivers: wide molten channels with heat bleeding onto the stone,
-    // dark crust rafts riding downstream, and a glowing seam burning through
-    // the gaps between the plates.
+    // The magma rivers: the same layered soft glow as the cracks and seams the
+    // UI wears, scaled up to channels — pure gradients of heat, nothing dark
+    // drawn over them.
     for (ri, river) in RIVERS.iter().enumerate() {
         let g = flick(t, ri as f64 * 11.0);
+        s = s.stroke(river.to_vec(), 84.0, LAVA.alpha(0.035 + 0.015 * g)); // far heat bleed
+        s = s.stroke(river.to_vec(), 48.0, LAVA.alpha(0.06 + 0.025 * g)); // warm apron
+        s = s.stroke(river.to_vec(), 24.0, LAVA.alpha(0.15 + 0.05 * g)); // molten body
+        s = s.stroke(river.to_vec(), 9.0, EMBER.alpha(0.16 + 0.06 * g)); // core glow
+        s = s.stroke(river.to_vec(), 2.0, EMBER.alpha(0.32)); // core
+        s = s.stroke(river.to_vec(), 0.8, HOT.alpha(0.25 + 0.2 * g)); // seam
         let len = polyline_len(river);
-        s = s.stroke(river.to_vec(), 64.0, LAVA.alpha(0.06 + 0.02 * g)); // heat bleed
-        s = s.stroke(river.to_vec(), 40.0, LAVA.alpha(0.45 + 0.12 * g)); // molten body
-        s = s.stroke(river.to_vec(), 20.0, EMBER.alpha(0.30 + 0.10 * g)); // molten core
-        // Dark crust rafts drifting downstream, breaking the glow into plates.
-        for k in 0..6u64 {
-            let pos = frac(t * (0.02 + 0.006 * ri as f64) + k as f64 / 6.0 + ri as f64 * 0.31) * len;
-            let raft = sub_polyline(river, pos, 22.0 + 30.0 * hash(ri as u64 * 13 + k));
-            s = s.stroke(raft, 17.0, Color { r: 0.006, g: 0.005, b: 0.005, a: 0.72 });
-        }
-        // The seam burns through between the crust, and hot blobs surge along it.
-        s = s.stroke(river.to_vec(), 5.0, EMBER.alpha(0.35 + 0.15 * g));
-        s = s.stroke(river.to_vec(), 1.8, HOT.alpha(0.30 + 0.25 * g));
+        // Heat surging downstream: soft bright dashes, no cut-outs.
         for k in 0..4u64 {
             let pos = frac(t * (0.045 + 0.011 * ri as f64) + k as f64 / 4.0) * len;
             let dash = sub_polyline(river, pos, 34.0 + 22.0 * hash(ri as u64 * 7 + k));
-            s = s.stroke(dash.clone(), 9.0, EMBER.alpha(0.30 * g));
-            s = s.stroke(dash, 3.2, HOT.alpha(0.55));
+            s = s.stroke(dash.clone(), 13.0, LAVA.alpha(0.12 * g));
+            s = s.stroke(dash, 3.0, EMBER.alpha(0.45));
         }
         for k in 0..3u32 {
             let p = polyline_at(river, (k as f32 + 0.5) / 3.0);
@@ -683,13 +674,13 @@ fn forge_shape(t: f64) -> Shape {
         for w in crack.windows(2) {
             s = s.line(w[0], w[1], 11.0, LineCap::Round, LAVA.alpha(0.09 * g));
             s = s.line(w[0], w[1], 4.0, LineCap::Round, LAVA.alpha(0.26 * g));
-            s = s.line(w[0], w[1], 1.5, LineCap::Round, EMBER.alpha(0.72 * g));
-            s = s.line([w[0][0] + 0.4, w[0][1] + 0.6], [w[1][0] + 0.4, w[1][1] + 0.6], 0.6, LineCap::Round, HOT.alpha(0.45 * g));
+            s = s.line(w[0], w[1], 1.5, LineCap::Round, EMBER.alpha(0.55 * g));
+            s = s.line([w[0][0] + 0.4, w[0][1] + 0.6], [w[1][0] + 0.4, w[1][1] + 0.6], 0.6, LineCap::Round, HOT.alpha(0.35 * g));
         }
         let len = polyline_len(crack);
         let pos = frac(t * 0.06 + i as f64 / CRACKS.len() as f64) * len;
         let dash = sub_polyline(crack, pos, 26.0);
-        s = s.stroke(dash, 1.1, HOT.alpha(0.55 * g));
+        s = s.stroke(dash, 1.1, HOT.alpha(0.45 * g));
     }
     // The magma lake along the bottom edge, flowing.
     for k in 0..3 {
