@@ -14,6 +14,16 @@ hall demands: carve a task and leave it untouched, and its heat bar fills as the
 slab slides toward the magma line — then it cracks, glows and crumbles into the
 floor. Strike tasks down to seal them in gold first.
 
+Every panel's face is **procedural basalt**: at startup the app grows a seamless
+fractal height field, derives surface normals from it, Lambert-shades them from
+a fixed top-left light and rasterizes the result once into a `Pixels` image — a
+bump/displacement map baked to RGB, shared by every slab (`Pixels` +
+`SurfaceFit::Fill`). The floor adds real relief: each flagstone is drawn with a
+dark sunk copy under its face, a lit top edge and chips, courses overlapping
+into depth. One gotcha worth knowing: an element that sizes one axis from
+content takes the *image's* aspect ratio once it carries pixels — fixed sizes
+or `aspect_ratio(1e6)` keep content in charge.
+
 The Rust source is in `src/`. The site serves the prebuilt `dist/` so Pages CI stays
 fast; rebuild locally:
 

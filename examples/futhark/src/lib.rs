@@ -9,7 +9,10 @@
 //! a WebGPU canvas.
 
 use rune::tok::TextStyle;
-use rune::{canvas, col, el, row, text, text_input, AppSpec, Color, Cx, El, LineCap, ScrollSpec, Shadow, Shape, TextEdit, Tx};
+use rune::{
+    canvas, col, el, row, text, text_input, AppSpec, Color, Cx, El, LineCap, Pixels, ScrollSpec,
+    Shadow, Shape, SurfaceFit, TextEdit, Tx,
+};
 
 /// A rune in the 100 × 140 view box, as strokes of connected points.
 struct Rune {
@@ -314,6 +317,9 @@ pub struct State {
     beat: bool,
     tasks: Vec<Task>,
     draft: TextEdit,
+    /// Seamless basalt faces, shared by every slab in the hall.
+    rock_a: Pixels,
+    rock_b: Pixels,
 }
 
 impl Default for State {
@@ -330,6 +336,8 @@ impl Default for State {
             beat: false,
             tasks: Vec::new(),
             draft: TextEdit::new(""),
+            rock_a: make_rock(0xA17C3),
+            rock_b: make_rock(0x5E3A9),
         };
         // Native headless tooling (`--snap`): FUTHARK_SEED / FUTHARK_RUNE / FUTHARK_CAST / FUTHARK_TASKS.
         #[cfg(not(target_arch = "wasm32"))]
@@ -359,12 +367,10 @@ impl Default for State {
 // linear-light (Rune's `hex` srgb-decodes), so each constant lists its
 // sRGB hex next to the decoded value.
 // ---------------------------------------------------------------------------
-const BASALT_TOP: Color = Color { r: 0.0110, g: 0.0080, b: 0.0056, a: 1.0 }; // #1b1611
-const BASALT_BOT: Color = Color { r: 0.0033, g: 0.0027, b: 0.0018, a: 1.0 }; // #0b0906
-const STONE_TOP: Color = Color { r: 0.0343, g: 0.0254, b: 0.0160, a: 1.0 }; // #342c22
-const STONE_BOT: Color = Color { r: 0.0145, g: 0.0103, b: 0.0065, a: 1.0 }; // #201a13
-const EDGE_HI: Color = Color { r: 0.1022, g: 0.0722, b: 0.0408, a: 1.0 }; // #5a4c39
-const EDGE_LO: Color = Color { r: 0.0021, g: 0.0015, b: 0.0012, a: 1.0 }; // #070504
+const BASALT_TOP: Color = Color { r: 0.0082, g: 0.0082, b: 0.0103, a: 1.0 }; // #16161a
+const BASALT_BOT: Color = Color { r: 0.0030, g: 0.0030, b: 0.0037, a: 1.0 }; // #0a0a0c
+const EDGE_HI: Color = Color { r: 0.1471, g: 0.1471, b: 0.1213, a: 1.0 }; // #6b6a63
+const EDGE_LO: Color = Color { r: 0.0012, g: 0.0012, b: 0.0014, a: 1.0 }; // #060607
 const INK: Color = Color { r: 0.7380, g: 0.6655, b: 0.5584, a: 1.0 }; // #dfd5c5
 const INK_DIM: Color = Color { r: 0.3324, g: 0.2746, b: 0.1946, a: 1.0 }; // #9c8f7a
 const GOLD: Color = Color { r: 0.8148, g: 0.4508, b: 0.0703, a: 1.0 }; // #e9b34b
@@ -372,6 +378,97 @@ const HOT: Color = Color { r: 1.0, g: 0.6939, b: 0.3466, a: 1.0 }; // #ffd99f
 const EMBER: Color = Color { r: 1.0, g: 0.2582, b: 0.0241, a: 1.0 }; // #ff8b2b
 const LAVA: Color = Color { r: 1.0, g: 0.1000, b: 0.0065, a: 1.0 }; // #ff5913
 const BLACK: Color = Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }; // #000000
+
+// ---------------------------------------------------------------------------
+// Procedural basalt: a seamless height field whose normals are baked into
+// Lambert shading from a fixed top-left light — a displacement-map-style bump
+// map rendered once into a `Pixels` raster, then used as the face of every
+// slab in the hall.
+// ---------------------------------------------------------------------------
+fn vhash(x: i32, y: i32, seed: u32) -> f32 {
+    let mut h = (x as u32)
+        .wrapping_mul(0x9E37_79B1)
+        ^ (y as u32).wrapping_mul(0x85EB_CA6B)
+        ^ seed.wrapping_mul(0xC2B2_AE3D);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3131);
+    h ^= h >> 12;
+    h as f32 / u32::MAX as f32
+}
+
+/// Value noise on a wrapping `period × period` lattice, so the texture tiles seamlessly.
+fn vnoise(x: f32, y: f32, period: i32, seed: u32) -> f32 {
+    let (xi, yi) = (x.floor(), y.floor());
+    let (xf, yf) = (x - xi, y - yi);
+    let w = |a: f32| ((a as i32).rem_euclid(period)) as u32;
+    let (x0, x1) = (w(xi), w(xi + 1.0));
+    let (y0, y1) = (w(yi), w(yi + 1.0));
+    let u = xf * xf * (3.0 - 2.0 * xf);
+    let v = yf * yf * (3.0 - 2.0 * yf);
+    let a = vhash(x0 as i32, y0 as i32, seed);
+    let b = vhash(x1 as i32, y0 as i32, seed);
+    let c = vhash(x0 as i32, y1 as i32, seed);
+    let d = vhash(x1 as i32, y1 as i32, seed);
+    (a * (1.0 - u) + b * u) * (1.0 - v) + (c * (1.0 - u) + d * u) * v
+}
+
+/// Fractal sum over `cu,cv` in `0..1`, lattices from `1 << base` up, all wrapping.
+fn fbm(cu: f32, cv: f32, octaves: u32, base: u32, seed: u32) -> f32 {
+    let (mut sum, mut amp, mut norm) = (0.0f32, 1.0f32, 0.0f32);
+    for o in 0..octaves {
+        let f = (1u32 << (base + o).min(12)) as f32;
+        sum += amp * vnoise(cu * f, cv * f, f as i32, seed.wrapping_add(o * 7919));
+        norm += amp;
+        amp *= 0.55;
+    }
+    sum / norm
+}
+
+fn make_rock(seed: u32) -> Pixels {
+    const S: usize = 256;
+    let h = |x: usize, y: usize| -> f32 {
+        0.5 + 0.5 * fbm((x as f32 + 0.5) / S as f32, (y as f32 + 0.5) / S as f32, 5, 3, seed)
+    };
+    let mut rgba = vec![0u8; S * S * 4];
+    // Light from the upper left; the surface normal comes from the height gradient.
+    let (lx, ly, lz) = (-0.52f32, -0.62, 0.58);
+    let ln = (lx * lx + ly * ly + lz * lz).sqrt();
+    let (lx, ly, lz) = (lx / ln, ly / ln, lz / ln);
+    for y in 0..S {
+        for x in 0..S {
+            let dhx = h((x + 1) % S, y) - h((x + S - 1) % S, y);
+            let dhy = h(x, (y + 1) % S) - h(x, (y + S - 1) % S);
+            let (nx, ny, nz) = (-dhx * 3.1, -dhy * 3.1, 1.0); // bump strength
+            let nn = (nx * nx + ny * ny + nz * nz).sqrt();
+            let diff = ((nx / nn) * lx + (ny / nn) * ly + (nz / nn) * lz).max(0.0);
+            let shade = 0.50 + 0.80 * diff + 0.16 * diff.powi(9); // a hint of specular
+            let tone = fbm(x as f32 / S as f32, y as f32 / S as f32, 3, 2, seed.wrapping_add(31));
+            let (mut r, mut g, mut b) = (47.0 + 17.0 * tone, 45.0 + 16.0 * tone, 41.0 + 14.0 * tone);
+            r *= shade;
+            g *= shade;
+            b *= shade;
+            // Mineral flecks catch the light; pores sit deep.
+            let sp = vhash(x as i32, y as i32, seed.wrapping_add(77));
+            if sp > 0.9972 {
+                r += 58.0;
+                g += 48.0;
+                b += 28.0;
+            } else if sp < 0.0038 {
+                r *= 0.52;
+                g *= 0.52;
+                b *= 0.52;
+            }
+            let i = (y * S + x) * 4;
+            rgba[i] = r.clamp(0.0, 255.0) as u8;
+            rgba[i + 1] = g.clamp(0.0, 255.0) as u8;
+            rgba[i + 2] = b.clamp(0.0, 255.0) as u8;
+            rgba[i + 3] = 255;
+        }
+    }
+    let p = Pixels::new();
+    p.set(S as u32, S as u32, rgba);
+    p
+}
 
 /// A torch-like flicker in 0.55..=1.0: incommensurate sines, deterministic per seed,
 /// so headless snapshots at a fixed `--at` catch it mid-flicker exactly like a live frame.
@@ -401,10 +498,53 @@ static CRACKS: &[&[[f32; 2]]] = &[
     poly!([[196., 734.], [210., 688.]]),
 ];
 
-/// The whole ambient scene behind the UI: glowing veins in the floor and a field
-/// of embers drifting up through the hall.
+/// The whole ambient scene behind the UI: a basalt flagstone floor with heat
+/// bleeding through the seams, magma veins and a field of embers drifting up.
 fn forge_shape(t: f64) -> Shape {
     let mut s = Shape::new().view_box(440.0, 800.0);
+    // Flagstones: small jittered quads in crooked courses, each a slightly
+    // different grey with a lit top edge — a floor, not a pile of cards.
+    let (cols, rows) = (8u32, 13u32);
+    let (tw, th) = (440.0 / cols as f32, 800.0 / (rows + 5) as f32);
+    let y0 = th * 3.2;
+    for cy in 0..rows {
+        for cx in 0..cols {
+            let idx = (cy * cols + cx) as u64;
+            let jx = |k: u64| (hash(idx * 4 + k) - 0.5) * 11.0;
+            let jy = |k: u64| (hash(idx * 4 + 40 + k) - 0.5) * 8.0;
+            let (x, y) = (cx as f32 * tw, y0 + cy as f32 * th);
+            let quad = [
+                [x + jx(0), y + jy(0)],
+                [x + tw + jx(1), y + jy(1)],
+                [x + tw + jx(2), y + th + jy(2)],
+                [x + jx(3), y + th + jy(3)],
+            ];
+            let v = hash(idx * 9 + 5);
+            let stone = Color { r: 0.0082 + 0.0045 * v, g: 0.0078 + 0.0042 * v, b: 0.0071 + 0.0038 * v, a: 1.0 };
+            // Thickness: a dark copy sunk below the face, then the face itself.
+            let sunk = quad.map(|p| [p[0] + 1.5, p[1] + 5.0]);
+            s = s.fill(sunk.to_vec(), BLACK.alpha(0.55));
+            s = s.fill(quad.to_vec(), stone);
+            // The face catches the hall light along its top edge; chips break it up.
+            s = s.line(quad[0], quad[1], 1.0, LineCap::Round, EDGE_HI.alpha(0.09 + 0.07 * v));
+            s = s.line(quad[3], quad[2], 1.2, LineCap::Round, BLACK.alpha(0.55));
+            if hash(idx * 13 + 7) > 0.55 {
+                let ax = quad[0][0] + tw * (0.2 + 0.5 * hash(idx * 3 + 1));
+                let ay = quad[0][1] + th * (0.3 + 0.4 * hash(idx * 3 + 2));
+                s = s.line([ax, ay], [ax + 12.0 + 18.0 * hash(idx * 5 + 3), ay + 6.0 * (hash(idx * 5 + 4) - 0.5)], 0.7, LineCap::Round, EDGE_HI.alpha(0.05 + 0.05 * v));
+            }
+            // Some slabs sit cracked: one hot edge, others just dark seams.
+            if hash(idx * 17 + 3) > 0.8 {
+                let g = flick(t, idx as f64 * 3.0);
+                s = s.line(quad[2], quad[3], 1.6, LineCap::Round, LAVA.alpha(0.30 * g));
+                s = s.line(quad[2], quad[3], 4.5, LineCap::Round, LAVA.alpha(0.07 * g));
+            }
+            if hash(idx * 23 + 11) > 0.88 {
+                let g = flick(t, idx as f64 * 3.0 + 1.7);
+                s = s.line(quad[1], quad[2], 1.2, LineCap::Round, EMBER.alpha(0.22 * g));
+            }
+        }
+    }
     // Heat pool along the floor.
     for k in 0..3 {
         let y = 772.0 + k as f32 * 12.0;
@@ -673,16 +813,21 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// The masonry: one helper paints every panel as a chiselled slab — a stone
-// gradient, bevelled edges (light above, shadow below), an inset lip and a
-// drop shadow into the hall's dark.
+// The masonry: every panel is a slab of the procedural basalt — the baked-bump
+// face, a top-lit wash, bevelled edges (light above, shadow below), an inset
+// lip and a thick drop into the hall's dark.
 // ---------------------------------------------------------------------------
-fn slab(e: El) -> El {
-    e.gradient(STONE_TOP, STONE_BOT)
-        .border_gradient(1.5, EDGE_HI.alpha(0.8), EDGE_LO.alpha(0.95))
-        .box_shadow(Shadow { x: 0.0, y: 2.0, blur: 3.0, spread: -0.5, color: BLACK.alpha(0.5), inset: true })
-        .box_shadow(Shadow { x: 0.0, y: -1.5, blur: 1.5, spread: -1.0, color: EDGE_HI.alpha(0.25), inset: true })
-        .shadow(9.0, 22.0, BLACK.alpha(0.35))
+fn slab(e: El, rock: &Pixels) -> El {
+    e.pixels_fit(rock, SurfaceFit::Fill)
+        .linear_gradient(
+            std::f32::consts::PI,
+            [(0.0, EDGE_HI.alpha(0.18)), (0.38, BLACK.alpha(0.0)), (1.0, BLACK.alpha(0.38))],
+        )
+        .border_gradient(1.5, EDGE_HI.alpha(0.9), EDGE_LO.alpha(0.95))
+        .box_shadow(Shadow { x: 0.0, y: 2.0, blur: 3.0, spread: -0.5, color: BLACK.alpha(0.55), inset: true })
+        .box_shadow(Shadow { x: 0.0, y: -1.5, blur: 1.5, spread: -1.0, color: EDGE_HI.alpha(0.3), inset: true })
+        .shadow(11.0, 24.0, BLACK.alpha(0.45))
+        .shadow(3.0, 0.5, EDGE_LO.alpha(0.9))
 }
 
 /// Letters chiselled into the panel face: an ember rim peeking over the top edge,
@@ -730,15 +875,17 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
             .h(12.0),
         );
 
-    let tab = |label: &'static str, key: &'static str, active: bool, on_press: fn(&mut State)| {
+    let tab = |label: &'static str, key: &'static str, active: bool, rock: &Pixels, w: f32, on_press: fn(&mut State)| {
         let mut b = slab(
             el()
                 .key(key)
+                .w(w)
                 .h(42.0)
-                .px(16.0)
                 .center()
-                .radius(11.0)
+                .radius(9.0)
+                .corners([9.0, 9.0, 5.0, 5.0])
                 .press_scale(0.94),
+            rock,
         );
         if active {
             b = b
@@ -753,9 +900,9 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
     let tabs = row()
         .w_full()
         .gap(10.0)
-        .child(tab("ALPHABET", "tab-alphabet", s.mode == Mode::Alphabet, TO_ALPHA))
-        .child(tab("THE CAST", "tab-cast", s.mode == Mode::Cast, TO_CAST))
-        .child(tab("THE LEDGER", "tab-ledger", s.mode == Mode::Ledger, TO_LEDGER));
+        .child(tab("ALPHABET", "tab-alphabet", s.mode == Mode::Alphabet, &s.rock_a, 110.0, TO_ALPHA))
+        .child(tab("THE CAST", "tab-cast", s.mode == Mode::Cast, &s.rock_b, 98.0, TO_CAST))
+        .child(tab("THE LEDGER", "tab-ledger", s.mode == Mode::Ledger, &s.rock_a, 118.0, TO_LEDGER));
 
     let body = match s.mode {
         Mode::Alphabet => {
@@ -806,10 +953,12 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                 el()
                     .key("detail")
                     .w_full()
+                    .h(212.0)
                     .radius(16.0)
                     .corners([16.0, 16.0, 9.0, 9.0])
                     .padding(14.0)
-                    .child(row().w_full().gap(10.0).center_y().child(stage).child(info)),
+                    .child(row().w_full().h_full().gap(10.0).center_y().child(stage).child(info)),
+                &s.rock_b,
             );
 
             let mut grid = col().w_full().gap(10.0).py(2.0);
@@ -827,10 +976,12 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                             .key(format!("cell-{idx}"))
                             .grow(1.0)
                             .h(88.0)
-                            .radius(12.0)
+                            .radius(9.0)
+                            .corners([9.0, 9.0, 5.0, 5.0])
                             .center()
                             .gap(2.0)
                             .press_scale(0.93),
+                        if idx % 2 == 0 { &s.rock_a } else { &s.rock_b },
                     );
                     if sel {
                         cell = cell
@@ -885,10 +1036,12 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                         .key(format!("card-{i}"))
                         .grow(1.0)
                         .min_w(0.0)
+                        .aspect_ratio(1_000_000.0) // let content drive height; a texture never stretches it
                         .radius(13.0)
                         .corners([13.0, 13.0, 7.0, 7.0])
                         .padding(10.0)
                         .gap(6.0),
+                    if i % 2 == 0 { &s.rock_b } else { &s.rock_a },
                 )
                 .border(1.5, EMBER.alpha(0.35 * heat))
                 .box_shadow(Shadow { x: 0.0, y: 0.0, blur: 12.0, spread: 1.0, color: LAVA.alpha(0.14 * heat), inset: true })
@@ -932,10 +1085,11 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                 .w_full()
                 .h(54.0)
                 .center()
-                .radius(13.0)
-                .corners([13.0, 13.0, 8.0, 8.0])
+                .radius(11.0)
+                .corners([11.0, 11.0, 6.0, 6.0])
                 .press_scale(0.97)
-                .gradient(Color { r: 0.0452, g: 0.0145, b: 0.0052, a: 1.0 }, Color { r: 0.0164, g: 0.0056, b: 0.0027, a: 1.0 }) // #3c2010 → #231109
+                .pixels_fit(&s.rock_a, SurfaceFit::Fill)
+                .gradient(Color { r: 0.0452, g: 0.0145, b: 0.0052, a: 0.6 }, Color { r: 0.0164, g: 0.0056, b: 0.0027, a: 0.75 }) // iron wash over basalt (#3c2010 → #231109)
                 .border_gradient(2.0, EMBER.alpha(0.8 * heat), LAVA.alpha(0.35))
                 .box_shadow(Shadow { x: 0.0, y: -1.0, blur: 16.0, spread: 1.0, color: LAVA.alpha(0.30 * heat), inset: true })
                 .box_shadow(Shadow { x: 0.0, y: 4.0, blur: 26.0, spread: 0.0, color: LAVA.alpha(0.30 * heat2), inset: false })
@@ -989,6 +1143,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                             .child(engrave("STRIKE", 11.0, 700.0, 1.5, GOLD))
                             .on_press(add_task),
                     ),
+                &s.rock_b,
             );
             let mut board = col().w_full().gap(9.0).pt(4.0);
             for (i, task) in s.tasks.iter().enumerate() {
@@ -998,6 +1153,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                     col()
                         .key(format!("task-{i}"))
                         .w_full()
+                        .aspect_ratio(1_000_000.0) // content-driven height over the rock face
                         .radius(11.0)
                         .corners([11.0, 11.0, 6.0, 6.0])
                         .px(12.0)
@@ -1011,6 +1167,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
                         } else {
                             (1.0 - melt.max(0.0) as f32 * 0.92).max(0.0)
                         }),
+                    if i % 2 == 0 { &s.rock_a } else { &s.rock_b },
                 );
                 if task.done {
                     card = card
