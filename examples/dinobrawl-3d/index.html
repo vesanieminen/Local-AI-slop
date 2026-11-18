@@ -95,8 +95,9 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x9fd8e8);
 scene.fog=new THREE.Fog(0x9fd8e8,tier==='low'?90:120,tier==='low'?210:300);
 const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,0.1,400);
-scene.add(new THREE.HemisphereLight(0xffffff,0x54703f,1.2));
-const sun=new THREE.DirectionalLight(0xfff2cf,1.9);sun.position.set(60,90,30);scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xffffff,0x54703f,1.55));
+const sun=new THREE.DirectionalLight(0xfff2cf,1.7);sun.position.set(60,90,30);scene.add(sun);
+const fill=new THREE.DirectionalLight(0xcfe4ff,0.5);fill.position.set(-50,40,-60);scene.add(fill);
 
 /* ============================== audio ================================ */
 const AU={ctx:null,noise:null};
@@ -230,82 +231,190 @@ const shadowG=new THREE.CircleGeometry(1,18).rotateX(-Math.PI/2);
 const shadowM=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.22,depthWrite:false});
 function makeChar(key){
   const sp=SPECIES[key],proto=geoCache[key].scene;
-  const root=proto.clone(true);
+  const model=proto.clone(true);
   const joints={},mats=[];
-  root.traverse(o=>{
+  model.traverse(o=>{
     if(o.isMesh){o.material=o.material.clone();o.material.vertexColors=true;mats.push(o.material);}
     else joints[o.name]=o;
   });
+  const root=new THREE.Group();          // outer: position+yaw only
+  root.add(model);                       // model: pose pitch/roll/breathe/bob
   const shadow=new THREE.Mesh(shadowG,shadowM.clone());
   root.add(shadow);
   scene.add(root);
-  const ch={key,sp,root,joints,shadow,mats,tail:[1,2,3,4].map(i=>joints['tail'+i]).filter(Boolean),
-    x:0,z:0,y:0,yaw:0,speed:0,state:'idle',t:rand(0,10),
+  const ch={key,sp,model,root,joints,shadow,mats,tail:[1,2,3,4].map(i=>joints['tail'+i]).filter(Boolean),
+    x:0,z:0,y:0,yaw:0,speed:0,state:'idle',t:rand(0,10),bob:0,
     hp:sp.hp,atkT:0,cool:0,windup:0,windupMax:1,hurtT:0,deadT:0,fear:0,alive:true,flash:0,
+    strikeT:0,roarT:0,roarMax:1,look:{y:0,ty:0,timer:rand(0,3)},yawLag:0,lastYaw:0,
+    fallSide:Math.random()<.5?-1:1,clubSide:0,prevAgg:0,
     wander:{x:0,z:0},home:{x:0,z:0},respawnAt:0,counted:false,isPlayer:false,remove:null};
-  const s=sp.scale;ch.root.scale.set(s,s,s);
+  const s=sp.scale;model.scale.set(s,s,s);
   return ch;
 }
 
-/* ============================== animation ============================ */
+/* ============================== animation ============================
+   Realistic-ish creature motion, tuned for fun:
+   • stride frequency scales with speed (dynamic similarity), sharpened swing phase
+   • knees flex in swing / extend through stance; feet push off at toe-off
+   • body bobs with steps, crouches lower when running, breathes when idle
+   • tail is a counterbalance: braces up at speed, lags into turns
+   • head does saccade-then-hold looks, locks forward at speed, tracks prey,
+     lags the body in turns (gaze stability)
+   • bite = arch back + gape (telegraph!) → explosive strike + snap
+   • roar = head high, chest out, body swell
+   • death = limbs buckle, body sinks and topples to one side
+   ------------------------------------------------------------------- */
+const easeOut=t=>1-Math.pow(1-t,3);
+function startRoar(ch,dur){ch.roarT=ch.roarMax=dur;}
+function focusOf(ch){ // what the eyes are on
+  if(!player||!player.alive)return ch.isPlayer?null:player;
+  if(ch.isPlayer){let b=null,bd=7;                       // player head eyes the nearest prey
+    for(const e of enemies){if(!e.alive)continue;const d=Math.hypot(e.x-ch.x,e.z-ch.z);if(d<bd){bd=d;b=e;}}
+    return b;}
+  return (ch.state==='chase'||ch.state==='attack'||ch.state==='flee')?player:null;
+}
 function poseChar(ch,dt){
-  const sp=ch.sp,J=ch.joints,th=ch.t;
-  const moving=Math.abs(ch.speed)>0.4;
-  const gait=ch.speed>sp.speed*0.55?1:0.62;
-  const w=ch.speed*(sp.kind==='quad'?0.9:1.15)+0.6;
-  ch.t+=dt*(moving?w:1.1);
-  const p=th*2.2;
-  const A=moving?(sp.kind==='quad'?0.5:0.7)*gait:0.05;
+  const sp=ch.sp,J=ch.joints,M=ch.model,s=sp.scale,quad=sp.kind==='quad';
+  if(!ch.alive){poseDeath(ch,dt);return;}
+  ch.strikeT=Math.max(0,ch.strikeT-dt);
+  ch.roarT=Math.max(0,ch.roarT-dt);
+  const roarK=ch.roarT>0?Math.sin(clamp(1-ch.roarT/ch.roarMax,0,1)*Math.PI):0;
+  const spdN=clamp(Math.abs(ch.speed)/sp.run,0,1);
+  const moving=Math.abs(ch.speed)>0.5;
+  const strideF=(quad?1.5:1.35)+spdN*(quad?2.3:2.9);   // steps/sec grows with speed
+  ch.t+=dt*(moving?strideF:0.45);
+  const p=ch.t*2.2;
   const flashK=ch.flash>0?Math.sin(ch.flash*40)*0.03:0;
-  // attack progress (shared windup/swing model)
-  let k=-1;
-  if(ch.windup>0)k=1-ch.windup/ch.windupMax;
-  else if(ch.atkT>0)k=1-ch.atkT/sp.atk;
-  if(sp.kind==='quad'){
-    if(J.legFL){J.legFL.rotation.z=A*Math.sin(p)+flashK;J.legFR.rotation.z=A*Math.sin(p+Math.PI)+flashK;
-                 J.legBL.rotation.z=A*Math.sin(p+Math.PI)*0.8;J.legBR.rotation.z=A*Math.sin(p)*0.8;}
-    if(J.head)J.head.rotation.z=Math.sin(th*1.3)*0.04-(k>=0?0.18*Math.sin(k*Math.PI):0);
-    if(J.tail1)J.tail1.rotation.y=Math.sin(th*1.6)*0.12+(k>=0?0.5*Math.sin(k*Math.PI):0);
-  } else {
-    if(J.thighL){
-      J.thighL.rotation.z=A*Math.sin(p)+flashK;J.thighR.rotation.z=A*Math.sin(p+Math.PI)+flashK;
-      if(J.shinL){J.shinL.rotation.z=-Math.max(0,Math.sin(p+0.9))*A*1.25;
-                  J.shinR.rotation.z=-Math.max(0,Math.sin(p+0.9+Math.PI))*A*1.25;}
-      if(J.footL){J.footL.rotation.z=Math.sin(p+1.6)*A*0.6;J.footR.rotation.z=Math.sin(p+1.6+Math.PI)*A*0.6;}
-      const sw=Math.sin(th*0.9)*0.08;
-      ch.tail.forEach((j,i)=>{j.rotation.y=Math.sin(th*1.3+i*0.55)*0.13*(1+i*0.3)*(moving?1.3:0.7)+sw;
-                             j.rotation.z=-0.09;});
-      if(J.armL){J.armL.rotation.z=-A*0.5*Math.sin(p)+0.15;J.armR.rotation.z=-A*0.5*Math.sin(p+Math.PI)+0.15;
-        if(J.arm2L){J.arm2L.rotation.z=-A*0.5*Math.sin(p+1)+0.25;J.arm2R.rotation.z=-A*0.5*Math.sin(p+1+Math.PI)+0.25;}}
-      let gape=0.04+Math.sin(th*2.3)*0.02, neckZ=Math.sin(th*1.1)*0.03, headZ=0;
-      if(k>=0){
-        gape=k<0.45?lerp(0,0.6,k/0.45):lerp(0.6,0.02,(k-0.45)/0.55);
-        neckZ=lerp(0.1,-0.18,clamp(k*1.6,0,1));headZ=lerp(-0.12,0.1,k);
-      }
-      if(sp.tailswish&&k>=0)ch.tail.forEach((j,i)=>{j.rotation.y+=Math.sin(k*Math.PI*2.5)*0.5*(1+i*0.4);});
-      if(J.neck)J.neck.rotation.z=neckZ;
-      if(J.head)J.head.rotation.z=headZ+Math.sin(th*1.7)*0.02;
-      if(J.jaw)J.jaw.rotation.z=gape;
+  // smoothed turn rate → tail lags one way, head the other (like real animals)
+  const yr=dt>0?angDiff(ch.yaw,ch.lastYaw)/dt:0; ch.lastYaw=ch.yaw;
+  ch.yawLag+=(clamp(yr,-3,3)-ch.yawLag)*Math.min(1,dt*5);
+  // gaze: saccade to a look target, then hold; lock on focus when it matters
+  const foc=focusOf(ch);
+  ch.look.timer-=dt;
+  if(foc)ch.look.ty=clamp(angDiff(Math.atan2(-(foc.z-ch.z),foc.x-ch.x),ch.yaw),-0.65,0.65);
+  else if(ch.look.timer<=0){ch.look.timer=rand(2.4,6);ch.look.ty=moving?0:rand(-0.8,0.8);}
+  const lkS=Math.abs(ch.look.ty-ch.look.y)>0.12?9:2.2; // saccade fast, drift slow
+  ch.look.y+=(ch.look.ty-ch.look.y)*Math.min(1,dt*lkS);
+  const breath=Math.sin(ch.t*1.6);
+  const hurtK=ch.hurtT>0?1:0;
+  if(quad){
+    /* Ankylosaurus: low heavy diagonal-sequence gait; club follows the head,
+       winds up cocked to one side, then whips across the other */
+    const A=(0.24+spdN*0.30)*(moving?1:0.04);
+    const sw=q=>Math.sin(q+0.3*Math.sin(q));
+    if(J.legFL){J.legFL.rotation.z=A*sw(p)+flashK;  J.legBR.rotation.z=A*sw(p)+flashK*0.8;
+                J.legFR.rotation.z=A*sw(p+Math.PI)+flashK;J.legBL.rotation.z=A*sw(p+Math.PI)+flashK*0.8;
+                J.legFL.rotation.x=J.legBL.rotation.x=0;J.legFR.rotation.x=J.legBR.rotation.x=0;}
+    ch.bob=moving?Math.abs(Math.sin(p))*(0.035+0.05*spdN):0;
+    let clubY=Math.sin(ch.t*0.8)*0.05-ch.yawLag*0.18, clubZ=0;
+    let headZ=-0.05+Math.sin(ch.t*0.7)*0.03, headY=ch.look.y*0.55-ch.yawLag*0.05;
+    if(ch.windup>0||ch.strikeT>0){
+      const side=ch.clubSide||(ch.clubSide=(player.x>=ch.x?1:-1)); // wind toward the player, whip across
+      if(ch.windup>0){const w=1-ch.windup/ch.windupMax;clubY=side*(0.45+0.95*w);clubZ=0.25*w;headZ-=0.10*w;}
+      else{const w=clamp(1-ch.strikeT/0.26,0,1);clubY=side*(1.4-2.8*easeOut(w));headZ-=0.12*(1-w);}
     }
-    ch.root.rotation.z=Math.sin(p)*0.02*(moving?1:0.2);
+    if(roarK>0){headZ+=0.35*roarK;clubY*=(1-roarK);}
+    if(hurtK){headZ-=0.18;clubY+=Math.sin(ch.hurtT*40)*0.2;}
+    if(J.head){J.head.rotation.y=headY;J.head.rotation.z=headZ;}
+    if(J.tail1){J.tail1.rotation.y=clubY;J.tail1.rotation.z=clubZ;}
+    M.rotation.z=-0.01+Math.sin(p)*0.012*(moving?1:0.3)+flashK*2+(hurtK?Math.sin(ch.hurtT*50)*0.04:0);
+    M.rotation.x=0;
+    M.position.y=hurtK?Math.sin(ch.hurtT*40)*0.03:0;
+    const bs=1+breath*0.010*(moving?0.3:1)+roarK*0.025;
+    M.scale.set(s*(1+(bs-1)*0.5),s*bs,s*(1+(bs-1)*0.7));
+  } else {
+    /* Theropod: sharp swing-phase legs, knee flexion, toe-off push */
+    const A=(0.28+spdN*0.50)*(moving?1:0.05);
+    const sw=q=>Math.sin(q+0.45*Math.sin(q));           // fast lift, slow push
+    if(!J.thighL)return;
+    J.thighL.rotation.z=A*sw(p)+flashK;
+    J.thighR.rotation.z=A*sw(p+Math.PI)+flashK;
+    J.shinL.rotation.z=-(0.13+0.10*spdN+A*1.15*Math.max(0,Math.sin(p+1.4)));
+    J.shinR.rotation.z=-(0.13+0.10*spdN+A*1.15*Math.max(0,Math.sin(p+Math.PI+1.4)));
+    if(J.footL){J.footL.rotation.z=0.13*Math.sin(p+2.8)*(moving?1:0.1);
+                J.footR.rotation.z=0.13*Math.sin(p+Math.PI+2.8)*(moving?1:0.1);}
+    ch.bob=moving?Math.abs(Math.sin(p))*(0.04+0.09*spdN):0;
+    // tail: horizontal stance, braced high at speed, sweeps opposite to turns
+    ch.tail.forEach((j,i)=>{
+      j.rotation.y=Math.sin(ch.t*1.1+i*0.6)*0.09*(1+i*0.25)*(moving?1.15:0.55)
+                  -ch.yawLag*(0.05+i*0.014);
+      j.rotation.z=-(0.10+spdN*0.05);
+    });
+    if(sp.tailswish&&(ch.windup>0||ch.strikeT>0)){       // Spinosaurus tail bludgeon
+      const w=ch.windup>0?1-ch.windup/ch.windupMax:1.2+clamp(1-ch.strikeT/0.24,0,1);
+      ch.tail.forEach((j,i)=>{j.rotation.y+=Math.sin(w*Math.PI*2.2)*0.55*(1+i*0.4);});
+    }
+    // arms: tucked, swing faintly with the steps; Distortus' extra pair twitches
+    if(J.armL){const aw=moving?A*0.45:0.04-breath*0.03;
+      J.armL.rotation.z=aw+0.28;J.armR.rotation.z=aw+0.28;
+      if(J.arm2L){const tw=Math.sin(ch.t*3.4+1.5)*0.13;
+        J.arm2L.rotation.z=aw*0.6+tw+0.36;J.arm2R.rotation.z=aw*0.6-tw+0.36;}}
+    // neck/head: look + gaze lag + breath; windup = arch & gape; strike = drive & snap
+    let neckY=ch.look.y*0.55-ch.yawLag*0.18, neckZ=0.02+breath*0.012,
+        headY=ch.look.y*0.30-ch.yawLag*0.10, headZ=-0.03, gape=0.03+Math.sin(ch.t*2.4)*0.012;
+    if(ch.windup>0){                                   // telegraph: rear back, jaws wide
+      const w=1-ch.windup/ch.windupMax;
+      neckZ=lerp(neckZ,0.32,w);headZ=lerp(headZ,0.26,w);gape=lerp(gape,0.62,w);
+    } else if(ch.strikeT>0){
+      const dur=ch.isPlayer?0.28:0.24, u=clamp(1-ch.strikeT/dur,0,1);
+      if(ch.isPlayer){                                 // arcade instant bite: load & snap
+        if(u<0.42){const w=u/0.42;neckZ=lerp(0.02,0.24,w);headZ=lerp(-0.03,0.18,w);gape=lerp(0.05,0.58,w);}
+        else{const w=(u-0.42)/0.58;neckZ=lerp(0.24,-0.34,easeOut(w));headZ=lerp(0.18,-0.15,easeOut(w));
+             gape=lerp(0.58,0.02,clamp(w*1.7,0,1));}
+      } else {                                         // follow-through from the windup
+        neckZ=lerp(0.32,-0.38,easeOut(clamp(u*1.5,0,1)));
+        headZ=lerp(0.26,-0.18,easeOut(clamp(u*1.5,0,1)));
+        gape=lerp(0.62,0.02,clamp(u*2.2,0,1));
+      }
+    }
+    if(hurtK){gape=Math.max(gape,0.22);neckZ-=0.12;headZ+=0.10;}
+    if(roarK>0){neckY=0;headY=0;neckZ=lerp(neckZ,0.62,roarK);headZ=lerp(headZ,0.32,roarK);gape=lerp(gape,0.5,roarK);}
+    J.neck.rotation.y=neckY;J.neck.rotation.z=neckZ;
+    J.head.rotation.y=headY;J.head.rotation.z=headZ;
+    J.jaw.rotation.z=gape;
+    // body: crouch with speed, bob-pitch with steps, flinch wobble
+    M.rotation.z=-0.015-0.05*spdN+Math.sin(p)*0.018*(moving?1:0.25)
+                 +(hurtK?Math.sin(ch.hurtT*50)*0.05:0)+flashK*2-roarK*0.05;
+    M.rotation.x=0;
+    M.position.y=hurtK?Math.sin(ch.hurtT*40)*0.03:0;
+    const bs=1+breath*0.012*(moving?0.3:1)+roarK*0.03;
+    M.scale.set(s*(1+(bs-1)*0.5),s*bs,s*(1+(bs-1)*0.7));
   }
-  if(ch.hurtT>0)ch.root.rotation.z+=Math.sin(ch.hurtT*50)*0.05;
-  if(!ch.alive){
-    ch.deadT+=dt;
-    ch.root.rotation.z=lerp(0,-1.55,clamp(ch.deadT*1.6,0,1));
-    if(ch.deadT>2.6)ch.mats.forEach(m=>{m.transparent=true;m.opacity=clamp(1-(ch.deadT-2.6)/1.2,0,1);});
-    if(ch.deadT>4.2&&ch.remove)ch.remove();
-  }
-  if(sp.camo&&ch.alive){
+  if(sp.camo){ // Indominus: translucent prowl with a heat-shimmer
     const near=player&&Math.hypot(ch.x-player.x,ch.z-player.z)<16;
-    const vis=(k>=0||ch.hurtT>0||near)?1:0.32;
-    ch.mats.forEach(m=>{m.transparent=true;m.opacity=lerp(m.opacity??1,vis,0.1);});
+    const base=(ch.windup>0||ch.strikeT>0||ch.hurtT>0||near)?1:0.32;
+    const vis=base*(0.90+0.10*Math.sin(ch.t*8));
+    ch.mats.forEach(m=>{m.transparent=true;m.opacity=lerp(m.opacity??1,vis,0.12);});
   }
   const fl=ch.flash>0;
   ch.mats.forEach(m=>{if(m.emissive)m.emissive.setRGB(fl?0.5:0,fl?0.12:0,fl?0.1:0);});
-  ch.shadow.visible=ch.alive;
-  const sr=1.5*sp.scale*(sp.kind==='quad'?1.35:1);
+  ch.shadow.visible=true;
+  const sr=1.5*sp.scale*(quad?1.35:1);
   ch.shadow.scale.set(sr,sr,sr);
+}
+function poseDeath(ch,dt){
+  ch.deadT+=dt;ch.bob=0;
+  const d=ch.deadT,M=ch.model,J=ch.joints,q=ch.sp.kind==='quad';
+  const buckle=Math.min(1,dt*3), fall=easeOut(clamp((d-0.2)/1.0,0,1));
+  M.position.y=-0.15-0.85*clamp(d/0.9,0,1);
+  M.rotation.x=ch.fallSide*1.45*fall;                  // topple to one side
+  M.rotation.z=q?0:0.3*(1-clamp(d/0.5,0,1))-0.05;      // nose dips as legs buckle
+  if(q&&J.legFL){J.legFL.rotation.x=J.legBL.rotation.x=0.5*fall;   // legs sprawl out
+                 J.legFR.rotation.x=J.legBR.rotation.x=-0.5*fall;
+                 J.legFL.rotation.z*=1-dt;J.legFR.rotation.z*=1-dt;
+                 J.legBL.rotation.z*=1-dt;J.legBR.rotation.z*=1-dt;}
+  else if(J.thighL){J.thighL.rotation.z=lerp(J.thighL.rotation.z,0.5,buckle);    // knees give
+                    J.thighR.rotation.z=lerp(J.thighR.rotation.z,0.4,buckle);
+                    J.shinL.rotation.z=lerp(J.shinL.rotation.z,-0.85,buckle);
+                    J.shinR.rotation.z=lerp(J.shinR.rotation.z,-0.75,buckle);}
+  if(J.neck)J.neck.rotation.z=lerp(J.neck.rotation.z,q?0:-0.5,buckle*0.8);       // neck goes limp
+  if(J.head)J.head.rotation.z=lerp(J.head.rotation.z,0.25,buckle*0.8);
+  if(J.jaw)J.jaw.rotation.z=lerp(J.jaw.rotation.z,0.16,buckle*0.8);              // jaw hangs open
+  ch.tail.forEach(j=>{j.rotation.y*=Math.max(0,1-dt*2);j.rotation.z=lerp(j.rotation.z,-0.04,buckle);});
+  ch.shadow.scale.multiplyScalar(Math.max(0,1-dt*0.45));
+  ch.mats.forEach(m=>{if(m.emissive)m.emissive.setRGB(0,0,0);});
+  if(d>2.6)ch.mats.forEach(m=>{m.transparent=true;m.opacity=clamp(1-(d-2.6)/1.2,0,1);});
+  if(d>4.2&&ch.remove)ch.remove();
 }
 
 /* ============================== input ================================ */
@@ -386,7 +495,7 @@ async function initGame(){
   try{actx().resume&&actx().resume();ambient();}catch(e){}
   await Promise.all(Object.keys(SPECIES).map(loadSpecies));
   player=makeChar('trex');player.isPlayer=true;
-  player.x=0;player.z=92;player.y=terrainH(0,92);player.yaw=Math.PI/2;
+  player.x=0;player.z=92;player.y=terrainH(0,92);player.yaw=Math.PI/2;player.lastYaw=player.yaw;
   await spawnEnemies();
   started=true;
   toast('Roam the island — find all 5 challengers!');
@@ -435,19 +544,24 @@ const defeated=new Set();
 function respawnPlayer(){
   hearts=2;setHearts();
   player.x=0;player.z=92;player.yaw=Math.PI/2;player.alive=true;player.state='idle';
-  player.root.rotation.z=0;player.deadT=0;player.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
+  player.lastYaw=player.yaw;player.model.rotation.set(0,0,0);player.model.position.y=0;
+  player.deadT=0;player.strikeT=0;player.roarT=0;player.bob=0;
+  player.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
   toast('You woke up at camp');
 }
 function resetEnemy(e){
   e.hp=e.sp.hp;e.alive=true;e.deadT=0;e.state='idle';e.respawnAt=0;
   e.x=e.home.x;e.z=e.home.z;e.y=terrainH(e.x,e.z);e.fear=0;e.windup=0;e.cool=0;
-  e.root.rotation.z=0;e.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
+  e.model.rotation.set(0,0,0);e.model.position.y=0;e.strikeT=0;e.roarT=0;e.bob=0;e.prevAgg=0;
+  e.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
 }
 function winGame(){SFX.win();toast('ISLAND CHAMPION! All challengers beaten!',99999);}
 
 function playerBite(){
   if(!player.alive||player.atkT>0||player.windup>0)return;
-  player.atkT=SPECIES.trex.atk;player.state='attack';
+  player.atkT=SPECIES.trex.atk;player.state='attack';player.strikeT=0.28;
+  // arcade lunge into the bite (small — collision resolution runs next frame)
+  player.x+=Math.cos(player.yaw)*0.45;player.z-=Math.sin(player.yaw)*0.45;
   // assist: snap-aim at the nearest prey within striking distance
   let aid=null,ad=1e9;
   for(const e of enemies){if(!e.alive)continue;
@@ -476,8 +590,8 @@ function playerBite(){
 }
 function playerRoar(){
   if(!player.alive||roarGauge<0.35||roarCd>0)return;
-  roarGauge=0;roarCd=1.2;SFX.roar('trex');
-  ripple(player.x,player.y+2.4,player.z);
+  roarGauge=0;roarCd=1.2;SFX.roar('trex');startRoar(player,1.0);
+  ripple(player.x,player.y+0.25,player.z);
   for(const e of enemies){
     if(!e.alive)continue;
     const d=Math.hypot(e.x-player.x,e.z-player.z);
@@ -505,8 +619,7 @@ function stepEnemy(e,dt){
   e.y=terrainH(e.x,e.z);
   if(!e.alive){
     if(e.respawnAt&&performance.now()>e.respawnAt)resetEnemy(e);
-    poseChar(e,dt);e.root.position.set(e.x,e.y,e.z);e.root.rotation.y=e.yaw;return;
-  }
+    poseChar(e,dt);e.root.position.set(e.x,e.y,e.z);e.root.rotation.y=e.yaw;return;  }
   if(player==null)return;
   const dp=Math.hypot(player.x-e.x,player.z-e.z);
   e.speed=0;
@@ -515,23 +628,27 @@ function stepEnemy(e,dt){
   if(e.fear>0){e.fear-=dt;flee(e,dt);poseAndPlace(e,dt);return;}
   if(e.windup>0){
     e.windup-=dt;
-    if(e.windup<=0){ // strike
-      e.windup=0;
+    if(e.windup<=0){ // strike — commit to the lunge so it reads and lands
+      e.windup=0;e.strikeT=0.24;
+      const hitR=inFront(e,player,e.sp.reach);
+      e.x+=Math.cos(e.yaw)*(hitR?1.0:0.55);e.z-=Math.sin(e.yaw)*(hitR?1.0:0.55);
       if(e.sp.stomp&&dp<9.5){SFX.stomp();if(dp<9)hurt(player,e.sp.dmg,e.x,e.z);ripple(e.x,e.y+0.3,e.z);}
-      else if(inFront(e,player,e.sp.reach)){hurt(player,e.sp.dmg,e.x,e.z);if(!e.sp.armor)SFX.chomp();else SFX.clang();}
+      else if(hitR){hurt(player,e.sp.dmg,e.x,e.z);if(!e.sp.armor)SFX.chomp();else SFX.clang();}
       else SFX.bite();
       e.cool=e.sp.stomp?2.6:(e.sp.armor?1.8:1.2);e.state='chase';
     }
   } else if(player.alive&&dp<e.sp.aggro){
     e.state='chase';
+    if(!e.prevAgg){e.prevAgg=1;                            // fresh spotting: announce it
+      if(e.key!=='ankylo'&&Math.random()<0.7){SFX.roar(e.key);startRoar(e,0.7);}}
     const toP=Math.atan2(-(player.z-e.z),player.x-e.x);
     const trn=(e.sp.turn||3);
     e.yaw+=clamp(angDiff(toP,e.yaw),-trn*dt,trn*dt);
     if(dp>e.sp.atk)walkToward(e,e.sp.run,player.x,player.z,dt);
     else if(e.cool<=0){e.windup=e.sp.atk;e.windupMax=e.sp.atk;e.state='attack';
-      if(Math.random()<0.25)SFX.roar(e.key);}
+      if(e.sp.armor&&Math.random()<0.3)SFX.roar(e.key);}
   } else {
-    e.state='idle';
+    e.state='idle';e.prevAgg=0;
     const dw=Math.hypot(e.wander.x-e.x,e.wander.z-e.z);
     if(dw<3||Math.random()<0.002)e.wander={x:clamp(e.home.x+rand(-26,26),-100,100),z:clamp(e.home.z+rand(-26,26),-100,100)};
     if(terrainH(e.wander.x,e.wander.z)>0.6)walkToward(e,e.sp.speed*0.5,e.wander.x,e.wander.z,dt);
@@ -543,7 +660,7 @@ function poseAndPlace(e,dt){
   poseChar(e,dt);
   collideSolids(e);
   e.y=terrainH(e.x,e.z);
-  e.root.position.set(e.x,e.y,e.z);
+  e.root.position.set(e.x,e.y+e.bob,e.z);
   e.root.rotation.y=e.yaw;
 }
 function walkToward(e,spd,tx,tz,dt){
@@ -594,7 +711,7 @@ function stepPlayer(dt){
     if(Math.random()<0.02)SFX.splash();}
   if(Math.hypot(player.x,player.z)>140){const k=Math.hypot(player.x,player.z);player.x*=140/k;player.z*=140/k;}
   player.y=terrainH(player.x,player.z);
-  player.root.position.set(player.x,player.y,player.z);
+  player.root.position.set(player.x,player.y+player.bob,player.z);
   player.root.rotation.y=player.yaw;
   // snacks
   for(let i=snacks.length-1;i>=0;i--){const s=snacks[i];
@@ -771,7 +888,22 @@ window.__probe={
   goToEnemy(i=0){const al=enemies.filter(e=>e.alive);if(al[i]){const e=al[i];
     this.teleport(e.x-Math.cos(e.yaw)*2.2,e.z+Math.sin(e.yaw)*2.2);this.face(e.x,e.z);return e.key;}return null;},
   hurtPlayer(){invulnT=0;hurt(player,1,player.x+1,player.z);},
-  dbg(){return{rz:+player.root.rotation.z.toFixed(2),ry:+player.root.rotation.y.toFixed(2),
+  windup(i=0){const al=enemies.filter(e=>e.alive);const e=al[i];
+    if(e){e.windup=e.windupMax=e.sp.atk;e.state='attack';return e.key;}return null;},
+  joints(which='player'){
+    const ch=which==='player'?player:enemies.find(e=>e.key===which);if(!ch)return null;
+    const T=new THREE.Vector3(),q=new THREE.Quaternion(),sc=new THREE.Vector3();
+    const out={bob:+ch.bob.toFixed(2),w:+ch.windup.toFixed(2),st:+ch.strikeT.toFixed(2),
+      mrot:[ch.model.rotation.x,ch.model.rotation.y,ch.model.rotation.z].map(v=>+v.toFixed(2)),
+      my:+ch.model.position.y.toFixed(2)};
+    for(const [nm,j] of Object.entries(ch.joints)){
+      if(!/tail|neck|head|thigh|shin|leg/.test(nm))continue;
+      j.matrixWorld.decompose(T,q,sc);
+      out[nm]={r:[+j.rotation.x.toFixed(2),+j.rotation.y.toFixed(2),+j.rotation.z.toFixed(2)],
+        pos:[+T.x.toFixed(1),+T.y.toFixed(1),+T.z.toFixed(1)]};
+    }
+    return out;},
+  dbg(){return{rz:+player.model.rotation.z.toFixed(2),ry:+player.root.rotation.y.toFixed(2),
     pstate:player.state,pyaw:+player.yaw.toFixed(2),camYaw:typeof camYaw!=='undefined'?+camYaw.toFixed(2):null,
     cam:[camera.position.x.toFixed(1),camera.position.y.toFixed(1),camera.position.z.toFixed(1)],
     p:[player.x.toFixed(1),player.y.toFixed(1),player.z.toFixed(1)]};},
