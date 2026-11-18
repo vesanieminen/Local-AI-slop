@@ -729,6 +729,25 @@ function collideSolids(ch){
     if(d<r&&d>1e-4){ch.x=s.x+dx/d*r;ch.z=s.z+dz/d*r;}
   }
 }
+/* animals hold personal space: no two bodies occupy the same ground */
+const bodyR=ch=>(ch.sp.kind==='quad'?1.35:1.05)*ch.sp.scale;
+function separate(){
+  for(let i=0;i<enemies.length;i++){const a=enemies[i];if(!a.alive)continue;
+    for(let j=i+1;j<enemies.length;j++){const b=enemies[j];if(!b.alive)continue;
+      const dx=b.x-a.x,dz=b.z-a.z,r=bodyR(a)+bodyR(b);
+      let d=Math.hypot(dx,dz);
+      if(d<r&&d>1e-4){const push=(r-d)/2,ux=dx/d,uz=dz/d;
+        a.x-=ux*push;a.z-=uz*push;b.x+=ux*push;b.z+=uz*push;}
+      else if(d<=1e-4){a.x+=0.3;a.z+=0.3;}
+    }
+    if(player&&player.alive){                     // player keeps a nose's distance too
+      const dx=a.x-player.x,dz=a.z-player.z,r=bodyR(a)+1.0;
+      const d=Math.hypot(dx,dz);
+      if(d<r&&d>1e-4){const push=(r-d)*0.85,ux=dx/d,uz=dz/d;
+        a.x+=ux*push;a.z+=uz*push;}
+    }
+  }
+}
 
 /* ============================== demo bot ============================= */
 const bot={done:false,timer:0,target:null,snack:null,lastD:1e9,strafeT:0,side:1};
@@ -861,6 +880,7 @@ function loop(now){
   if(e.roar)playerRoar();
   stepPlayer(dt);
   for(const en of[...enemies])stepEnemy(en,dt);
+  separate();
   stepRipples(dt);
   stepCamera(dt);
   water.position.y=WATER+0.16+Math.sin(now/900)*0.06;
