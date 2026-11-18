@@ -14,7 +14,7 @@
     border:2px solid #fff;border-radius:9px;overflow:hidden}
   #roarfill{height:100%;width:0%;background:linear-gradient(90deg,#ffd23f,#ff7b24)}
   #roarlbl{left:14px;top:calc(64px + env(safe-area-inset-top));font-size:11px;opacity:.85;letter-spacing:1px}
-  #mapwrap{right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));
+  #mapwrap{right:calc(12px + env(safe-area-inset-right));top:calc(62px + env(safe-area-inset-top));
     background:rgba(0,0,0,.35);border:2px solid #fff;border-radius:10px;padding:4px}
   #map{display:block;width:108px;height:108px;border-radius:6px}
   #toast{left:50%;top:11%;transform:translateX(-50%);font-size:26px;font-weight:800;text-align:center;
@@ -30,9 +30,28 @@
   #muteB{left:calc(10px + env(safe-area-inset-left));bottom:calc(8px + env(safe-area-inset-bottom));width:44px;height:44px;font-size:18px;
     border-width:2px;background:rgba(0,0,0,.25)}
   #overlay{position:fixed;inset:0;z-index:10;background:radial-gradient(ellipse at 50% 30%,#3f8ea6,#1b4f63 70%);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px}
+    display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px;overflow:auto}
   #overlay h1{font-size:min(9vw,58px);margin:0;letter-spacing:2px;text-shadow:0 4px 0 #0a2b38}
   #overlay p{max-width:560px;font-size:15px;line-height:1.55;opacity:.92}
+  #swapB{right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));
+    width:auto;height:auto;border-radius:14px;padding:10px 14px;font-size:14px}
+  .pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:9px;
+    max-width:560px;width:100%;margin:4px auto 2px}
+  .pcard{font-family:inherit;background:rgba(255,255,255,.10);border:3px solid rgba(255,255,255,.28);
+    border-radius:14px;color:#fff;padding:9px 5px;cursor:pointer;text-align:center;
+    transition:transform .12s,border-color .12s,background .12s}
+  .pcard .dot{display:block;width:15px;height:15px;border-radius:50%;margin:0 auto 6px;border:2px solid rgba(255,255,255,.65)}
+  .pcard b{display:block;font-size:14px}
+  .pcard small{display:block;font-size:11px;opacity:.85;margin-top:2px}
+  .pcard.sel{border-color:#ffd23f;background:rgba(255,210,63,.20);transform:scale(1.07)}
+  #swap{position:fixed;inset:0;z-index:11;background:rgba(8,22,32,.62);
+    display:flex;align-items:center;justify-content:center;padding:14px}
+  #swap .panel{background:linear-gradient(180deg,#2a6d84,#1b4f63);border:3px solid rgba(255,255,255,.25);
+    border-radius:20px;padding:18px;width:min(94vw,540px)}
+  #swap h2{margin:0 0 10px;text-align:center;letter-spacing:1px}
+  #closeSwapB{margin-top:12px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
+    border:3px solid #fff;border-radius:14px;padding:10px 22px;font-size:16px;cursor:pointer}
+  #swap .note{text-align:center;font-size:12px;opacity:.8;margin:10px 0 0}
   #playB{margin-top:18px;font-size:22px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
     border:3px solid #fff;border-radius:14px;padding:14px 40px;cursor:pointer}
   .keys{font-size:13px!important;opacity:.8}
@@ -51,14 +70,21 @@
 <button class="btn" id="biteB">BITE</button>
 <button class="btn" id="roarB">ROAR</button>
 <button class="btn" id="muteB">♪</button>
+<button class="btn" id="swapB">SWAP</button>
+<div id="swap" class="hidden"><div class="panel">
+  <h2>SWAP DINOSAUR</h2>
+  <div class="pick" id="pick2"></div>
+  <p class="note">Tap a dinosaur to become it — same hearts, same spot.<br>Your old dino goes back to the wild.</p>
+  <div style="text-align:center"><button id="closeSwapB">BACK TO THE FIGHT</button></div>
+</div></div>
 <div id="overlay">
   <h1>DINO BRAWL 3D</h1>
-  <p>Wander a dinosaur island and choose your fights! Every species lives in its own
-     territory — sneak past the Ankylosaurus, out-bite the Allosaur, dodge the Spinosaurus tail,
-     and beware the white shadow of the island…</p>
+  <p>Choose your dinosaur, then roam the island and beat the challengers!
+     Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs anytime with the SWAP button.</p>
+  <div class="pick" id="pick"></div>
   <p class="keys">WASD / arrows — move &nbsp;•&nbsp; drag mouse or J/L — turn camera &nbsp;•&nbsp;
-     SPACE / click — bite &nbsp;•&nbsp; R — roar &nbsp;•&nbsp; M — mute<br>
-     Gamepad: stick move, A/X bite, Y/RB roar, Start play, Select mute</p>
+     SPACE / click — bite &nbsp;•&nbsp; R — roar &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; SWAP — change dino<br>
+     Gamepad: stick move, A/X bite, Y/RB roar, Start play, D-pad pick dino</p>
   <button id="playB">PLAY</button>
 </div>
 
@@ -457,20 +483,22 @@ function consume(){IN.bite=IN.move.x=IN.move.y=0;}
 
 /* ============================== world actors ========================= */
 const enemies=[], snacks=[];
-async function spawnEnemies(){
+function spawnWild(key,i=0){
+  const ch=makeChar(key);
+  const [hx,hz]=TERRITORY[key];
+  const ang=i*Math.PI*0.8;
+  ch.home.x=hx+Math.cos(ang)*8;ch.home.z=hz+Math.sin(ang)*8;
+  ch.x=ch.home.x;ch.z=ch.home.z;ch.y=terrainH(ch.x,ch.z);
+  ch.wander={x:ch.x,z:ch.z};
+  ch.remove=()=>{scene.remove(ch.root);const i=enemies.indexOf(ch);if(i>=0)enemies.splice(i,1);
+    dropSnack(ch.x,ch.z);};
+  enemies.push(ch);return ch;
+}
+function spawnEnemies(){
   for(const key of TOTAL_TO_KILL){
+    if(key===player.key)continue;            // that species is you now
     const n=key==='allo'?2:1;
-    for(let i=0;i<n;i++){
-      const ch=makeChar(key);
-      const [hx,hz]=TERRITORY[key];
-      const ang=i*Math.PI*0.8;
-      ch.home.x=hx+Math.cos(ang)*8;ch.home.z=hz+Math.sin(ang)*8;
-      ch.x=ch.home.x;ch.z=ch.home.z;ch.y=terrainH(ch.x,ch.z);
-      ch.wander={x:ch.x,z:ch.z};
-      ch.remove=()=>{scene.remove(ch.root);const i=enemies.indexOf(ch);if(i>=0)enemies.splice(i,1);
-        dropSnack(ch.x,ch.z);};
-      enemies.push(ch);
-    }
+    for(let i=0;i<n;i++)spawnWild(key,i);
   }
 }
 function dropSnack(x,z){spawnSnack(clamp(x+rand(-1,1),-95,95),clamp(z+rand(-1,1),-95,95));}
@@ -488,17 +516,69 @@ for(let i=0;i<10;i++){let x,z,g=0;do{x=rand(-90,90);z=rand(-90,90);g++;}while(te
 
 /* ============================== game state =========================== */
 let player=null, started=false, launching=false, roarGauge=1, hearts=5, maxHearts=5, roarCd=0, won=false;
+let menuOpen=false, pickKey='trex';
+const PICKABLE=['trex','allo','spino','ankylo','im','dr'];
+const PICKTAG={trex:'the balanced hero',allo:'fast but squishy',spino:'big tail swish!',
+  ankylo:'armored tank',im:'nearly invisible',dr:'strongest of all'};
+// your own kind never counts against you: goal = challengers that aren't you
+const goalKeys=()=>TOTAL_TO_KILL.filter(k=>k!==player.key);
+const goalLeft=()=>goalKeys().filter(k=>!defeated.has(k)).length;
+function setPick(k){pickKey=k;
+  document.querySelectorAll('.pcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===k));}
+function buildPicker(el,mode){
+  el.innerHTML='';
+  for(const k of PICKABLE){const sp=SPECIES[k];
+    const b=document.createElement('button');
+    b.className='pcard'+(k===pickKey?' sel':'');b.dataset.k=k;
+    b.innerHTML=`<span class="dot" style="background:${sp.col}"></span><b>${sp.name}</b><small>${PICKTAG[k]}</small>`;
+    b.addEventListener('click',()=>{
+      if(mode==='start'){setPick(k);SFX.roar(k);}
+      else{if(k!==player.key)switchSpecies(k);closeMenu();}});
+    el.appendChild(b);}
+}
+buildPicker(document.getElementById('pick'),'start');
+buildPicker(document.getElementById('pick2'),'swap');
+function openMenu(){if(!started||!player)return;menuOpen=true;
+  setPick(player.key);document.getElementById('swap').classList.remove('hidden');consume();}
+function closeMenu(){menuOpen=false;document.getElementById('swap').classList.add('hidden');consume();}
+function switchSpecies(key){
+  if(!started||!player||!player.alive||key===player.key)return;
+  const px=player.x,pz=player.z,pyaw=player.yaw,old=player.key;
+  scene.remove(player.root);
+  for(const e of[...enemies]){                 // wild members of your new kind join you
+    if(e.key!==key)continue;
+    e.counted=true;                            // never counts as a defeat
+    if(e.alive)dropSnack(e.x,e.z);
+    scene.remove(e.root);const i=enemies.indexOf(e);if(i>=0)enemies.splice(i,1);}
+  player=makeChar(key);player.isPlayer=true;
+  player.x=px;player.z=pz;player.y=terrainH(px,pz);player.yaw=pyaw;player.lastYaw=pyaw;
+  invulnT=Math.max(invulnT,1.5);
+  if(TOTAL_TO_KILL.includes(old))spawnWild(old,0);   // your old dino goes back to the wild
+  SFX.roar(key);startRoar(player,0.9);
+  toast(`You are now a ${SPECIES[key].name}!`);
+  if(goalLeft()===0&&!won){won=true;setTimeout(winGame,900);}
+}
+let padPrev={l:false,r:false};
+function padUI(){ // d-pad / stick scrolls the species picker
+  for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
+    const b=i=>p.buttons[i]&&p.buttons[i].pressed;
+    const L=b(14)||p.axes[0]<-0.5,R=b(15)||p.axes[0]>0.5;
+    if(L&&!padPrev.l)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+PICKABLE.length-1)%PICKABLE.length]);
+    if(R&&!padPrev.r)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+1)%PICKABLE.length]);
+    padPrev.l=L;padPrev.r=R;break;}
+}
 const CAM={d:12.5,h:5.2};
 async function initGame(){
   if(launching)return;launching=true;
   document.getElementById('overlay').classList.add('hidden');
   try{actx().resume&&actx().resume();ambient();}catch(e){}
   await Promise.all(Object.keys(SPECIES).map(loadSpecies));
-  player=makeChar('trex');player.isPlayer=true;
+  player=makeChar(pickKey);player.isPlayer=true;
   player.x=0;player.z=92;player.y=terrainH(0,92);player.yaw=Math.PI/2;player.lastYaw=player.yaw;
   await spawnEnemies();
   started=true;
-  toast('Roam the island — find all 5 challengers!');
+  toast(goalLeft()<5?`Go beat the ${goalLeft()} challengers — your kind is with you!`
+                     :'Roam the island — find all 5 challengers!');
 }
 function toast(msg,ms=2600){const t=document.getElementById('toast');t.textContent=msg;t.style.opacity=1;
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.opacity=0,ms);}
@@ -533,7 +613,7 @@ function kill(ch){
   if(!ch.isPlayer){
     if(!ch.counted){ch.counted=true;
       if(TOTAL_TO_KILL.includes(ch.key))defeated.add(ch.key);
-      const left=TOTAL_TO_KILL.filter(k=>!defeated.has(k)).length;
+      const left=goalLeft();
       if(left===0&&!won){won=true;setTimeout(winGame,1400);}
       else toast(`${ch.sp.name} down! ${left} challenger${left===1?'':'s'} to go!`);
     }
@@ -559,21 +639,31 @@ function winGame(){SFX.win();toast('ISLAND CHAMPION! All challengers beaten!',99
 
 function playerBite(){
   if(!player.alive||player.atkT>0||player.windup>0)return;
-  player.atkT=SPECIES.trex.atk;player.state='attack';player.strikeT=0.28;
+  const sp=player.sp,quad=sp.kind==='quad';
+  player.atkT=sp.atk;player.state='attack';player.strikeT=quad?0.30:0.28;
+  if(quad)player.clubSide=-player.clubSide||1;     // alternate the club swing side
   // arcade lunge into the bite (small — collision resolution runs next frame)
   player.x+=Math.cos(player.yaw)*0.45;player.z-=Math.sin(player.yaw)*0.45;
+  const reach=sp.reach*(quad?1.35:1);
   // assist: snap-aim at the nearest prey within striking distance
   let aid=null,ad=1e9;
   for(const e of enemies){if(!e.alive)continue;
     const d=Math.hypot(e.x-player.x,e.z-player.z);
-    if(d<SPECIES.trex.reach*1.45&&d<ad){ad=d;aid=e;}}
+    if(d<reach*1.45&&d<ad){ad=d;aid=e;}}
   if(aid){const a=Math.atan2(-(aid.z-player.z),aid.x-player.x);
     player.yaw+=clamp(angDiff(a,player.yaw),-0.7,0.7);}
   SFX.bite();
   let hit=false;
   for(const e of enemies){
     if(!e.alive)continue;
-    if(inFront(player,e,SPECIES.trex.reach)){
+    if(quad){
+      // tail-club sweep: a wide arc behind and beside the nose, never in front
+      const d=Math.hypot(e.x-player.x,e.z-player.z);
+      if(d>reach*1.4)continue;
+      if(Math.abs(angDiff(Math.atan2(-(e.z-player.z),e.x-player.x),player.yaw))<0.95)continue;
+      hit=true;hurt(e,sp.dmg,player.x,player.z);
+    }
+    else if(inFront(player,e,reach)){
       hit=true;
       if(e.sp.armor){
         const facing=angDiff(Math.atan2(-(player.z-e.z),player.x-e.x),e.yaw);
@@ -582,15 +672,15 @@ function playerBite(){
           const ba=Math.atan2(-(player.z-e.z),player.x-e.x);
           player.x+=Math.cos(ba)*0.8;player.z-=Math.sin(ba)*0.8; // bounce off the armor
           e.windup=0.3;e.windupMax=0.3; // tail club counter
-        } else {hurt(e,1,player.x,player.z);toast('Bonked the tail!');}
-      } else hurt(e,1,player.x,player.z);
+        } else {hurt(e,sp.dmg,player.x,player.z);toast('Bonked the tail!');}
+      } else hurt(e,sp.dmg,player.x,player.z);
     }
   }
-  if(hit)SFX.chomp(),roarGauge=clamp(roarGauge+0.09,0,1);
+  if(hit){if(quad)SFX.stomp();else SFX.chomp();roarGauge=clamp(roarGauge+0.09,0,1);}
 }
 function playerRoar(){
   if(!player.alive||roarGauge<0.35||roarCd>0)return;
-  roarGauge=0;roarCd=1.2;SFX.roar('trex');startRoar(player,1.0);
+  roarGauge=0;roarCd=1.2;SFX.roar(player.key);startRoar(player,1.0);
   ripple(player.x,player.y+0.25,player.z);
   for(const e of enemies){
     if(!e.alive)continue;
@@ -633,7 +723,15 @@ function stepEnemy(e,dt){
       const hitR=inFront(e,player,e.sp.reach);
       e.x+=Math.cos(e.yaw)*(hitR?1.0:0.55);e.z-=Math.sin(e.yaw)*(hitR?1.0:0.55);
       if(e.sp.stomp&&dp<9.5){SFX.stomp();if(dp<9)hurt(player,e.sp.dmg,e.x,e.z);ripple(e.x,e.y+0.3,e.z);}
-      else if(hitR){hurt(player,e.sp.dmg,e.x,e.z);if(!e.sp.armor)SFX.chomp();else SFX.clang();}
+      else if(hitR){
+        // an Ankylosaurus player: front bites clang off the armor — bite enemies from the side!
+        const toE=Math.atan2(-(e.z-player.z),e.x-player.x);
+        if(player.sp.armor&&Math.abs(angDiff(toE,player.yaw))<1.15){
+          SFX.clang();toast('CLANG! Your armor — bonk their sides!');
+          e.x+=Math.cos(toE)*1.1;e.z+=Math.sin(toE)*1.1;e.cool=Math.max(e.cool,1.0);
+        }
+        else{hurt(player,e.sp.dmg,e.x,e.z);if(!e.sp.armor)SFX.chomp();else SFX.clang();}
+      }
       else SFX.bite();
       e.cool=e.sp.stomp?2.6:(e.sp.armor?1.8:1.2);e.state='chase';
     }
@@ -698,7 +796,7 @@ function stepPlayer(dt){
     // screen-right in world = (-fz, fx)
     const dirx=(fx/fl)*my-(fz/fl)*mx, dirz=(fz/fl)*my+(fx/fl)*mx;
     const finalA=Math.atan2(-dirz,dirx);
-    const spd=SPECIES.trex.run*(mag>0.8?1:0.62);
+    const spd=player.sp.run*(mag>0.8?1:0.62);
     const mv=spd*dt;
     player.x+=Math.cos(finalA)*mv;player.z-=Math.sin(finalA)*mv;
     player.speed=spd;if(player.state!=='attack')player.state='walk';
@@ -753,6 +851,7 @@ function separate(){
 const bot={done:false,timer:0,target:null,snack:null,lastD:1e9,strafeT:0,side:1};
 function botStep(dt){
   bot.timer-=dt;bot.strafeT=Math.max(0,bot.strafeT-dt);
+  if(bot.target&&!enemies.includes(bot.target))bot.target=null;   // species swapped away mid-hunt
   if(bot.timer<=0){bot.timer=0.4;
     let best=null,bd=1e9;
     for(const e of enemies){if(!e.alive)continue;
@@ -793,10 +892,10 @@ function botStep(dt){
     IN.move.x=clamp(tx*rx+tz*rz,-1,1)*0.95;
     IN.move.y=clamp(tx*(fx/fl)+tz*(fz/fl),-1,1)*0.95;
     const d=Math.hypot(tgt.x-player.x,tgt.z-player.z);
-    if(tgt===bot.target&&d<SPECIES.trex.reach*1.05)playerBite();
+    if(tgt===bot.target&&d<player.sp.reach*1.05)playerBite();
     if(tgt===bot.target&&roarGauge>0.6&&d<20&&(tgt.sp.dmg>=2))playerRoar();
   }
-  if(defeated.size>=TOTAL_TO_KILL.length)bot.done=true;
+  if(goalLeft()===0)bot.done=true;
 }
 
 /* ============================== HUD / minimap ======================== */
@@ -848,7 +947,7 @@ function stepCamera(dt){
   camera.position.set(tx+Math.sin(camYaw)*CAM.d,ty+CAM.h,tz+Math.cos(camYaw)*CAM.d);
   const ch2=terrainH(camera.position.x,camera.position.z);
   if(camera.position.y<ch2+1.6)camera.position.y=ch2+1.6;
-  camera.lookAt(tx,ty+2.4,tz);
+  camera.lookAt(tx,ty+(player.sp.kind==='quad'?1.5:2.4),tz);
 }
 
 /* ============================== main loop ============================ */
@@ -858,11 +957,23 @@ function loop(now){
   const dt=Math.min(0.05,(now-last)/1000);last=now;
   fpsAcc+=dt;fpsN++;if(fpsAcc>2){fps=fpsN/fpsAcc;fpsAcc=0;fpsN=0;}
   if(!started){
-    pollPad();const e0=edge();
-    if(e0.start)initGame();
+    pollPad();padUI();const e0=edge();
+    if(e0.start||e0.bite)initGame();
     consume();
     if(player)camera.lookAt(player.x,player.y,player.z);
     renderer.render(scene,camera);return;
+  }
+  if(keys.Escape&&!IN.prev.esc){IN.prev.esc=true;menuOpen?closeMenu():openMenu();}
+  if(!keys.Escape)IN.prev.esc=false;
+  PICKABLE.forEach((k,i)=>{const kd=keys['Digit'+(i+1)];
+    if(kd&&!IN.prev['d'+i]){IN.prev['d'+i]=true;if(!menuOpen)switchSpecies(k);}
+    else if(!kd)IN.prev['d'+i]=false;});
+  if(menuOpen){                 // the world holds still while you pick a new dino
+    pollPad();padUI();const em=edge();
+    if(em.mute)toggleMute();
+    if(em.bite){if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
+    if(em.start)closeMenu();
+    consume();renderer.render(scene,camera);return;
   }
   if(keys.Space)playerBite();           // hold-to-bite (cooldown gates it)
   if(IN.biteHeld&&started)playerBite();
@@ -889,7 +1000,9 @@ function loop(now){
   consume();
 }
 document.getElementById('playB').addEventListener('click',initGame);
-document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • R roar • drag mouse to look';
+bindBtn('swapB',()=>{menuOpen?closeMenu():openMenu();});
+bindBtn('closeSwapB',closeMenu);
+document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • R roar • drag mouse to look • SWAP changes dino';
 if(DEMO)initGame();
 requestAnimationFrame(loop);
 
@@ -897,6 +1010,7 @@ requestAnimationFrame(loop);
 window.__probe={
   get ready(){return started&&player&&enemies.length>0;},
   state(){return{hearts,roar:+roarGauge.toFixed(2),kills:defeated.size,defeated:[...defeated],won,
+    species:player.key,goalLeft:goalLeft(),menu:menuOpen,pick:pickKey,
     enemies:enemies.map(e=>({key:e.key,alive:e.alive,hp:e.hp,x:+e.x.toFixed(1),z:+e.z.toFixed(1),
       state:e.state,fear:+e.fear.toFixed(1)})),
     player:{x:+player.x.toFixed(1),z:+player.z.toFixed(1),yaw:+player.yaw.toFixed(2),state:player.state},
@@ -930,6 +1044,19 @@ window.__probe={
   setCam(y){camYaw=y;},
   killEnemy(key){const e=enemies.find(e=>e.alive&&e.key===key);if(e){e.hp=1;this.goToEnemy(enemies.indexOf(e));
     playerBite();return true;}return false;},
+  switchTo(key){switchSpecies(key);return player.key;},
+  placeAt(x,z,yaw){player.x=x;player.z=z;player.y=terrainH(x,z);
+    if(yaw!==undefined){player.yaw=yaw;player.lastYaw=yaw;}},
+  clearInvuln(){invulnT=0;},
+  enemyInfo(key){const e=enemies.find(e=>e.alive&&e.key===key);
+    return e?{x:+e.x.toFixed(2),z:+e.z.toFixed(2),yaw:+e.yaw.toFixed(2),hp:e.hp}:null;},
+  placeEnemy(key,x,z,yaw){const e=enemies.find(e=>e.alive&&e.key===key);if(!e)return null;
+    e.x=x;e.z=z;e.y=terrainH(x,z);if(yaw!==undefined)e.yaw=yaw;e.cool=99;e.fear=0;e.state='idle';return true;},
+  windupEnemy(key,w=0.01){const e=enemies.find(e=>e.alive&&e.key===key);if(!e)return null;
+    e.windup=w;e.windupMax=0.3;return true;},
+  openMenu(){openMenu();return menuOpen;},
+  closeMenu(){closeMenu();return menuOpen;},
+  pick(k){setPick(k);return pickKey;},
 };
 </script>
 </body>
