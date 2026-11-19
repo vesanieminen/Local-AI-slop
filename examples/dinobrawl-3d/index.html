@@ -41,8 +41,22 @@
     border-radius:14px;color:#fff;padding:9px 5px;cursor:pointer;text-align:center;
     transition:transform .12s,border-color .12s,background .12s}
   .pcard .dot{display:block;width:15px;height:15px;border-radius:50%;margin:0 auto 6px;border:2px solid rgba(255,255,255,.65)}
+  .pcard img{display:block;width:100%;height:78px;object-fit:contain;margin:0 auto 2px;
+    filter:drop-shadow(0 3px 0 rgba(0,0,0,.28))}
   .pcard b{display:block;font-size:14px}
   .pcard small{display:block;font-size:11px;opacity:.85;margin-top:2px}
+  #zlbl{right:calc(12px + env(safe-area-inset-right));top:calc(186px + env(safe-area-inset-top));
+    font-size:12px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:8px;
+    background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.5);opacity:0;transition:opacity .5s}
+  #compass{left:50%;top:50%;font-size:44px;color:#ffd23f;transition:opacity .3s;line-height:1}
+  #winOv{position:fixed;inset:0;z-index:12;background:rgba(8,22,32,.55);
+    display:flex;align-items:center;justify-content:center;padding:14px}
+  #winOv .panel{background:linear-gradient(180deg,#2a6d84,#1b4f63);border:4px solid #ffd23f;
+    border-radius:22px;padding:22px 28px;color:#fff;text-align:center;max-width:92vw}
+  #winOv h2{margin:0 0 8px;font-size:min(8vw,40px);letter-spacing:2px;text-shadow:0 3px 0 #0a2b38}
+  #winOv p{font-size:15px;opacity:.92;margin:4px 0 16px;line-height:1.5}
+  #winB{font-family:inherit;font-weight:800;font-size:19px;color:#fff;background:#e8632f;
+    border:3px solid #fff;border-radius:14px;padding:12px 26px;cursor:pointer}
   .pcard.sel{border-color:#ffd23f;background:rgba(255,210,63,.20);transform:scale(1.07)}
   #swap{position:fixed;inset:0;z-index:11;background:rgba(8,22,32,.62);
     display:flex;align-items:center;justify-content:center;padding:14px}
@@ -64,6 +78,8 @@
 <div class="hud" id="roar"><div id="roarfill"></div></div>
 <div class="hud" id="roarlbl">ROAR</div>
 <div class="hud" id="mapwrap"><canvas id="map" width="108" height="108"></canvas></div>
+<div class="hud" id="zlbl"></div>
+<div class="hud" id="compass">➤</div>
 <div class="hud" id="toast"></div>
 <div class="hud" id="info"></div>
 <div class="hud" id="hint"></div>
@@ -77,14 +93,21 @@
   <p class="note">Tap a dinosaur to become it — same hearts, same spot.<br>Your old dino goes back to the wild.</p>
   <div style="text-align:center"><button id="closeSwapB">BACK TO THE FIGHT</button></div>
 </div></div>
+<div id="winOv" class="hidden"><div class="panel">
+  <h2>ISLAND CHAMPION!</h2>
+  <p>You beat every challenger — the forest, the canyon and the beach<br>are all yours! ROAAAR!</p>
+  <button id="winB">KEEP ROAMING!</button>
+</div></div>
 <div id="overlay">
   <h1>DINO BRAWL 3D</h1>
-  <p>Choose your dinosaur, then roam the island and beat the challengers!
+  <p>Choose your dinosaur, then roam the island — pine forest, crystal canyon
+     and sunset beach — and beat the challengers!
      Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs anytime with the SWAP button.</p>
   <div class="pick" id="pick"></div>
   <p class="keys">WASD / arrows — move &nbsp;•&nbsp; drag mouse or J/L — turn camera &nbsp;•&nbsp;
      SPACE / click — bite &nbsp;•&nbsp; R — roar &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; SWAP — change dino<br>
-     Gamepad: stick move, A/X bite, Y/RB roar, Start play, D-pad pick dino</p>
+     Gamepad: stick move, A/X bite, Y/RB roar, <b>Select/Back — menu</b>, B — back, LB — mute,
+     Start play, D-pad pick dino</p>
   <button id="playB">PLAY</button>
 </div>
 
@@ -186,6 +209,7 @@ const sandC=new THREE.Color(0xe8d29e),grassA=new THREE.Color(0x58993f),grassB=ne
     else if(h<0.9)c=sandC.clone().lerp(mudC,clamp((0.9-h)/2.2,0,1)*0.5);
     else{c=grassA.clone().lerp(grassB,Math.abs(Math.sin(x*0.11)*Math.cos(z*0.13))*0.8);
       c.lerp(rockC,clamp((h-6.5)/4,0,1)*0.6);}
+    zoneTint(c,x,z);
     const m=1+Math.sin(x*0.7)*Math.sin(z*0.63)*0.05;c.multiplyScalar(clamp(m,0.9,1.1));
     col.push(c.r,c.g,c.b);
   }
@@ -234,17 +258,121 @@ const solids=[];
   rI.count=rp;scene.add(rI);
 })();
 
+/* biome landmarks: pine forest, crystal canyon (+cave), palm beach, mushrooms —
+   all instanced so the low tier doesn't choke on draw calls */
+(function biomes(){
+  const M=new THREE.Matrix4(),Q=new THREE.Quaternion(),S=new THREE.Vector3(),P=new THREE.Vector3(),E=new THREE.Euler();
+  const put=(im,k,x,y,z,rx,ry,rz,sx,sy,sz)=>{
+    P.set(x,y,z);E.set(rx,ry,rz);Q.setFromEuler(E);S.set(sx,sy,sz);
+    M.compose(P,Q,S);im.setMatrixAt(k,M);};
+  // dense pines around the forest center
+  const tn=50;
+  const tA=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16,0.26,1.8,5),
+    new THREE.MeshLambertMaterial({color:0x5f4028}),tn),
+    tB=new THREE.InstancedMesh(new THREE.ConeGeometry(1.5,3.2,6),
+    new THREE.MeshLambertMaterial({color:0x256b2c}),tn);
+  let placed=0,guard=0;
+  while(placed<tn&&guard++<1500){
+    const a=rand(0,6.283),d=rand(6,40),x=-70+Math.cos(a)*d,z=-25+Math.sin(a)*d,h=terrainH(x,z);
+    if(h<1.2||h>6)continue;
+    const s=rand(1.1,1.9),ry=rand(0,6);
+    put(tA,placed,x,h,z,0,ry,0,s,s,1);
+    put(tB,placed,x,h+2.1*s,z,0,ry,0,s,s,s);
+    solids.push({x,z,r:0.6*s});placed++;
+  }
+  tA.count=tB.count=placed;scene.add(tA,tB);
+  // canyon: ring of boulders, a dark cave mouth, glowing crystals
+  const rockI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1,0),
+    new THREE.MeshLambertMaterial({color:0x7d7466}),12);
+  const cryI=new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.85,0),
+    new THREE.MeshLambertMaterial({color:0x9a6bd8,emissive:0x4a2a80}),14);
+  let rk=0;
+  for(let k=0;k<12;k++){
+    const a=k/12*6.283+rand(-0.15,0.15),d=rand(10,15),x=70+Math.cos(a)*d,z=4+Math.sin(a)*d;
+    if(terrainH(x,z)<0.5)continue;
+    const s=rand(1.8,3.2);
+    put(rockI,rk++,x,terrainH(x,z)-0.35*s,z,rand(0,1),rand(0,6),rand(0,1),s,s*rand(0.7,1.2),s);
+    solids.push({x,z,r:s*0.85});
+  }
+  rockI.count=rk;scene.add(rockI);
+  const cave=new THREE.Mesh(new THREE.SphereGeometry(2.6,12,8),
+    new THREE.MeshLambertMaterial({color:0x0e0c14}));
+  cave.position.set(70,terrainH(70,4)+0.1,4);cave.scale.set(1.25,0.9,1.05);scene.add(cave);
+  let ck=0;
+  for(let k=0;k<14;k++){
+    const a=rand(0,6.283),d=k<8?rand(0,4):rand(6,26),x=70+Math.cos(a)*d,z=4+Math.sin(a)*d;
+    if(terrainH(x,z)<0.5)continue;
+    const s=rand(0.6,2.1);
+    put(cryI,ck++,x,terrainH(x,z)+0.55*s,z,rand(-0.2,0.2),rand(0,6),rand(-0.2,0.2),s,s*rand(1.2,2),s);
+    if(s>1.2)solids.push({x,z,r:0.6*s});
+  }
+  cryI.count=ck;scene.add(cryI);
+  // palms on the beach ring (trunk + 4 fronds, all instanced)
+  const plI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.11,0.2,3.4,5),
+    new THREE.MeshLambertMaterial({color:0x8a6a3c}),16);
+  const pfI=new THREE.InstancedMesh(new THREE.ConeGeometry(0.55,1.9,4),
+    new THREE.MeshLambertMaterial({color:0x3f9a4a}),64);
+  let pc=0;guard=0;
+  while(pc<16&&guard++<900){
+    const a=rand(-2.2,-0.9),d=rand(76,98),x=Math.cos(a)*d,z=Math.sin(a)*d,h=terrainH(x,z);
+    if(h<0.3||h>2.2)continue;
+    put(plI,pc,x,h+1.7,z,0,rand(0,6),0,1,1,1);
+    for(let k=0;k<4;k++){
+      E.set(0,k*Math.PI/2+0.5,1.25,'YZX');Q.setFromEuler(E);
+      P.set(x,h+3.3,z);S.set(1,1,1);M.compose(P,Q,S);
+      pfI.setMatrixAt(pc*4+k,M);
+    }
+    solids.push({x,z,r:0.45});pc++;
+  }
+  plI.count=pc;pfI.count=pc*4;scene.add(plI,pfI);
+  // mushrooms in the forest — red caps, kid-friendly sparkle
+  const msI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09,0.13,0.42,5),
+    new THREE.MeshLambertMaterial({color:0xe8dfc8}),26);
+  const mcI=new THREE.InstancedMesh(new THREE.SphereGeometry(0.26,8,6,0,6.283,0,1.9),
+    new THREE.MeshLambertMaterial({color:0xd84040,emissive:0x300a0a}),26);
+  let mc=0;guard=0;
+  while(mc<26&&guard++<900){
+    const a=rand(0,6.283),d=rand(8,42),x=-70+Math.cos(a)*d,z=-25+Math.sin(a)*d,h=terrainH(x,z);
+    if(h<1.2||h>5.5)continue;
+    const s=rand(0.5,1.1);
+    put(msI,mc,x,h+0.2*s,z,0,0,0,s,s,s);
+    put(mcI,mc,x,h+0.44*s,z,0,0,0,s,s,s);mc++;
+  }
+  msI.count=mcI.count=mc;scene.add(msI,mcI);
+})();
+
 /* ============================== species ============================== */
 const SPECIES={
   trex:  {name:'T-Rex',hp:22,dmg:1,speed:7.4,run:9.6,aggro:34,atk:0.30,scale:1.00,reach:3.4,kind:'thero',col:'#4a9e3f'},
-  allo:  {name:'Allosaur',hp:8,dmg:1,speed:6.8,run:9.0,aggro:30,atk:0.45,scale:0.88,reach:3.0,kind:'thero',col:'#cf6f2b'},
-  spino: {name:'Spinosaurus',hp:11,dmg:1,speed:5.6,run:8.0,aggro:32,atk:0.50,scale:0.98,reach:3.3,kind:'thero',col:'#2f8ea6',tailswish:true},
+  allo:  {name:'Allosaur',hp:8,dmg:1,speed:6.8,run:9.0,aggro:30,atk:0.45,scale:0.88,reach:3.0,kind:'thero',col:'#cf6f2b',pack:true,coward:0.4},
+  spino: {name:'Spinosaurus',hp:11,dmg:1,speed:5.6,run:8.0,aggro:32,atk:0.50,scale:0.98,reach:3.3,kind:'thero',col:'#2f8ea6',tailswish:true,coward:0.35,fisher:true},
   ankylo:{name:'Ankylosaurus',hp:10,dmg:1,speed:3.6,run:6.4,aggro:20,atk:0.42,scale:0.9,reach:2.6,kind:'quad',col:'#7d8e44',armor:true,turn:1.5},
-  im:    {name:'Indominus rex',hp:13,dmg:2,speed:7.0,run:10.0,aggro:38,atk:0.50,scale:1.02,reach:3.5,kind:'thero',col:'#aeb4c6',camo:true},
-  dr:    {name:'Distortus rex',hp:16,dmg:2,speed:6.4,run:9.2,aggro:36,atk:0.65,scale:1.12,reach:3.8,kind:'thero',col:'#6c6f8a',stomp:true},
+  im:    {name:'Indominus rex',hp:13,dmg:2,speed:7.0,run:10.0,aggro:38,atk:0.50,scale:1.02,reach:3.5,kind:'thero',col:'#aeb4c6',camo:true,sneak:true},
+  dr:    {name:'Distortus rex',hp:16,dmg:2,speed:6.4,run:9.2,aggro:36,atk:0.65,scale:1.12,reach:3.8,kind:'thero',col:'#6c6f8a',stomp:true,brute:true},
 };
 const TOTAL_TO_KILL=['allo','spino','ankylo','im','dr'];
-const TERRITORY={allo:[-78,-40],spino:[80,35],ankylo:[-15,85],im:[60,-72],dr:[-8,-84]};
+const TERRITORY={allo:[-72,-28],spino:[48,-80],ankylo:[-8,-86],im:[78,-6],dr:[64,18]};
+
+/* named places — the old game's locations: forest, cave, beach */
+const ZONES=[
+  {name:'PINE FOREST',   x:-70, z:-25, r:46},
+  {name:'CRYSTAL CANYON',x: 70, z:  4, r:40},
+  {name:'SUNSET BEACH',  x: 18, z:-86, r:34},
+  {name:'THE HIGHLANDS', x:  0, z:  0, r:34},
+];
+function zoneAt(x,z){
+  for(const zn of ZONES)if(Math.hypot(x-zn.x,z-zn.z)<zn.r)return zn.name;
+  if(Math.hypot(x,z)>72&&terrainH(x,z)<2.6)return 'SUNSET BEACH';
+  return 'GRASSY FLATS';
+}
+function zoneTint(c,x,z){
+  const dC=Math.hypot(x-70,z-4);
+  if(dC<44){c.lerp(new THREE.Color(0x8d8474),clamp(1-dC/44,0,1)*0.72);return;}
+  const dF=Math.hypot(x+70,z+25);
+  if(dF<48){c.lerp(new THREE.Color(0x2f6b34),clamp(1-dF/48,0,1)*0.45);return;}
+  const r=Math.hypot(x,z);
+  if(r>70&&r<104&&terrainH(x,z)<2.6)c.lerp(new THREE.Color(0xf2dcae),0.45);
+}
 
 /* ============================== characters =========================== */
 const loader=new GLTFLoader();
@@ -273,6 +401,7 @@ function makeChar(key){
     hp:sp.hp,atkT:0,cool:0,windup:0,windupMax:1,hurtT:0,deadT:0,fear:0,alive:true,flash:0,
     strikeT:0,roarT:0,roarMax:1,look:{y:0,ty:0,timer:rand(0,3)},yawLag:0,lastYaw:0,
     fallSide:Math.random()<.5?-1:1,clubSide:0,prevAgg:0,
+    grazeT:0,dispT:0,sneak:false,retold:false,strafeT:0,strafeDir:Math.random()<.5?-1:1,
     wander:{x:0,z:0},home:{x:0,z:0},respawnAt:0,counted:false,isPlayer:false,remove:null};
   const s=sp.scale;model.scale.set(s,s,s);
   return ch;
@@ -297,7 +426,7 @@ function focusOf(ch){ // what the eyes are on
   if(ch.isPlayer){let b=null,bd=7;                       // player head eyes the nearest prey
     for(const e of enemies){if(!e.alive)continue;const d=Math.hypot(e.x-ch.x,e.z-ch.z);if(d<bd){bd=d;b=e;}}
     return b;}
-  return (ch.state==='chase'||ch.state==='attack'||ch.state==='flee')?player:null;
+  return ['chase','attack','flee','watch','retreat'].includes(ch.state)?player:null;
 }
 function poseChar(ch,dt){
   const sp=ch.sp,J=ch.joints,M=ch.model,s=sp.scale,quad=sp.kind==='quad';
@@ -334,6 +463,7 @@ function poseChar(ch,dt){
     ch.bob=moving?Math.abs(Math.sin(p))*(0.035+0.05*spdN):0;
     let clubY=Math.sin(ch.t*0.8)*0.05-ch.yawLag*0.18, clubZ=0;
     let headZ=-0.05+Math.sin(ch.t*0.7)*0.03, headY=ch.look.y*0.55-ch.yawLag*0.05;
+    if(ch.dispT>0)clubY=Math.sin(ch.t*11)*0.5*Math.min(1,ch.dispT*2);  // warning tail-wave
     if(ch.windup>0||ch.strikeT>0){
       const side=ch.clubSide||(ch.clubSide=(player.x>=ch.x?1:-1)); // wind toward the player, whip across
       if(ch.windup>0){const w=1-ch.windup/ch.windupMax;clubY=side*(0.45+0.95*w);clubZ=0.25*w;headZ-=0.10*w;}
@@ -378,6 +508,10 @@ function poseChar(ch,dt){
     // neck/head: look + gaze lag + breath; windup = arch & gape; strike = drive & snap
     let neckY=ch.look.y*0.55-ch.yawLag*0.18, neckZ=0.02+breath*0.012,
         headY=ch.look.y*0.30-ch.yawLag*0.10, headZ=-0.03, gape=0.03+Math.sin(ch.t*2.4)*0.012;
+    if(ch.grazeT>0){                                     // head-down sniff / graze / fish
+      const gz=Math.min(1,ch.grazeT*1.5);
+      neckZ=lerp(neckZ,0.55,gz);headZ=lerp(headZ,0.34,gz);gape=lerp(gape,0.10,gz);
+    }
     if(ch.windup>0){                                   // telegraph: rear back, jaws wide
       const w=1-ch.windup/ch.windupMax;
       neckZ=lerp(neckZ,0.32,w);headZ=lerp(headZ,0.26,w);gape=lerp(gape,0.62,w);
@@ -444,7 +578,8 @@ function poseDeath(ch,dt){
 }
 
 /* ============================== input ================================ */
-const IN={move:{x:0,y:0},turn:0,bite:false,roar:false,start:false,mute:false,prev:{bite:false,roar:false,start:false,mute:false}};
+const IN={move:{x:0,y:0},turn:0,bite:false,roar:false,start:false,mute:false,menu:false,back:false,
+  prev:{bite:false,roar:false,start:false,mute:false,menu:false,back:false}};
 let camYaw=0,camDrag=null;
 const keys={};
 addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space')e.preventDefault();});
@@ -473,12 +608,16 @@ function pollPad(){
     if(btn(0)||btn(2))IN.bite=true;   // A / X
     if(btn(3)||btn(5))IN.roar=true;   // Y / RB
     if(btn(9))IN.start=true;
-    if(btn(8))IN.mute=true;
+    if(btn(8))IN.menu=true;           // Select/Back — open the SWAP menu
+    if(btn(1))IN.back=true;           // B — back out of menus
+    if(btn(4))IN.mute=true;           // LB — mute
     break;}
 }
 function edge(){const e={bite:IN.bite&&!IN.prev.bite,roar:IN.roar&&!IN.prev.roar,
-  start:IN.start&&!IN.prev.start,mute:IN.mute&&!IN.prev.mute};
-  IN.prev.bite=IN.bite;IN.prev.roar=IN.roar;IN.prev.start=IN.start;IN.prev.mute=IN.mute;return e;}
+  start:IN.start&&!IN.prev.start,mute:IN.mute&&!IN.prev.mute,
+  menu:IN.menu&&!IN.prev.menu,back:IN.back&&!IN.prev.back};
+  IN.prev.bite=IN.bite;IN.prev.roar=IN.roar;IN.prev.start=IN.start;IN.prev.mute=IN.mute;
+  IN.prev.menu=IN.menu;IN.prev.back=IN.back;return e;}
 function consume(){IN.bite=IN.move.x=IN.move.y=0;}
 
 /* ============================== world actors ========================= */
@@ -530,7 +669,7 @@ function buildPicker(el,mode){
   for(const k of PICKABLE){const sp=SPECIES[k];
     const b=document.createElement('button');
     b.className='pcard'+(k===pickKey?' sel':'');b.dataset.k=k;
-    b.innerHTML=`<span class="dot" style="background:${sp.col}"></span><b>${sp.name}</b><small>${PICKTAG[k]}</small>`;
+    b.innerHTML=`<img src="assets/select/${k}.png" alt="${sp.name}" draggable="false"><b>${sp.name}</b><small>${PICKTAG[k]}</small>`;
     b.addEventListener('click',()=>{
       if(mode==='start'){setPick(k);SFX.roar(k);}
       else{if(k!==player.key)switchSpecies(k);closeMenu();}});
@@ -558,14 +697,14 @@ function switchSpecies(key){
   toast(`You are now a ${SPECIES[key].name}!`);
   if(goalLeft()===0&&!won){won=true;setTimeout(winGame,900);}
 }
-let padPrev={l:false,r:false};
+const padPrev={l:false,r:false};
 function padUI(){ // d-pad / stick scrolls the species picker
   for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
     const b=i=>p.buttons[i]&&p.buttons[i].pressed;
-    const L=b(14)||p.axes[0]<-0.5,R=b(15)||p.axes[0]>0.5;
-    if(L&&!padPrev.l)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+PICKABLE.length-1)%PICKABLE.length]);
-    if(R&&!padPrev.r)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+1)%PICKABLE.length]);
-    padPrev.l=L;padPrev.r=R;break;}
+    const L=b(14)||p.axes[0]<-0.5,R=b(15)||p.axes[0]>0.5,U=b(12)||p.axes[1]>0.5,D=b(13)||p.axes[1]<-0.5;
+    if((L||U)&&!padPrev.l)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+PICKABLE.length-1)%PICKABLE.length]);
+    if((R||D)&&!padPrev.r)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+1)%PICKABLE.length]);
+    padPrev.l=L||U;padPrev.r=R||D;break;}
 }
 const CAM={d:12.5,h:5.2};
 async function initGame(){
@@ -611,6 +750,7 @@ let invulnT=0;
 function kill(ch){
   ch.alive=false;ch.state='die';SFX.die();
   if(!ch.isPlayer){
+    confettiBurst(ch.x,ch.y+2.2,ch.z);
     if(!ch.counted){ch.counted=true;
       if(TOTAL_TO_KILL.includes(ch.key))defeated.add(ch.key);
       const left=goalLeft();
@@ -635,7 +775,14 @@ function resetEnemy(e){
   e.model.rotation.set(0,0,0);e.model.position.y=0;e.strikeT=0;e.roarT=0;e.bob=0;e.prevAgg=0;
   e.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
 }
-function winGame(){SFX.win();toast('ISLAND CHAMPION! All challengers beaten!',99999);}
+function winGame(){
+  SFX.win();winOpen=true;
+  document.getElementById('winOv').classList.remove('hidden');
+  for(let i=0;i<3;i++)setTimeout(()=>{if(player.alive)confettiBurst(player.x+rand(-4,4),player.y+3,player.z+rand(-4,4));},i*500);
+  if(player.alive){startRoar(player,1.4);SFX.roar(player.key);}
+}
+let winOpen=false;
+function closeWin(){winOpen=false;document.getElementById('winOv').classList.add('hidden');}
 
 function playerBite(){
   if(!player.alive||player.atkT>0||player.windup>0)return;
@@ -676,7 +823,12 @@ function playerBite(){
       } else hurt(e,sp.dmg,player.x,player.z);
     }
   }
-  if(hit){if(quad)SFX.stomp();else SFX.chomp();roarGauge=clamp(roarGauge+0.09,0,1);}
+  if(hit){
+    if(quad)SFX.stomp();else SFX.chomp();
+    roarGauge=clamp(roarGauge+0.09,0,1);
+    if(Math.random()<0.16&&performance.now()-lastPraise>4200){
+      lastPraise=performance.now();toast(PRAISE[Math.floor(Math.random()*PRAISE.length)],1400);}
+  }
 }
 function playerRoar(){
   if(!player.alive||roarGauge<0.35||roarCd>0)return;
@@ -703,8 +855,44 @@ function stepRipples(dt){
     const s=1+r.t*9;r.m.scale.set(s,s,s);r.m.material.opacity=Math.max(0,0.9-r.t*1.6);
     if(r.t>0.6){scene.remove(r.m);ripples.splice(i,1);}}
 }
+/* confetti — because every win deserves a shower of it */
+const confetti=[];
+function confettiBurst(x,y,z){
+  const n=42,pos=[],col=[],vels=[];
+  const C=[[1,.82,.25],[.9,.24,.4],[.3,.8,.42],[.36,.66,1],[1,.55,.2]];
+  for(let i=0;i<n;i++){pos.push(x,y,z);const c=C[i%C.length];col.push(c[0],c[1],c[2]);
+    vels.push(rand(-5,5),rand(3,8),rand(-5,5));}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  const p=new THREE.Points(g,new THREE.PointsMaterial({size:0.3,vertexColors:true}));
+  scene.add(p);confetti.push({p,vels,t:0});
+}
+function stepConfetti(dt){
+  for(let i=confetti.length-1;i>=0;i--){const c=confetti[i];c.t+=dt;
+    const arr=c.p.geometry.attributes.position.array;
+    for(let j=0;j<c.vels.length;j+=3){c.vels[j+1]-=13*dt;
+      arr[j]+=c.vels[j]*dt;arr[j+1]+=c.vels[j+1]*dt;arr[j+2]+=c.vels[j+2]*dt;}
+    c.p.geometry.attributes.position.needsUpdate=true;
+    if(c.t>1.7){scene.remove(c.p);c.p.geometry.dispose();c.p.material.dispose();confetti.splice(i,1);}
+  }
+}
+const PRAISE=['NICE CHOMP!','WOW!','YAY!','ROOOAR!','SILLY DRAGON!','GO GO GO!','CHA-CHOMP!'];
+let lastPraise=0;
 
-/* ============================== AI =================================== */
+/* ============================== AI ===================================
+   Each species behaves like an animal, not a homing missile:
+   • idle: wanders its territory, grazes / sniffs, does small display shows
+   • curious: if you stand still nearby, it stops and stares at you
+   • on spotting: roars to announce it, then approaches in character —
+     Allosaur pairs take turns striking while the other circles,
+     Indominus stalks silently and explodes only point-blank,
+     Spinosaurus keeps its bludgeoning tail toward you,
+     Ankylosaurus presents its armored front,
+     Distortus rex charges like a freight train
+   • wounded cowards run home, rest and recover — catch them later
+   ------------------------------------------------------------------- */
+const lastAtkT={};
 function stepEnemy(e,dt){
   e.y=terrainH(e.x,e.z);
   if(!e.alive){
@@ -712,10 +900,24 @@ function stepEnemy(e,dt){
     poseChar(e,dt);e.root.position.set(e.x,e.y,e.z);e.root.rotation.y=e.yaw;return;  }
   if(player==null)return;
   const dp=Math.hypot(player.x-e.x,player.z-e.z);
-  e.speed=0;
+  e.speed=0;e.sneak=false;
   e.hurtT=Math.max(0,e.hurtT-dt);e.flash=Math.max(0,e.flash-dt);
   e.cool=Math.max(0,e.cool-dt);
+  e.grazeT=Math.max(0,e.grazeT-dt);e.dispT=Math.max(0,e.dispT-dt);
   if(e.fear>0){e.fear-=dt;flee(e,dt);poseAndPlace(e,dt);return;}
+  if(e.sp.coward&&e.hp<e.sp.hp*e.sp.coward){       // wounded: break off, head home
+    e.state='retreat';
+    if(!e.retold){e.retold=true;toast(`The ${e.sp.name} is hurt and backs off — rest and it recovers!`);}
+    const dh=Math.hypot(e.home.x-e.x,e.home.z-e.z);
+    if(dh>4)walkToward(e,e.sp.run,e.home.x,e.home.z,dt);
+    else{
+      if(dp<15){const toP=Math.atan2(-(player.z-e.z),player.x-e.x),trn=(e.sp.turn||3);
+        e.yaw+=clamp(angDiff(toP,e.yaw),-trn*dt,trn*dt);}   // keeps an eye on you
+      e.hp=Math.min(e.sp.hp,e.hp+dt*1.2);
+      if(e.hp>=e.sp.hp)e.retold=false;
+    }
+    poseAndPlace(e,dt);return;
+  }
   if(e.windup>0){
     e.windup-=dt;
     if(e.windup<=0){ // strike — commit to the lunge so it reads and lands
@@ -738,21 +940,66 @@ function stepEnemy(e,dt){
   } else if(player.alive&&dp<e.sp.aggro){
     e.state='chase';
     if(!e.prevAgg){e.prevAgg=1;                            // fresh spotting: announce it
-      if(e.key!=='ankylo'&&Math.random()<0.7){SFX.roar(e.key);startRoar(e,0.7);}}
-    const toP=Math.atan2(-(player.z-e.z),player.x-e.x);
+      if(e.key!=='ankylo'&&Math.random()<0.7){SFX.roar(e.key);startRoar(e,0.7);}
+      else e.dispT=1.4;}                                  // Ankylosaurus warns with the club
     const trn=(e.sp.turn||3);
-    e.yaw+=clamp(angDiff(toP,e.yaw),-trn*dt,trn*dt);
-    if(dp>e.sp.atk)walkToward(e,e.sp.run,player.x,player.z,dt);
-    else if(e.cool<=0){e.windup=e.sp.atk;e.windupMax=e.sp.atk;e.state='attack';
-      if(e.sp.armor&&Math.random()<0.3)SFX.roar(e.key);}
+    e.yaw+=clamp(angDiff(Math.atan2(-(player.z-e.z),player.x-e.x),e.yaw),-trn*dt,trn*dt);
+    const atkD=e.sp.reach*0.9;
+    if(dp>atkD){
+      if(e.sp.sneak){                                    // Indominus: silent stalk
+        e.sneak=true;
+        walkToward(e,dp<11?e.sp.speed*0.85:e.sp.speed*0.45,player.x,player.z,dt);
+      } else if(e.sp.pack&&packMateBusy(e)){             // pack mate attacking: I circle
+        strafeAround(e,dt);
+      } else {
+        if((e.strafeT-=dt)<=0&&Math.random()<dt*1.6){e.strafeT=rand(1.1,2.4);e.strafeDir*=-1;}
+        if(e.strafeT>0&&dp<15)strafeAround(e,dt);
+        else walkToward(e,e.sp.brute?e.sp.run:e.sp.run*0.85,player.x,player.z,dt);
+      }
+    } else if(e.cool<=0&&(!e.sp.pack||(lastAtkT[e.key]||0)<performance.now()-1000)){
+      e.windup=e.sp.atk;e.windupMax=e.sp.atk;e.state='attack';
+      lastAtkT[e.key]=performance.now();
+      if(e.sp.armor&&Math.random()<0.3)SFX.roar(e.key);
+      if(e.sp.camo)SFX.roar(e.key);                      // the ambush reveals itself!
+    }
+  } else if(dp<e.sp.aggro*1.8&&Math.abs(player.speed)<0.6&&e.key!=='dr'&&e.key!=='im'){
+    e.state='watch';                                     // you stopped: it stops and stares
+    e.yaw+=clamp(angDiff(Math.atan2(-(player.z-e.z),player.x-e.x),e.yaw),-1.5*dt,1.5*dt);
+    if(Math.random()<dt*0.25)e.dispT=1.2;
   } else {
     e.state='idle';e.prevAgg=0;
     const dw=Math.hypot(e.wander.x-e.x,e.wander.z-e.z);
-    if(dw<3||Math.random()<0.002)e.wander={x:clamp(e.home.x+rand(-26,26),-100,100),z:clamp(e.home.z+rand(-26,26),-100,100)};
+    if(dw<3||Math.random()<0.002){
+      if(e.sp.fisher&&Math.random()<0.5){                // Spinosaurus patrols the shore
+        const a0=rand(0,6.283);let wx=e.home.x,wz=e.home.z,g2=0;
+        do{wx=e.home.x+Math.cos(a0+g2*1.3)*rand(10,30);wz=e.home.z+Math.sin(a0+g2*1.3)*rand(10,30);g2++;}
+        while(g2<8&&terrainH(wx,wz)>1.6);
+        e.wander={x:wx,z:wz};
+      } else
+      e.wander={x:clamp(e.home.x+rand(-26,26),-100,100),z:clamp(e.home.z+rand(-26,26),-100,100)};
+    }
     if(terrainH(e.wander.x,e.wander.z)>0.6)walkToward(e,e.sp.speed*0.5,e.wander.x,e.wander.z,dt);
     else e.speed*=0.8;
+    if(Math.random()<dt*0.22){                           // idle life: graze, sniff, call out
+      const r=Math.random();
+      if(e.sp.kind==='quad'){e.dispT=rand(1,2);if(r<0.35)SFX.roar(e.key);}
+      else if(r<0.55){e.grazeT=rand(1.4,2.6);
+        if(e.sp.fisher&&terrainH(e.x+Math.cos(e.yaw)*2,e.z-Math.sin(e.yaw)*2)<1.4&&Math.random()<0.5)SFX.splash();}
+      else if(r<0.7){startRoar(e,0.55);if(Math.random()<0.5)SFX.roar(e.key);}
+    }
   }
   poseAndPlace(e,dt);
+}
+function packMateBusy(e){
+  const now=performance.now();
+  return enemies.some(o=>o!==e&&o.alive&&o.key===e.key&&(o.windup>0||o.strikeT>0));
+}
+function strafeAround(e,dt){                             // keeps its nose on you, sidesteps
+  const a=Math.atan2(-(player.z-e.z),player.x-e.x)+e.strafeDir*Math.PI/2;
+  const mv=Math.min(e.sp.run,10)*dt*0.65;
+  const nx=e.x+Math.cos(a)*mv,nz=e.z-Math.sin(a)*mv;
+  if(terrainH(nx,nz)>WATER-0.25&&Math.hypot(nx,nz)<138){e.x=nx;e.z=nz;e.speed=e.sp.run*0.65;}
+  else e.strafeDir*=-1;
 }
 function poseAndPlace(e,dt){
   poseChar(e,dt);
@@ -907,7 +1154,8 @@ const mapBase=document.createElement('canvas');mapBase.width=mapBase.height=128;
     const x=(i/127-0.5)*WORLD,z=(j/127-0.5)*WORLD,h=terrainH(x,z);
     const o=(j*128+i)*4;let c;
     if(h<0)c=[40,90,120];else if(h<0.9)c=[222,204,150];else if(h<6.5)c=[80,140,60];else c=[130,124,112];
-    img.data[o]=c[0];img.data[o+1]=c[1];img.data[o+2]=c[2];img.data[o+3]=255;
+    const cc=new THREE.Color(c[0]/255,c[1]/255,c[2]/255);zoneTint(cc,x,z);
+    img.data[o]=cc.r*255;img.data[o+1]=cc.g*255;img.data[o+2]=cc.b*255;img.data[o+3]=255;
   }
   g.putImageData(img,0,0);
 })();
@@ -936,7 +1184,34 @@ function updateHUD(){
   if(near){info.style.opacity=1;
     info.innerHTML=`<b style="color:${near.sp.col}">${near.sp.name}</b> <span style="color:#ffd23f">${'▮'.repeat(Math.ceil(near.sp.hp/8))}</span>`;}
   else info.style.opacity=0;
+  // zone label (the old game's named locations)
+  const zn=zoneAt(player.x,player.z);
+  if(zn!==curZone){
+    if(curZone!==null&&zn)toast(zn+'!',1800);
+    curZone=zn;
+    const zl=document.getElementById('zlbl');zl.textContent=zn;zl.style.opacity=1;
+    clearTimeout(zlbl.h);zlbl.h=setTimeout(()=>zl.style.opacity=0,3200);
+  }
+  // gold compass arrow points to the next challenger — no map-reading needed
+  const cEl=document.getElementById('compass');
+  const g=nextGoal();
+  if(!g||menuOpen||won||Math.hypot(g.x-player.x,g.z-player.z)<10){cEl.style.opacity=0;return;}
+  const a=Math.atan2(-(g.z-player.z),g.x-player.x);
+  const cf=Math.atan2(-(player.z-camera.position.z),player.x-camera.position.x);
+  const rel=angDiff(a,cf);
+  const R=Math.min(innerWidth,innerHeight)*0.22+34;
+  const sx=Math.sin(rel)*R,sy=-Math.cos(rel)*R;
+  cEl.style.transform=`translate(-50%,-50%) translate(${sx.toFixed(0)}px,${sy.toFixed(0)}px) rotate(${(Math.atan2(sy,sx)*180/Math.PI).toFixed(0)}deg)`;
+  cEl.style.opacity=1;
 }
+function nextGoal(){
+  let b=null,bd=1e9;
+  for(const e of enemies){if(!e.alive||e.counted)continue;
+    const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<bd){bd=d;b=e;}}
+  return b;
+}
+let curZone=null;
+const zlbl=document.getElementById('zlbl');
 
 /* ============================== camera =============================== */
 function stepCamera(dt){
@@ -971,12 +1246,12 @@ function loop(now){
   if(menuOpen){                 // the world holds still while you pick a new dino
     pollPad();padUI();const em=edge();
     if(em.mute)toggleMute();
-    if(em.bite){if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
-    if(em.start)closeMenu();
+    if(em.back||em.start)closeMenu();
+    else if(em.bite){if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
     consume();renderer.render(scene,camera);return;
   }
-  if(keys.Space)playerBite();           // hold-to-bite (cooldown gates it)
-  if(IN.biteHeld&&started)playerBite();
+  if(keys.Space&&!winOpen)playerBite();      // hold-to-bite (cooldown gates it)
+  if(IN.biteHeld&&started&&!winOpen)playerBite();
   if(keys.KeyR)IN.roar=true;
   const kx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
   const ky=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0);
@@ -987,12 +1262,17 @@ function loop(now){
   if(DEMO)botStep(dt);
   const e=edge();
   if(e.mute)toggleMute();
-  if(e.bite)playerBite();
-  if(e.roar)playerRoar();
+  if(e.menu)openMenu();
+  if(winOpen&&(e.back||e.bite||e.start))closeWin();
+  else{
+    if(e.bite)playerBite();
+    if(e.roar)playerRoar();
+  }
   stepPlayer(dt);
   for(const en of[...enemies])stepEnemy(en,dt);
   separate();
   stepRipples(dt);
+  stepConfetti(dt);
   stepCamera(dt);
   water.position.y=WATER+0.16+Math.sin(now/900)*0.06;
   renderer.render(scene,camera);
@@ -1000,9 +1280,10 @@ function loop(now){
   consume();
 }
 document.getElementById('playB').addEventListener('click',initGame);
+document.getElementById('winB').addEventListener('click',closeWin);
 bindBtn('swapB',()=>{menuOpen?closeMenu():openMenu();});
 bindBtn('closeSwapB',closeMenu);
-document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • R roar • drag mouse to look • SWAP changes dino';
+document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • R roar • drag mouse to look • SWAP/Select changes dino';
 if(DEMO)initGame();
 requestAnimationFrame(loop);
 
@@ -1044,6 +1325,8 @@ window.__probe={
   setCam(y){camYaw=y;},
   killEnemy(key){const e=enemies.find(e=>e.alive&&e.key===key);if(e){e.hp=1;this.goToEnemy(enemies.indexOf(e));
     playerBite();return true;}return false;},
+  kill(key){const e=enemies.find(e=>e.alive&&e.key===key);if(e){kill(e);return true;}return false;},
+  setEnemy(key,f){const e=enemies.find(e=>e.key===key&&e.alive);if(!e)return false;Object.assign(e,f);return true;},
   switchTo(key){switchSpecies(key);return player.key;},
   placeAt(x,z,yaw){player.x=x;player.z=z;player.y=terrainH(x,z);
     if(yaw!==undefined){player.yaw=yaw;player.lastYaw=yaw;}},
@@ -1057,6 +1340,18 @@ window.__probe={
   openMenu(){openMenu();return menuOpen;},
   closeMenu(){closeMenu();return menuOpen;},
   pick(k){setPick(k);return pickKey;},
+  zone(){return zoneAt(player.x,player.z);},
+  compass(){const el=document.getElementById('compass');
+    return{opacity:el.style.opacity,transform:el.style.transform};},
+  winShown(){return winOpen;},
+  closeWin(){closeWin();return winOpen;},
+  fakePad(on){ // minimal gamepad simulation for testing
+    if(!on){delete window.__fakePad;return true;}
+    const btns=Array.from({length:17},()=>({pressed:false,value:0}));
+    window.__fakePad={connected:true,mapping:'standard',index:0,id:'fake',axes:[0,0,0,0],buttons:btns,timestamp:performance.now()};
+    return true;},
+  padBtn(i,on){if(!window.__fakePad)return false;
+    window.__fakePad.buttons[i].pressed=!!on;window.__fakePad.buttons[i].value=on?1:0;return true;},
 };
 </script>
 </body>
