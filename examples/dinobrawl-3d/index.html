@@ -1533,11 +1533,15 @@ function updateHUD(){
   const cEl=document.getElementById('compass');
   const g=nextGoal();
   if(!g||menuOpen||won||Math.hypot(g.x-player.x,g.z-player.z)<10){cEl.style.opacity=0;return;}
-  const a=Math.atan2(-(g.z-player.z),g.x-player.x);
-  const cf=Math.atan2(-(player.z-camera.position.z),player.x-camera.position.x);
-  const rel=angDiff(a,cf);
+  // project the target into the camera view plane: f = view dir (camera->player),
+  // screen right r = (-fz, fx); screen up = f
+  const dx=g.x-player.x,dz=g.z-player.z;
+  const fx=player.x-camera.position.x,fz=player.z-camera.position.z;
+  const fl=Math.hypot(fx,fz)||1;
+  const u=(dx*-fz+dz*fx)/fl, v=(dx*fx+dz*fz)/fl;   // target's right / forward amount
+  const ul=Math.hypot(u,v)||1;
   const R=Math.min(innerWidth,innerHeight)*0.22+34;
-  const sx=Math.sin(rel)*R,sy=-Math.cos(rel)*R;
+  const sx=u/ul*R,sy=-v/ul*R;
   cEl.style.transform=`translate(-50%,-50%) translate(${sx.toFixed(0)}px,${sy.toFixed(0)}px) rotate(${(Math.atan2(sy,sx)*180/Math.PI).toFixed(0)}deg)`;
   cEl.style.opacity=1;
 }
