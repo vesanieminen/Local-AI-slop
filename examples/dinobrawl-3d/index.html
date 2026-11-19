@@ -89,13 +89,40 @@
   .mcard.sel{border-color:#ffd23f;background:rgba(255,210,63,.20);transform:scale(1.05)}
   .pcard.sel{border-color:#ffd23f;background:rgba(255,210,63,.20);transform:scale(1.07)}
   #swap{position:fixed;inset:0;z-index:11;background:rgba(8,22,32,.62);
-    display:flex;align-items:center;justify-content:center;padding:14px}
+    display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto}
   #swap .panel{background:linear-gradient(180deg,#2a6d84,#1b4f63);border:3px solid rgba(255,255,255,.25);
-    border-radius:20px;padding:18px;width:min(94vw,540px)}
+    border-radius:20px;padding:18px;width:min(94vw,540px);max-height:94vh;overflow:auto}
   #swap h2{margin:0 0 10px;text-align:center;letter-spacing:1px}
   #closeSwapB{margin-top:12px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
     border:3px solid #fff;border-radius:14px;padding:10px 22px;font-size:16px;cursor:pointer}
   #swap .note{text-align:center;font-size:12px;opacity:.8;margin:10px 0 0}
+  #swap .pick{grid-template-columns:repeat(auto-fit,minmax(98px,1fr));gap:7px}
+  #swap .pcard img{height:58px}
+  #swap .pcard small{display:none}
+  /* the world section must not push NEW MAP off a phone screen */
+  @media (max-height:560px){
+    #swap .mwtip,#swap .note{display:none}
+    #miniMap{width:104px;height:58px}
+    #swap .pcard img{height:42px}
+    #menuMap .mcard canvas,#menuMap .mcard .dice{width:62px;height:35px}
+    #menuB{margin-top:5px;padding:7px 16px;font-size:15px}
+  }
+  /* the menu carries the world too: the island you're standing on, and a new one to grow */
+  .menuworld{border-top:2px dashed rgba(255,255,255,.4);margin-top:12px;padding-top:10px}
+  .menuworld h3{margin:0 0 6px;text-align:center;font-size:15px;letter-spacing:1px}
+  .mwrow{display:flex;gap:10px;align-items:center;justify-content:center;text-align:left}
+  #miniMap{width:132px;height:74px;flex:none;border:3px solid rgba(255,255,255,.7);border-radius:10px;
+    background:#0b1226;box-shadow:0 3px 10px rgba(0,0,0,.35);image-rendering:pixelated}
+  .mwrow b{display:block;font-size:14px}
+  .mwrow small{display:block;font-size:11px;opacity:.85;margin-top:2px}
+  #menuMap{margin:6px auto 0;gap:6px}
+  #menuMap .mcard{padding:4px}
+  #menuMap .mcard canvas,#menuMap .mcard .dice{width:76px;height:43px}
+  #menuMap .mcard b{font-size:11px;margin-top:2px}
+  #menuMap .mcard small{display:none}
+  #menuB{display:block;margin:8px auto 0;font-family:inherit;font-weight:800;font-size:16px;color:#234;
+    background:#ffd23f;border:3px solid #fff;border-radius:14px;padding:9px 20px;cursor:pointer}
+  #swap .mwtip{text-align:center;font-size:11.5px;opacity:.85;margin:6px 0 0}
   #playB{margin-top:18px;font-size:22px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
     border:3px solid #fff;border-radius:14px;padding:14px 40px;cursor:pointer}
   .keys{font-size:13px!important;opacity:.8}
@@ -121,6 +148,17 @@
   <h2>SWAP DINOSAUR</h2>
   <div class="pick" id="pick2"></div>
   <p class="note">Tap a dinosaur to become it — same hearts, same spot.<br>Your old dino goes back to the wild.</p>
+  <div class="menuworld">
+    <h3>YOUR WORLD</h3>
+    <div class="mwrow"><canvas id="miniMap" width="132" height="74"></canvas>
+      <div><b id="menuMapLabel">SUNSET BEACH</b><small id="miniMapNote">the island you are standing on</small>
+        <small id="miniMapSeed">island number 12345</small></div></div>
+    <div class="maprow" id="menuMap"></div>
+    <button id="menuB">NEW MAP!</button>
+    <p class="mwtip" id="menuWorldTip">Tap another island, then press NEW MAP — it grows a brand-new island
+      and you stay the same dinosaur with the same hearts. Up/Down (and the gamepad D-pad up/down)
+      picks the island too.</p>
+  </div>
   <div style="text-align:center"><button id="closeSwapB">BACK TO THE FIGHT</button></div>
 </div></div>
 <div id="winOv" class="hidden"><div class="panel">
@@ -146,15 +184,16 @@
      Dinosaurs wade into water — but too deep drowns them, for you and for them.
      Run out of hearts and your dinosaur takes a nap — press a button and it wakes
      up safe at camp.
-     Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs anytime with the SWAP button.</p>
+     Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs, or move to a
+     whole new island, anytime with the SWAP button.</p>
   <div class="maprow" id="mrow"></div>
   <div class="pick" id="pick"></div>
   <p class="keys">WASD / arrows — move &nbsp;•&nbsp; drag mouse or J/L — turn camera &nbsp;•&nbsp;
-     SPACE / click — bite &nbsp;•&nbsp; R — roar &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; SWAP — change dino<br>
+     SPACE / click — bite &nbsp;•&nbsp; R — roar &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; SWAP — change dino or world<br>
      In the menus: arrows/WASD choose the island and dinosaur, Enter plays — the
      gamepad D-pad does the same<br>
      Gamepad: stick move, A/X bite, Y/RB roar, <b>Select/Back — menu</b>, B — back, LB — mute,
-     Start play, D-pad pick dino</p>
+     Start play, D-pad pick dino (up/down picks the island)</p>
   <button id="playB">PLAY</button>
 </div>
 
@@ -981,8 +1020,11 @@ function buildPicker(el,mode){
 buildPicker(document.getElementById('pick'),'start');
 buildPicker(document.getElementById('pick2'),'swap');
 function openMenu(){if(!started||!player||knockedOut)return;menuOpen=true;
-  setPick(player.key);document.getElementById('swap').classList.remove('hidden');consume();}
-function closeMenu(){menuOpen=false;document.getElementById('swap').classList.add('hidden');consume();}
+  setPick(player.key);mapPick=previewMap;                 // always opens on the island you're standing on
+  document.getElementById('swap').classList.remove('hidden');refreshMenuMap();consume();}
+function closeMenu(){menuOpen=false;
+  if(started)setMapPickSel(previewMap);                   // an island you didn't grow goes back unchosen
+  document.getElementById('swap').classList.add('hidden');consume();}
 function switchSpecies(key){
   if(!started||!player||!player.alive||key===player.key)return;
   const px=player.x,pz=player.z,pyaw=player.yaw,old=player.key;
@@ -1003,23 +1045,26 @@ function switchSpecies(key){
 const cycleSp=d=>{setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+d+PICKABLE.length)%PICKABLE.length]);
   try{SFX.pickup();}catch(e){}};
 const MAPCHOICE=[...MAPKEYS,'surprise'];
-const cycleMap=d=>setMapPick(MAPCHOICE[(MAPCHOICE.indexOf(mapPick)+d+MAPCHOICE.length)%MAPCHOICE.length]);
-/* arrows/WASD scroll the menu cards: in the start menu up/down chooses the
-   island and left/right the dinosaur; in the SWAP menu all four cycle dino */
+const nextMap=(cur,d)=>MAPCHOICE[(MAPCHOICE.indexOf(cur)+d+MAPCHOICE.length)%MAPCHOICE.length];
+const mapLabel=k=>k==='surprise'?'SURPRISE':(MAPNAME[k]||'AN ISLAND');
+const cycleMap=d=>setMapPick(nextMap(mapPick,d));        // start screen: previews it right away
+const cycleStage=d=>stageMap(nextMap(mapPick,d));        // in the game: only picks it, nothing grows yet
+/* arrows/WASD scroll the menu cards: up/down chooses the island, left/right the
+   dinosaur — in both the start screen and the in-game menu */
 function kbdUI(mode){           // tap-driven, so it works at any frame rate
   const conf=tap('Enter')||tap('NumpadEnter')||tap('Space');
   if(tap('ArrowRight')||tap('KeyD'))cycleSp(1);
   if(tap('ArrowLeft')||tap('KeyA'))cycleSp(-1);
-  if(tap('ArrowUp')||tap('KeyW')){if(mode==='start')cycleMap(-1);else cycleSp(-1);}
-  if(tap('ArrowDown')||tap('KeyS')){if(mode==='start')cycleMap(1);else cycleSp(1);}
+  if(tap('ArrowUp')||tap('KeyW')){if(mode==='start')cycleMap(-1);else cycleStage(-1);}
+  if(tap('ArrowDown')||tap('KeyS')){if(mode==='start')cycleMap(1);else cycleStage(1);}
   return conf;
 }
 function padUI(mode){ // d-pad / stick scrolls the menu cards (same layout as kbdUI)
   const L=ptap(14)||ptap(114),R=ptap(15)||ptap(115),U=ptap(12)||ptap(112),D=ptap(13)||ptap(113);
   if(R)cycleSp(1);
   if(L)cycleSp(-1);
-  if(U){if(mode==='start')cycleMap(-1);else cycleSp(-1);}
-  if(D){if(mode==='start')cycleMap(1);else cycleSp(1);}
+  if(U){if(mode==='start')cycleMap(-1);else cycleStage(-1);}
+  if(D){if(mode==='start')cycleMap(1);else cycleStage(1);}
 }
 const CAM={d:12.5,h:5.2};
 /* ---- start-screen map picker: thumbnails from the same map formulas ---- */
@@ -1037,20 +1082,20 @@ function mapThumb(k){
   }
   g.putImageData(img,0,0);return c;
 }
-function buildMapRow(el){
+function buildMapRow(el,onPick){
   el.innerHTML='';
   for(const k of MAPKEYS){
     const b=document.createElement('button');
     b.className='mcard'+(k===mapPick?' sel':'');b.dataset.k=k;
     b.appendChild(mapThumb(k));
     b.insertAdjacentHTML('beforeend',`<b>${MAPNAME[k]}</b><small>${MAPTAG[k]}</small>`);
-    b.addEventListener('click',()=>setMapPick(k));
+    b.addEventListener('click',()=>onPick(k));
     el.appendChild(b);
   }
   const s=document.createElement('button');
   s.className='mcard'+(mapPick==='surprise'?' sel':'');s.dataset.k='surprise';
   s.innerHTML='<span class="dice">🎲</span><b>SURPRISE!</b><small>any island, new map</small>';
-  s.addEventListener('click',()=>setMapPick('surprise'));
+  s.addEventListener('click',()=>onPick('surprise'));
   el.appendChild(s);
 }
 /* picking a card instantly rebuilds the island spinning behind the menu */
@@ -1061,6 +1106,51 @@ function setMapPick(k){
   previewMap=k==='surprise'?MAPKEYS[Math.floor(Math.random()*3)]:k;
   buildWorld(previewMap,(Math.random()*1e9)>>>0);
   SFX.pickup();
+}
+/* ---- the in-game menu can change the world too. Picking an island only marks it;
+   NEW MAP grows a brand-new island and keeps your dinosaur, hearts and spot ---- */
+function stageMap(k){                                     // picks an island; nothing grows yet
+  mapPick=k;
+  document.querySelectorAll('.mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===k));
+  refreshMenuMap();SFX.pickup();
+  toast(k===previewMap?`${curMap.name} — that's the island you are on right now`:
+    `${mapLabel(k)} picked! Press NEW MAP and a brand-new island grows there.`);
+}
+function buildMiniMap(){
+  const c=document.getElementById('miniMap');if(!c||!started)return;
+  const g=c.getContext('2d'),W=c.width,H=c.height,img=g.createImageData(W,H);
+  for(let j=0;j<H;j++)for(let i=0;i<W;i++){
+    const x=(i/(W-1)-0.5)*300,z=(j/(H-1)-0.5)*300,h=terrainH(x,z),o=(j*W+i)*4;
+    let rgb;
+    if(h<WATER-2.2)rgb=[22,54,100];
+    else if(h<WATER-0.5)rgb=[30,92,150];
+    else if(h<WATER)rgb=[44,132,180];
+    else rgb=curMap.pix(x,z,h);
+    img.data[o]=rgb[0];img.data[o+1]=rgb[1];img.data[o+2]=rgb[2];img.data[o+3]=255;
+  }
+  g.putImageData(img,0,0);
+  const px2=x=>clamp((x+150)/300*W,2,W-2),pz2=z=>clamp((z+150)/300*H,2,H-2);
+  g.fillStyle='rgba(255,255,255,.45)';g.beginPath();g.arc(px2(CAMP[0]),pz2(CAMP[1]),5,0,7);g.fill();
+  if(player){g.fillStyle='#fff';g.beginPath();g.arc(px2(player.x),pz2(player.z),4,0,7);g.fill();
+    g.strokeStyle='#ffd23f';g.lineWidth=2;g.stroke();}
+}
+function refreshMenuMap(){
+  if(!started)return;
+  const staged=mapPick!==previewMap;
+  document.getElementById('menuMapLabel').textContent=curMap.name;
+  document.getElementById('miniMapNote').textContent=staged?
+    `you are on ${MAPNAME[previewMap]} — ${mapLabel(mapPick)} is picked`
+    :'the island you are standing on';
+  document.getElementById('miniMapSeed').textContent='island number '+WORLDSEED;
+  document.getElementById('menuB').textContent=staged?'GROW '+mapLabel(mapPick)+'!':'NEW MAP!';
+  document.querySelectorAll('#menuMap .mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===mapPick));
+  buildMiniMap();
+}
+function menuStart(){
+  if(!started||!player)return false;
+  newExpedition(mapPick!==previewMap?mapPick:undefined,null,true);   // same dino, new island
+  closeMenu();
+  return true;
 }
 async function initGame(){
   if(launching)return;launching=true;
@@ -1193,19 +1283,23 @@ function winGame(){
 let winOpen=false;
 function closeWin(){winOpen=false;document.getElementById('winOv').classList.add('hidden');}
 /* fresh random island + fresh challengers — endless replayability */
-function newExpedition(k,seed){
+function newExpedition(k,seed,keepPlayer){
+  if(k==='surprise')k=MAPKEYS[Math.floor(Math.random()*MAPKEYS.length)];   // surprise = any island
   if(typeof k!=='string')
     k=MAPKEYS[(MAPKEYS.indexOf(previewMap)+1+Math.floor(Math.random()*2))%3];
-  mapPick='surprise';
+  const px=player.x,pz=player.z;                    // where you stood, if this one keeps the dinosaur
+  mapPick=k;
   buildWorld(k,(seed==null?((Math.random()*1e9)>>>0):seed>>>0));
   previewMap=k;
-  document.querySelectorAll('.mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k==='surprise'));
+  setMapPickSel(k);
   defeated.clear();won=false;hearts=maxHearts;setHearts();roarGauge=1;curZone=null;
   for(const e of[...enemies])scene.remove(e.root);
   enemies.length=0;
   spawnEnemies();
-  player.x=CAMP[0];player.z=CAMP[1];player.y=terrainH(CAMP[0],CAMP[1]);
-  player.yaw=Math.atan2(-CAMP[1],-CAMP[0]);player.lastYaw=player.yaw;
+  const dry=terrainH(px,pz)>WATER+0.25;             // the new island may hold sea where you stood
+  const sx=keepPlayer&&dry?px:CAMP[0],sz=keepPlayer&&dry?pz:CAMP[1];
+  player.x=sx;player.z=sz;player.y=terrainH(sx,sz);
+  player.yaw=Math.atan2(-sz,-sx);player.lastYaw=player.yaw;
   player.hp=player.sp.hp;player.alive=true;player.state='idle';
   player.deadT=0;player.strikeT=0;player.roarT=0;player.windup=0;player.bob=0;player.fear=0;
   player.model.rotation.set(0,0,0);player.model.position.y=0;
@@ -1214,7 +1308,9 @@ function newExpedition(k,seed){
   knockedOut=false;downT=0;ovWake=false;downOvEl.classList.add('hidden');
   invulnT=Math.max(invulnT,1.5);
   closeWin();
-  toast(`${curMap.name} — a brand-new island! ${goalLeft()} challengers to find!`);
+  refreshMenuMap();                                      // the menu always describes the island you're on
+  toast(keepPlayer?`A brand-new ${curMap.name}! Still a ${player.sp.name}, still ${hearts} hearts — go!`
+    :`${curMap.name} — a brand-new island! ${goalLeft()} challengers to find!`);
 }
 
 function playerBite(){
@@ -1784,13 +1880,16 @@ function frame(now){
   }
   if(tap('Escape'))menuOpen?closeMenu():openMenu();
   PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1))&&!menuOpen)switchSpecies(k);});
-  if(menuOpen){                 // the world holds still while you pick a new dino
+  if(menuOpen){                 // the world holds still while you pick a dino or an island
     pollPad();padUI('menu');
     const conf=kbdUI('menu');
     const em=edge();
     if(em.mute)toggleMute();
     if(em.back||em.start)closeMenu();
-    else if(em.bite||conf){if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
+    else if(em.bite||conf){
+      if(mapPick!==previewMap)menuStart();            // an island is picked: grow it, stay yourself
+      else{if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
+    }
     consume();renderer.render(scene,camera);return;
   }
   if(!winOpen&&(keys.Space||tap('Space')))playerBite();   // hold-to-bite (cooldown gates it)
@@ -1828,8 +1927,10 @@ document.getElementById('newExpB').addEventListener('click',newExpedition);
 document.getElementById('winB').addEventListener('click',closeWin);
 bindBtn('swapB',()=>{menuOpen?closeMenu():openMenu();});
 bindBtn('closeSwapB',closeMenu);
-document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • R roar • drag mouse to look • SWAP/Select changes dino';
-buildMapRow(document.getElementById('mrow'));
+bindBtn('menuB',menuStart);
+document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • R roar • drag mouse to look • SWAP/Select changes dino and world';
+buildMapRow(document.getElementById('mrow'),setMapPick);
+buildMapRow(document.getElementById('menuMap'),stageMap);
 buildWorld(previewMap,(Math.random()*1e9)>>>0);   // live island spinning behind the menu
 if(DEMO)initGame();
 requestAnimationFrame(loop);
@@ -1846,6 +1947,7 @@ window.__probe={
     fps:Math.round(fps),tier};},
   teleport(x,z){player.x=x;player.z=z;player.y=terrainH(x,z);},
   ground(x,z){return +terrainH(x,z).toFixed(2);},
+  get water(){return WATER;},
   face(x,z){player.yaw=Math.atan2(-(z-player.z),x-player.x);},
   bite(){playerBite();},
   roar(){playerRoar();},
@@ -1926,7 +2028,17 @@ window.__probe={
   buildMap(k,s){previewMap=k;setMapPickSel(k);
     buildWorld(k,(s==null?((Math.random()*1e9)|0):s)>>>0);return true;},
   setMapPick(k){setMapPick(k);return previewMap;},
-  newExpedition(k,s){newExpedition(k,s);return{won,defeated:defeated.size,map:curMap.name};},
+  newExpedition(k,s,keep){newExpedition(k,s,keep);return{won,defeated:defeated.size,map:curMap.name,
+    seed:WORLDSEED,at:[+player.x.toFixed(1),+player.z.toFixed(1)],species:player.key,hearts};},
+  stageMap(k){stageMap(k);return mapPick;},
+  menuWorld(){return{pick:mapPick,live:previewMap,staged:mapPick!==previewMap,seed:WORLDSEED,
+    label:document.getElementById('menuMapLabel').textContent,
+    note:document.getElementById('miniMapNote').textContent,
+    btn:document.getElementById('menuB').textContent,
+    sel:[...document.querySelectorAll('#menuMap .mcard.sel')].map(b=>b.dataset.k),
+    mini:document.getElementById('miniMap').width,
+    world:curMap.name};},
+  menuStart(k){if(k)stageMap(k);return menuStart();},
   pick(k){setPick(k);return pickKey;},
   get pickNow(){return pickKey;},
   get mapNow(){return mapPick;},
