@@ -1337,6 +1337,13 @@ window.__probe={
     e.x=x;e.z=z;e.y=terrainH(x,z);if(yaw!==undefined)e.yaw=yaw;e.cool=99;e.fear=0;e.state='idle';return true;},
   windupEnemy(key,w=0.01){const e=enemies.find(e=>e.alive&&e.key===key);if(!e)return null;
     e.windup=w;e.windupMax=0.3;return true;},
+  meshPose(which,part){const ch=which==='player'?player:enemies.find(e=>e.key===which);
+    if(!ch)return null;const o=ch.model.getObjectByName(part);if(!o)return null;
+    o.updateWorldMatrix(true,false);
+    const T=new THREE.Vector3(),q=new THREE.Quaternion(),s=new THREE.Vector3();
+    o.matrixWorld.decompose(T,q,s);
+    return {p:[+T.x.toFixed(2),+T.y.toFixed(2),+T.z.toFixed(2)],
+      r:[+q.x.toFixed(2),+q.y.toFixed(2),+q.z.toFixed(2)]};},
   openMenu(){openMenu();return menuOpen;},
   closeMenu(){closeMenu();return menuOpen;},
   pick(k){setPick(k);return pickKey;},
