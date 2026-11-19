@@ -125,6 +125,8 @@
   <div class="pick" id="pick"></div>
   <p class="keys">WASD / arrows — move &nbsp;•&nbsp; drag mouse or J/L — turn camera &nbsp;•&nbsp;
      SPACE / click — bite &nbsp;•&nbsp; R — roar &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; SWAP — change dino<br>
+     In the menus: arrows/WASD choose the island and dinosaur, Enter plays — the
+     gamepad D-pad does the same<br>
      Gamepad: stick move, A/X bite, Y/RB roar, <b>Select/Back — menu</b>, B — back, LB — mute,
      Start play, D-pad pick dino</p>
   <button id="playB">PLAY</button>
@@ -821,9 +823,17 @@ function poseDeath(ch,dt){
 const IN={move:{x:0,y:0},turn:0,bite:false,roar:false,start:false,mute:false,menu:false,back:false,
   prev:{bite:false,roar:false,start:false,mute:false,menu:false,back:false}};
 let camYaw=0,camDrag=null;
-const keys={};
-addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space')e.preventDefault();});
+const keys={},pressed=[];            // keys[] = held (analog move), pressed[] = taps
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(!e.repeat)pressed.push(e.code);
+  if(e.code==='Space'||e.code.startsWith('Arrow'))e.preventDefault();
+  if((e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')&&(!started||menuOpen)){
+    e.preventDefault();              // a focused card must not double-fire and steal the pick
+    if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();}
+});
 addEventListener('keyup',e=>{keys[e.code]=false;});
+const tap=c=>{const i=pressed.indexOf(c);if(i>=0){pressed.splice(i,1);return true;}return false;};
 canvas.addEventListener('pointerdown',e=>{camDrag={x:e.clientX,id:e.pointerId,moved:0};});
 canvas.addEventListener('pointermove',e=>{
   if(camDrag&&e.pointerId===camDrag.id){const d=e.clientX-camDrag.x;camYaw-=d*0.006;camDrag.x=e.clientX;camDrag.moved+=Math.abs(d);}});
@@ -839,18 +849,35 @@ const muteB=document.getElementById('muteB');
 muteB.addEventListener('pointerdown',e=>{e.preventDefault();toggleMute();});
 function toggleMute(){muted=!muted;if(AU.mg)AU.mg.gain.value=muted?0:0.5;muteB.textContent=muted?'♪×':'♪';}
 if(muted)muteB.textContent='♪×';
-function pollPad(){
+/* gamepad buttons are level-read, so a tap between two frames can vanish —
+   sample on a light timer and queue the presses (stick flicks count as
+   d-pad presses); the loop spends the queue. */
+const padTaps=[];let padSnap=null,padDirs=null;
+function samplePad(){
   for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
-    const ax=i=>p.axes[i]||0,btn=i=>p.buttons[i]&&p.buttons[i].pressed,dz=0.18;
+    const now=p.buttons.map(b=>!!(b&&b.pressed));
+    for(let i=0;i<now.length;i++)if(now[i]&&!(padSnap&&padSnap[i]))padTaps.push(i);
+    padSnap=now;
+    const ax=i=>p.axes[i]||0;
+    const dirs={12:ax(1)>0.5,13:ax(1)<-0.5,14:ax(0)<-0.5,15:ax(0)>0.5};   // stick -> d-pad codes
+    for(const bd of [12,13,14,15])if(dirs[bd]&&!(padDirs&&padDirs[bd]))padTaps.push(100+bd);
+    padDirs=dirs;break;}
+}
+setInterval(samplePad,15);   // faster than any human button hold, so no press is skipped
+const ptap=i=>{const k=padTaps.indexOf(i);if(k>=0){padTaps.splice(k,1);return true;}return false;};
+function pollPad(){
+  IN.roar=IN.start=IN.mute=IN.menu=IN.back=false;   // re-arm every frame: level flags latch forever
+  for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
+    const ax=i=>p.axes[i]||0,dz=0.18;
     const mx=ax(0),my=ax(1);
     if(Math.abs(mx)>dz||Math.abs(my)>dz){IN.move.x=clamp(mx,-1,1);IN.move.y=clamp(-my,-1,1);}
     if(Math.abs(ax(2))>dz)IN.turn+=clamp(ax(2),-1,1)*0.05;
-    if(btn(0)||btn(2))IN.bite=true;   // A / X
-    if(btn(3)||btn(5))IN.roar=true;   // Y / RB
-    if(btn(9))IN.start=true;
-    if(btn(8))IN.menu=true;           // Select/Back — open the SWAP menu
-    if(btn(1))IN.back=true;           // B — back out of menus
-    if(btn(4))IN.mute=true;           // LB — mute
+    if(ptap(0)||ptap(2))IN.bite=true;   // A / X
+    if(ptap(3)||ptap(5))IN.roar=true;   // Y / RB
+    if(ptap(9))IN.start=true;
+    if(ptap(8))IN.menu=true;            // Select/Back — open the SWAP menu
+    if(ptap(1))IN.back=true;            // B — back out of menus
+    if(ptap(4))IN.mute=true;            // LB — mute
     break;}
 }
 function edge(){const e={bite:IN.bite&&!IN.prev.bite,roar:IN.roar&&!IN.prev.roar,
@@ -938,14 +965,26 @@ function switchSpecies(key){
   toast(`You are now a ${SPECIES[key].name}!`);
   if(goalLeft()===0&&!won){won=true;setTimeout(winGame,900);}
 }
-const padPrev={l:false,r:false};
-function padUI(){ // d-pad / stick scrolls the species picker
-  for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
-    const b=i=>p.buttons[i]&&p.buttons[i].pressed;
-    const L=b(14)||p.axes[0]<-0.5,R=b(15)||p.axes[0]>0.5,U=b(12)||p.axes[1]>0.5,D=b(13)||p.axes[1]<-0.5;
-    if((L||U)&&!padPrev.l)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+PICKABLE.length-1)%PICKABLE.length]);
-    if((R||D)&&!padPrev.r)setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+1)%PICKABLE.length]);
-    padPrev.l=L||U;padPrev.r=R||D;break;}
+const cycleSp=d=>{setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+d+PICKABLE.length)%PICKABLE.length]);
+  try{SFX.pickup();}catch(e){}};
+const MAPCHOICE=[...MAPKEYS,'surprise'];
+const cycleMap=d=>setMapPick(MAPCHOICE[(MAPCHOICE.indexOf(mapPick)+d+MAPCHOICE.length)%MAPCHOICE.length]);
+/* arrows/WASD scroll the menu cards: in the start menu up/down chooses the
+   island and left/right the dinosaur; in the SWAP menu all four cycle dino */
+function kbdUI(mode){           // tap-driven, so it works at any frame rate
+  const conf=tap('Enter')||tap('NumpadEnter')||tap('Space');
+  if(tap('ArrowRight')||tap('KeyD'))cycleSp(1);
+  if(tap('ArrowLeft')||tap('KeyA'))cycleSp(-1);
+  if(tap('ArrowUp')||tap('KeyW')){if(mode==='start')cycleMap(-1);else cycleSp(-1);}
+  if(tap('ArrowDown')||tap('KeyS')){if(mode==='start')cycleMap(1);else cycleSp(1);}
+  return conf;
+}
+function padUI(mode){ // d-pad / stick scrolls the menu cards (same layout as kbdUI)
+  const L=ptap(14)||ptap(114),R=ptap(15)||ptap(115),U=ptap(12)||ptap(112),D=ptap(13)||ptap(113);
+  if(R)cycleSp(1);
+  if(L)cycleSp(-1);
+  if(U){if(mode==='start')cycleMap(-1);else cycleSp(-1);}
+  if(D){if(mode==='start')cycleMap(1);else cycleSp(1);}
 }
 const CAM={d:12.5,h:5.2};
 /* ---- start-screen map picker: thumbnails from the same map formulas ---- */
@@ -1569,12 +1608,17 @@ function stepCamera(dt){
 /* ============================== main loop ============================ */
 let last=performance.now(),fps=60,fpsAcc=0,fpsN=0,previewT=0;
 function loop(now){
+  try{frame(now);}finally{pressed.length=0;padTaps.length=0;}   // taps are spent once, whatever the fps
+}
+function frame(now){
   requestAnimationFrame(loop);
   const dt=Math.min(0.05,(now-last)/1000);last=now;
   fpsAcc+=dt;fpsN++;if(fpsAcc>2){fps=fpsN/fpsAcc;fpsAcc=0;fpsN=0;}
   if(!started){
-    pollPad();padUI();const e0=edge();
-    if(e0.start||e0.bite)initGame();
+    pollPad();padUI('start');
+    const e0=edge();
+    if(e0.start||e0.bite||kbdUI('start'))initGame();
+    PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1)))setPick(k);});   // 1-6 pick dino
     consume();
     if(!player){                 // slow orbit preview of the selected island
       previewT+=dt;
@@ -1585,29 +1629,27 @@ function loop(now){
     }
     renderer.render(scene,camera);return;
   }
-  if(keys.Escape&&!IN.prev.esc){IN.prev.esc=true;menuOpen?closeMenu():openMenu();}
-  if(!keys.Escape)IN.prev.esc=false;
-  PICKABLE.forEach((k,i)=>{const kd=keys['Digit'+(i+1)];
-    if(kd&&!IN.prev['d'+i]){IN.prev['d'+i]=true;if(!menuOpen)switchSpecies(k);}
-    else if(!kd)IN.prev['d'+i]=false;});
+  if(tap('Escape'))menuOpen?closeMenu():openMenu();
+  PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1))&&!menuOpen)switchSpecies(k);});
   if(menuOpen){                 // the world holds still while you pick a new dino
-    pollPad();padUI();const em=edge();
+    pollPad();padUI('menu');
+    const conf=kbdUI('menu');
+    const em=edge();
     if(em.mute)toggleMute();
     if(em.back||em.start)closeMenu();
-    else if(em.bite){if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
+    else if(em.bite||conf){if(pickKey!==player.key)switchSpecies(pickKey);closeMenu();}
     consume();renderer.render(scene,camera);return;
   }
-  if(keys.Space&&!winOpen)playerBite();      // hold-to-bite (cooldown gates it)
+  if(!winOpen&&(keys.Space||tap('Space')))playerBite();   // hold-to-bite (cooldown gates it)
   if(IN.biteHeld&&started&&!winOpen)playerBite();
-  if(keys.KeyR)IN.roar=true;
   const kx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
   const ky=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0);
   if(kx||ky){IN.move.x=kx;IN.move.y=ky;}
-  if(keys.KeyM&&!IN.prev.muteHandled){IN.prev.muteHandled=true;toggleMute();}
-  if(!keys.KeyM)IN.prev.muteHandled=false;
-  if(winOpen&&keys.KeyN&&!IN.prev.n){IN.prev.n=true;newExpedition();}
-  if(!keys.KeyN)IN.prev.n=false;
+  if(tap('KeyM'))toggleMute();
+  if(winOpen&&tap('KeyN'))newExpedition();
+  if(winOpen&&(tap('Enter')||tap('Space')))closeWin();
   pollPad();
+  if(tap('KeyR')||keys.KeyR)IN.roar=true;      // tap or hold, after the pad re-arm
   if(DEMO)botStep(dt);
   const e=edge();
   if(e.mute)toggleMute();
@@ -1643,6 +1685,7 @@ requestAnimationFrame(loop);
 window.__probe={
   get ready(){return started&&player&&enemies.length>0;},
   state(){return{hearts,roar:+roarGauge.toFixed(2),kills:defeated.size,defeated:[...defeated],won,
+    muted,
     species:player.key,goalLeft:goalLeft(),menu:menuOpen,pick:pickKey,
     enemies:enemies.map(e=>({key:e.key,alive:e.alive,hp:e.hp,x:+e.x.toFixed(1),z:+e.z.toFixed(1),
       state:e.state,fear:+e.fear.toFixed(1)})),
@@ -1684,6 +1727,9 @@ window.__probe={
   placeAt(x,z,yaw){player.x=x;player.z=z;player.y=terrainH(x,z);
     if(yaw!==undefined){player.yaw=yaw;player.lastYaw=yaw;}},
   clearInvuln(){invulnT=0;},
+  inFlags(){return{menu:IN.menu,back:IN.back,start:IN.start,mute:IN.mute,roar:IN.roar,
+    prevMenu:IN.prev.menu,pressed:pressed.length,taps:pressed.slice(0,6)};},
+  setRoar(v=1){roarGauge=v;roarCd=0;return +roarGauge.toFixed(2);},
   enemyInfo(key){const e=enemies.find(e=>e.alive&&e.key===key);
     return e?{x:+e.x.toFixed(2),z:+e.z.toFixed(2),yaw:+e.yaw.toFixed(2),hp:e.hp}:null;},
   drownInfo(key){const e=enemies.find(e=>e.key===key);
@@ -1711,6 +1757,8 @@ window.__probe={
   setMapPick(k){setMapPick(k);return previewMap;},
   newExpedition(k,s){newExpedition(k,s);return{won,defeated:defeated.size,map:curMap.name};},
   pick(k){setPick(k);return pickKey;},
+  get pickNow(){return pickKey;},
+  get mapNow(){return mapPick;},
   zone(){return zoneAt(player.x,player.z);},
   compass(){const el=document.getElementById('compass');
     return{opacity:el.style.opacity,transform:el.style.transform};},
