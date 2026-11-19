@@ -119,6 +119,7 @@
   <h1>DINO BRAWL 3D</h1>
   <p>Pick an island, then choose your dinosaur and beat the challengers!
      Every expedition rolls a brand-new map — the same islands, never the same world.
+     Dinosaurs wade into water — but too deep drowns them, for you and for them.
      Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs anytime with the SWAP button.</p>
   <div class="maprow" id="mrow"></div>
   <div class="pick" id="pick"></div>
@@ -197,6 +198,7 @@ const SFX={
   hurt(){tone('sawtooth',300,120,0.25,0.3,0,600);hiss(1200,300,0.2,0.2);},
   pickup(){tone('sine',660,990,0.09,0.25);tone('sine',990,1320,0.12,0.22,0.08);},
   splash(){hiss(700,2200,0.3,0.18,0,0.5);},
+  gulp(){hiss(500,140,0.4,0.3,0,1.2);tone('sawtooth',260,90,0.35,0.2,0,900);},
   stomp(){tone('sine',90,30,0.5,0.5,0,120);hiss(400,80,0.4,0.3,0,0.6);},
   die(){tone('sawtooth',400,60,0.6,0.3,0,500);hiss(900,150,0.6,0.15,0.05,0.5);},
   win(){[523,659,784,1047].forEach((f,i)=>tone('triangle',f,f,0.25,0.25,i*0.14));},
@@ -1202,6 +1204,8 @@ function stepEnemy(e,dt){
   if(!e.alive){
     if(e.respawnAt&&performance.now()>e.respawnAt)resetEnemy(e);
     poseChar(e,dt);e.root.position.set(e.x,e.y,e.z);e.root.rotation.y=e.yaw;return;  }
+  stepDrown(e,dt,false);
+  if(e.alive===false)return;                       // the water just took them
   if(player==null)return;
   const dp=Math.hypot(player.x-e.x,player.z-e.z);
   e.speed=0;e.sneak=false;
@@ -1258,7 +1262,7 @@ function stepEnemy(e,dt){
       } else {
         if((e.strafeT-=dt)<=0&&Math.random()<dt*1.6){e.strafeT=rand(1.1,2.4);e.strafeDir*=-1;}
         if(e.strafeT>0&&dp<15)strafeAround(e,dt);
-        else walkToward(e,e.sp.brute?e.sp.run:e.sp.run*0.85,player.x,player.z,dt);
+        else walkToward(e,e.sp.brute?e.sp.run:e.sp.run*0.85,player.x,player.z,dt,true);
       }
     } else if(e.cool<=0&&(!e.sp.pack||(lastAtkT[e.key]||0)<performance.now()-1000)){
       e.windup=e.sp.atk;e.windupMax=e.sp.atk;e.state='attack';
@@ -1312,21 +1316,25 @@ function poseAndPlace(e,dt){
   e.root.position.set(e.x,e.y+e.bob,e.z);
   e.root.rotation.y=e.yaw;
 }
-function walkToward(e,spd,tx,tz,dt){
+function walkToward(e,spd,tx,tz,dt,deep=false){
   const a=Math.atan2(-(tz-e.z),tx-e.x);
   const trn=(e.sp.turn||4);
   e.yaw+=clamp(angDiff(a,e.yaw),-trn*dt,trn*dt);
+  if(terrainH(e.x,e.z)<WATER-0.15)spd*=0.55;          // wading is hard work
   const mv=Math.min(spd,10)*dt;
   const nx=e.x+Math.cos(e.yaw)*mv,nz=e.z-Math.sin(e.yaw)*mv;
-  if(terrainH(nx,nz)>WATER-0.25&&Math.hypot(nx,nz)<138){e.x=nx;e.z=nz;e.speed=spd;}
+  // cautious paths stop before chest-deep; committed charges wade in (and may drown)
+  const lim=deep?9:drownLimit(e)*0.8;
+  if(terrainH(nx,nz)>WATER-lim&&Math.hypot(nx,nz)<138){e.x=nx;e.z=nz;e.speed=spd;}
   else e.yaw+=rand(1.5,2.5);
 }
 function flee(e,dt){
   const a=Math.atan2(-(e.z-player.z),e.x-player.x);
   e.yaw=a;
-  const nx=e.x+Math.cos(a)*e.sp.speed*1.15*dt,nz=e.z-Math.sin(a)*e.sp.speed*1.15*dt;
-  if(terrainH(nx,nz)>WATER-0.25&&Math.hypot(nx,nz)<138){e.x=nx;e.z=nz;}
-  e.speed=e.sp.speed*1.15;e.state='flee';
+  const sp=e.sp.speed*1.15*(terrainH(e.x,e.z)<WATER-0.15?0.55:1);
+  const nx=e.x+Math.cos(a)*sp*dt,nz=e.z-Math.sin(a)*sp*dt;
+  if(terrainH(nx,nz)>WATER-drownLimit(e)*0.7&&Math.hypot(nx,nz)<138){e.x=nx;e.z=nz;}
+  e.speed=sp;e.state='flee';
 }
 
 /* ============================== player update ======================== */
@@ -1347,7 +1355,8 @@ function stepPlayer(dt){
     // screen-right in world = (-fz, fx)
     const dirx=(fx/fl)*my-(fz/fl)*mx, dirz=(fz/fl)*my+(fx/fl)*mx;
     const finalA=Math.atan2(-dirz,dirx);
-    const spd=player.sp.run*(mag>0.8?1:0.62);
+    const wade=terrainH(player.x,player.z)<WATER-0.15?0.62:1;
+    const spd=player.sp.run*(mag>0.8?1:0.62)*wade;
     const mv=spd*dt;
     player.x+=Math.cos(finalA)*mv;player.z-=Math.sin(finalA)*mv;
     player.speed=spd;if(player.state!=='attack')player.state='walk';
@@ -1355,9 +1364,7 @@ function stepPlayer(dt){
   }
   poseChar(player,dt);
   collideSolids(player);
-  const h=terrainH(player.x,player.z);
-  if(h<WATER-0.3){const k=Math.hypot(player.x,player.z)||1;player.x*=0.995;player.z*=0.995;
-    if(Math.random()<0.02)SFX.splash();}
+  stepDrown(player,dt,true);
   if(Math.hypot(player.x,player.z)>140){const k=Math.hypot(player.x,player.z);player.x*=140/k;player.z*=140/k;}
   player.y=terrainH(player.x,player.z);
   player.root.position.set(player.x,player.y+player.bob,player.z);
@@ -1377,6 +1384,34 @@ function collideSolids(ch){
     const dx=ch.x-s.x,dz=ch.z-s.z,d=Math.hypot(dx,dz),r=s.r+0.8;
     if(d<r&&d>1e-4){ch.x=s.x+dx/d*r;ch.z=s.z+dz/d*r;}
   }
+}
+/* ---- wading & drowning: dinosaurs walk into water, but past their
+   chest-deep limit the sea takes them. Small dinos drown in water where
+   big dinos still stand — pools, channels and the open sea are terrain. ---- */
+const drownLimit=ch=>(ch.sp.fisher?4.5:(ch.sp.kind==='quad'?1.4:2.8))*ch.sp.scale;
+function shoreNear(x,z){
+  for(let r=3;r<=72;r+=3)for(let k=0;k<16;k++){
+    const a=k/16*6.283,nx=x+Math.cos(a)*r,nz=z+Math.sin(a)*r,h=terrainH(nx,nz);
+    if(h>-0.1&&h<3.5)return[nx,nz];}
+  return null;}
+let lastDeepW=0;
+function stepDrown(ch,dt,isPlayer){
+  const h=terrainH(ch.x,ch.z),d=h<WATER?WATER-h:0,lim=drownLimit(ch);
+  if(d>lim){
+    ch.drownT=(ch.drownT||0)+dt;
+    if(Math.random()<dt*3){SFX.gulp();ripple(ch.x,WATER+0.05,ch.z);}
+    if(ch.drownT>1.3){ch.drownT=0;
+      if(isPlayer){
+        toast('GLOOP! Too deep — you drowned!',2200);
+        hurt(ch,1,ch.x+1,ch.z);
+        const s=hearts>0?shoreNear(ch.x,ch.z):null;   // last heart: camp instead
+        if(s&&ch.alive){ch.x=s[0];ch.z=s[1];ch.y=terrainH(ch.x,ch.z);}
+        invulnT=Math.max(invulnT,2);
+      } else kill(ch);
+    }
+  } else ch.drownT=Math.max(0,(ch.drownT||0)-dt);
+  if(isPlayer&&d>lim*0.62&&d<=lim&&performance.now()-lastDeepW>5000){
+    lastDeepW=performance.now();toast('DEEP WATER! Back to the shore!',1600);}
 }
 /* animals hold personal space: no two bodies occupy the same ground */
 const bodyR=ch=>(ch.sp.kind==='quad'?1.35:1.05)*ch.sp.scale;
@@ -1647,6 +1682,9 @@ window.__probe={
   clearInvuln(){invulnT=0;},
   enemyInfo(key){const e=enemies.find(e=>e.alive&&e.key===key);
     return e?{x:+e.x.toFixed(2),z:+e.z.toFixed(2),yaw:+e.yaw.toFixed(2),hp:e.hp}:null;},
+  drownInfo(key){const e=enemies.find(e=>e.key===key);
+    return e?{alive:e.alive,dw:+(e.drownT||0).toFixed(2),lim:+drownLimit(e).toFixed(2),
+      g:+terrainH(e.x,e.z).toFixed(2),x:+e.x.toFixed(1),z:+e.z.toFixed(1)}:null;},
   placeEnemy(key,x,z,yaw){const e=enemies.find(e=>e.alive&&e.key===key);if(!e)return null;
     e.x=x;e.z=z;e.y=terrainH(x,z);if(yaw!==undefined)e.yaw=yaw;e.cool=99;e.fear=0;e.state='idle';return true;},
   windupEnemy(key,w=0.01){const e=enemies.find(e=>e.alive&&e.key===key);if(!e)return null;
