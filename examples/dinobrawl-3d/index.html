@@ -60,6 +60,23 @@
   #newExpB{font-family:inherit;font-weight:800;font-size:19px;color:#234;border-radius:14px;padding:12px 26px;
     cursor:pointer;background:#ffd23f;border:3px solid #fff}
   .winbtns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  #downOv{position:fixed;inset:0;z-index:12;background:linear-gradient(180deg,rgba(12,16,34,0) 45%,rgba(12,16,34,.62));
+    display:flex;align-items:flex-end;justify-content:center;padding:16px calc(16px + env(safe-area-inset-right))
+    calc(22px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));cursor:pointer}
+  #downOv .panel{background:linear-gradient(180deg,#57608f,#2b3357);border:4px solid #ffd23f;
+    border-radius:22px;padding:12px 24px 16px;color:#fff;text-align:center;max-width:min(92vw,470px)}
+  #downOv h2{margin:0 0 4px;font-size:min(7vw,32px);letter-spacing:2px;text-shadow:0 3px 0 #151d33}
+  #downOv p{font-size:14px;opacity:.93;margin:2px 0 12px;line-height:1.5}
+  #downOv .zzz{font-size:26px;font-weight:800;letter-spacing:4px;opacity:.85;line-height:1.1}
+  #wakeB{font-family:inherit;font-weight:800;font-size:19px;color:#fff;background:#e8632f;
+    border:3px solid #fff;border-radius:14px;padding:12px 26px;cursor:pointer}
+  @media (max-height:520px){
+    #downOv .panel{padding:8px 18px 10px;border-width:3px}
+    #downOv .zzz{font-size:18px}
+    #downOv h2{font-size:20px;margin-bottom:2px}
+    #downOv p{font-size:12px;margin:2px 0 8px;line-height:1.35}
+    #wakeB{font-size:15px;padding:8px 18px}
+  }
   .maprow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:600px;margin:8px auto 2px}
   .mcard{font-family:inherit;background:rgba(255,255,255,.10);border:3px solid rgba(255,255,255,.28);
     border-radius:14px;color:#fff;cursor:pointer;padding:6px 6px 7px;text-align:center;
@@ -115,11 +132,20 @@
     <button id="newExpB">NEW MAP!</button>
   </div>
 </div></div>
+<div id="downOv" class="hidden"><div class="panel">
+  <div class="zzz">Z&nbsp;z&nbsp;z&nbsp;.</div>
+  <h2>NAP TIME!</h2>
+  <p id="downMsg">Your dinosaur got knocked out — watch it snooze.<br>
+     Press <b>SPACE</b> (or <b>tap</b>, or <b>A</b> on a gamepad) to wake up at camp.</p>
+  <button id="wakeB">WAKE UP!</button>
+</div></div>
 <div id="overlay">
   <h1>DINO BRAWL 3D</h1>
   <p>Pick an island, then choose your dinosaur and beat the challengers!
      Every expedition rolls a brand-new map — the same islands, never the same world.
      Dinosaurs wade into water — but too deep drowns them, for you and for them.
+     Run out of hearts and your dinosaur takes a nap — press a button and it wakes
+     up safe at camp.
      Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs anytime with the SWAP button.</p>
   <div class="maprow" id="mrow"></div>
   <div class="pick" id="pick"></div>
@@ -813,8 +839,17 @@ function poseDeath(ch,dt){
   if(J.head)J.head.rotation.z=lerp(J.head.rotation.z,0.25,buckle*0.8);
   if(J.jaw)J.jaw.rotation.z=lerp(J.jaw.rotation.z,0.16,buckle*0.8);              // jaw hangs open
   ch.tail.forEach(j=>{j.rotation.y*=Math.max(0,1-dt*2);j.rotation.z=lerp(j.rotation.z,-0.04,buckle);});
-  ch.shadow.scale.multiplyScalar(Math.max(0,1-dt*0.45));
+  const floor=ch.isPlayer?0.7:0;              // the sleeping hero keeps a shadow to wake up on
+  const ss=Math.max(floor,ch.shadow.scale.x*(1-dt*0.45));ch.shadow.scale.set(ss,ss,ss);
   ch.mats.forEach(m=>{if(m.emissive)m.emissive.setRGB(0,0,0);});
+  if(ch.isPlayer){                            // naps until a button wakes it: slow breathing
+    if(d>1.25){const br=Math.sin((d-1.25)*2.0);
+      M.position.y=-1.0+0.05*br;
+      if(J.neck)J.neck.rotation.z=(q?-0.05:-0.5)+0.05*br;
+      if(J.head)J.head.rotation.z=0.25-0.04*br;
+      if(J.jaw)J.jaw.rotation.z=0.16+0.02*br;}
+    return;
+  }
   if(d>2.6)ch.mats.forEach(m=>{m.transparent=true;m.opacity=clamp(1-(d-2.6)/1.2,0,1);});
   if(d>4.2&&ch.remove)ch.remove();
 }
@@ -828,7 +863,7 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(!e.repeat)pressed.push(e.code);
   if(e.code==='Space'||e.code.startsWith('Arrow'))e.preventDefault();
-  if((e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')&&(!started||menuOpen)){
+  if((e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')&&(!started||menuOpen||knockedOut)){
     e.preventDefault();              // a focused card must not double-fire and steal the pick
     if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();}
 });
@@ -836,7 +871,8 @@ addEventListener('keyup',e=>{keys[e.code]=false;});
 const tap=c=>{const i=pressed.indexOf(c);if(i>=0){pressed.splice(i,1);return true;}return false;};
 canvas.addEventListener('pointerdown',e=>{camDrag={x:e.clientX,id:e.pointerId,moved:0};});
 canvas.addEventListener('pointermove',e=>{
-  if(camDrag&&e.pointerId===camDrag.id){const d=e.clientX-camDrag.x;camYaw-=d*0.006;camDrag.x=e.clientX;camDrag.moved+=Math.abs(d);}});
+  if(camDrag&&e.pointerId===camDrag.id){const d=e.clientX-camDrag.x;camYaw-=d*0.006;camDrag.x=e.clientX;
+    camDrag.moved+=Math.abs(d);camManual=true;}});
 addEventListener('pointerup',()=>{const wasDrag=camDrag&&camDrag.moved>10;camDrag=null;
   if(wasDrag)canvas._skipClick=performance.now();});
 canvas.addEventListener('click',()=>{if(started&&performance.now()-(canvas._skipClick||0)>250)IN.bite=true;});
@@ -865,9 +901,8 @@ function samplePad(){
 }
 setInterval(samplePad,15);   // faster than any human button hold, so no press is skipped
 const ptap=i=>{const k=padTaps.indexOf(i);if(k>=0){padTaps.splice(k,1);return true;}return false;};
-function pollPad(){
-  IN.roar=IN.start=IN.mute=IN.menu=IN.back=false;   // re-arm every frame: level flags latch forever
-  for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
+function pollPad(){                                  // one-shot flags are cleared at the end of the
+  for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;   // frame, not here
     const ax=i=>p.axes[i]||0,dz=0.18;
     const mx=ax(0),my=ax(1);
     if(Math.abs(mx)>dz||Math.abs(my)>dz){IN.move.x=clamp(mx,-1,1);IN.move.y=clamp(-my,-1,1);}
@@ -945,7 +980,7 @@ function buildPicker(el,mode){
 }
 buildPicker(document.getElementById('pick'),'start');
 buildPicker(document.getElementById('pick2'),'swap');
-function openMenu(){if(!started||!player)return;menuOpen=true;
+function openMenu(){if(!started||!player||knockedOut)return;menuOpen=true;
   setPick(player.key);document.getElementById('swap').classList.remove('hidden');consume();}
 function closeMenu(){menuOpen=false;document.getElementById('swap').classList.add('hidden');consume();}
 function switchSpecies(key){
@@ -1061,7 +1096,7 @@ function hurt(ch,dmg,fromX,fromZ){
   if(ch.isPlayer){
     invulnT=1.4;SFX.hurt();
     hearts=Math.max(0,hearts-dmg);setHearts();
-    if(hearts<=0)respawnPlayer();
+    if(hearts<=0)knockOut();
     else toast('Ouch! Find a snack!');
     return;
   }
@@ -1069,6 +1104,7 @@ function hurt(ch,dmg,fromX,fromZ){
 }
 let invulnT=0;
 function kill(ch){
+  if(ch.isPlayer){knockOut();return;}            // the hero never just vanishes: it naps
   ch.alive=false;ch.state='die';SFX.die();
   if(!ch.isPlayer){
     confettiBurst(ch.x,ch.y+2.2,ch.z);
@@ -1082,6 +1118,54 @@ function kill(ch){
   }
 }
 const defeated=new Set();
+/* ---- knocked out: the dino falls, snoozes, and waits for a button ---- */
+let knockedOut=false, downT=0, ovWake=false;
+const downOvEl=document.getElementById('downOv');
+function knockOut(){
+  if(knockedOut)return;
+  knockedOut=true;downT=0;
+  if(terrainH(player.x,player.z)<WATER-0.15){      // no nap on the seabed: wash up first
+    const s=shoreNear(player.x,player.z);
+    if(s){player.x=s[0];player.z=s[1];}else{player.x=CAMP[0];player.z=CAMP[1];}
+    player.y=terrainH(player.x,player.z);
+    SFX.gulp();
+  }
+  player.hp=0;player.alive=false;player.state='die';player.deadT=0;
+  player.windup=0;player.atkT=0;player.strikeT=0;player.fear=0;
+  player.fallSide=Math.random()<.5?-1:1;
+  player.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
+  SFX.die();
+  camManual=false;                                 // frame the nap freshly each time
+  document.getElementById('downMsg').innerHTML=
+    `Your <b>${player.sp.name}</b> got knocked out — watch it snooze.<br>
+     Press <b>SPACE</b> (or <b>tap</b>, or <b>A</b> on a gamepad) to wake up at camp.`;
+  downOvEl.classList.remove('hidden');
+  for(const e of enemies)if(e.alive){e.prevAgg=0;      // the island moves on around the sleeper
+    if(Math.hypot(e.x-player.x,e.z-player.z)<30)awayWander(e);}
+}
+function awayWander(e){                            // animals give the sleeper a wide berth
+  for(let t=0;t<6;t++){
+    const a=Math.atan2(-(e.z-player.z),e.x-player.x)+rand(-1.1,1.1),d=rand(14,26);
+    const wx=clamp(e.x+Math.cos(a)*d,-100,100),wz=clamp(e.z+Math.sin(a)*d,-100,100);
+    if(terrainH(wx,wz)>0.6){e.wander={x:wx,z:wz};
+      if(Math.hypot(e.x-player.x,e.z-player.z)<12)e.yaw=a;   // close by: it turns its head away first
+      return;}
+  }
+  e.wander={x:e.x+rand(-6,6),z:e.z+rand(-6,6)};
+}
+function wakeUp(force){
+  if(!knockedOut)return false;
+  if(!force&&downT<0.6)return false;              // let the fall be seen first
+  knockedOut=false;downT=0;ovWake=false;
+  downOvEl.classList.add('hidden');
+  respawnPlayer();
+  invulnT=Math.max(invulnT,2);
+  startRoar(player,1.1);SFX.roar(player.key);
+  confettiBurst(player.x,player.y+3,player.z);
+  return true;
+}
+downOvEl.addEventListener('pointerdown',()=>{ovWake=true;});   // tap anywhere to wake
+document.getElementById('wakeB').addEventListener('click',()=>wakeUp());
 function respawnPlayer(){
   hearts=2;setHearts();
   player.x=CAMP[0];player.z=CAMP[1];player.y=terrainH(CAMP[0],CAMP[1]);
@@ -1089,6 +1173,7 @@ function respawnPlayer(){
   player.alive=true;player.state='idle';
   player.lastYaw=player.yaw;player.model.rotation.set(0,0,0);player.model.position.y=0;
   player.deadT=0;player.strikeT=0;player.roarT=0;player.bob=0;
+  player.hp=player.sp.hp;player.shadow.scale.set(1,1,1);
   player.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
   toast('You woke up at camp');
 }
@@ -1099,6 +1184,7 @@ function resetEnemy(e){
   e.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
 }
 function winGame(){
+  if(knockedOut)wakeUp(true);                      // champions don't nap: wake up for the win
   SFX.win();winOpen=true;
   document.getElementById('winOv').classList.remove('hidden');
   for(let i=0;i<3;i++)setTimeout(()=>{if(player.alive)confettiBurst(player.x+rand(-4,4),player.y+3,player.z+rand(-4,4));},i*500);
@@ -1124,6 +1210,8 @@ function newExpedition(k,seed){
   player.deadT=0;player.strikeT=0;player.roarT=0;player.windup=0;player.bob=0;player.fear=0;
   player.model.rotation.set(0,0,0);player.model.position.y=0;
   player.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
+  player.hp=player.sp.hp;player.shadow.scale.set(1,1,1);
+  knockedOut=false;downT=0;ovWake=false;downOvEl.classList.add('hidden');
   invulnT=Math.max(invulnT,1.5);
   closeWin();
   toast(`${curMap.name} — a brand-new island! ${goalLeft()} challengers to find!`);
@@ -1246,6 +1334,23 @@ function stepEnemy(e,dt){
   stepDrown(e,dt,false);
   if(e.alive===false)return;                       // the water just took them
   if(player==null)return;
+  if(!player.alive){                              // you're snoozing: the island loses interest
+    e.state='idle';e.prevAgg=0;
+    const dP=Math.hypot(e.x-player.x,e.z-player.z);
+    if(dP<9){                                     // close by: back off from the sleeper at a trot
+      const a=Math.atan2(-(e.z-player.z),e.x-player.x);
+      e.yaw+=clamp(angDiff(a,e.yaw),-(e.sp.turn||3)*dt*1.8,(e.sp.turn||3)*dt*1.8);
+      const back=Math.abs(angDiff(a,e.yaw))>1.35;  // not turned yet: shuffle backwards
+      const sp=e.sp.speed*0.6,dir=back?e.yaw+Math.PI:e.yaw;
+      const nx=e.x+Math.cos(dir)*sp*dt,nz=e.z+Math.sin(dir)*sp*dt;
+      if(terrainH(nx,nz)>WATER-drownLimit(e)*0.7&&Math.hypot(nx,nz)<138){e.x=nx;e.z=nz;}
+      e.speed=sp;e.wander={x:e.x+Math.cos(a)*18,z:e.z+Math.sin(a)*18};
+    } else {
+      if(Math.hypot(e.wander.x-e.x,e.wander.z-e.z)<4)awayWander(e);
+      if(terrainH(e.wander.x,e.wander.z)>0.6)walkToward(e,e.sp.speed*0.45,e.wander.x,e.wander.z,dt);
+    }
+    poseAndPlace(e,dt);return;
+  }
   const dp=Math.hypot(player.x-e.x,player.z-e.z);
   e.speed=0;e.sneak=false;
   e.hurtT=Math.max(0,e.hurtT-dt);e.flash=Math.max(0,e.flash-dt);
@@ -1379,7 +1484,8 @@ function flee(e,dt){
 /* ============================== player update ======================== */
 let atkCool=0;
 function stepPlayer(dt){
-  if(!player.alive){poseChar(player,dt);player.root.position.set(player.x,terrainH(player.x,player.z),player.z);return;}
+  if(!player.alive){poseChar(player,dt);player.y=terrainH(player.x,player.z);
+    player.root.position.set(player.x,player.y,player.z);return;}
   player.hurtT=Math.max(0,player.hurtT-dt);player.flash=Math.max(0,player.flash-dt);
   invulnT=Math.max(0,invulnT-dt);roarCd=Math.max(0,roarCd-dt);atkCool=Math.max(0,atkCool-dt);
   player.atkT=Math.max(0,player.atkT-dt);
@@ -1571,7 +1677,7 @@ function updateHUD(){
   // gold compass arrow points to the next challenger — no map-reading needed
   const cEl=document.getElementById('compass');
   const g=nextGoal();
-  if(!g||menuOpen||won||Math.hypot(g.x-player.x,g.z-player.z)<10){cEl.style.opacity=0;return;}
+  if(!g||menuOpen||won||knockedOut||Math.hypot(g.x-player.x,g.z-player.z)<10){cEl.style.opacity=0;return;}
   // project the target into the camera view plane: f = view dir (camera->player),
   // screen right r = (-fz, fx); screen up = f
   const dx=g.x-player.x,dz=g.z-player.z;
@@ -1594,21 +1700,53 @@ let curZone=null;
 const zlbl=document.getElementById('zlbl');
 
 /* ============================== camera =============================== */
+let camZ=1,camB=0,napBias=0,camManual=false,napC=null,napCT=0,napPix=0;   // eased camera framing while your dino naps
 function stepCamera(dt){
-  camYaw+=IN.turn;
-  camYaw+=( (keys.KeyQ||keys.KeyJ?-1:0)+(keys.KeyL||keys.Period?1:0) )*1.8*dt;
+  const turn=IN.turn;                              // gamepad right stick
+  camYaw+=turn;
+  const camKey=(keys.KeyQ||keys.KeyJ?-1:0)+(keys.KeyL||keys.Period?1:0);
+  camYaw+=camKey*1.8*dt;
+  if(camKey||Math.abs(turn)>0.002)camManual=true;  // you took over: stop auto-framing
   IN.turn=0;
-  const tx=player.x,tz=player.z,ty=player.y;
-  camera.position.set(tx+Math.sin(camYaw)*CAM.d,ty+CAM.h,tz+Math.cos(camYaw)*CAM.d);
+  if(knockedOut&&!camManual){                    // settle the view onto the sleeping side
+    const want=player.yaw+(player.fallSide>0?0.7:Math.PI-0.7);
+    camYaw+=clamp(angDiff(want,camYaw),-1.1*dt,1.1*dt);
+  }
+  const q=player.sp.kind==='quad';
+  if(knockedOut){                                 // frame the whole body, not just its hip
+    if(!napC||(napCT-=dt)<=0){napCT=0.3;
+      const bb=new THREE.Box3().setFromObject(player.model);
+      napC=bb.getCenter(new THREE.Vector3());
+      const v=new THREE.Vector3();let y0=9,y1=-9;
+      for(let i=0;i<8;i++){v.set(i&1?bb.max.x:bb.min.x,i&2?bb.max.y:bb.min.y,i&4?bb.max.z:bb.min.z).project(camera);
+        if(v.z<1){y0=Math.min(y0,-v.y*0.5+0.5);y1=Math.max(y1,-v.y*0.5+0.5);}}
+      napPix=y1>y0?y1-y0:0.25;}
+  } else {napC=null;napPix=0;}
+  const pe=document.querySelector('#downOv .panel');
+  const pTop=(knockedOut&&pe)?pe.getBoundingClientRect().top/innerHeight:0.75;
+  const room=Math.max(0.14,pTop-0.14);            // slice of the screen free above the panel
+  let napK=(q?1.15:1.4)*(camera.aspect<1?1.55:1);
+  if(napC&&napPix>room)napK*=clamp(napPix/room,1,1.6);   // zoom out until the body fits
+  camZ+=((knockedOut?napK:1)-camZ)*Math.min(1,dt*2.4);   // pull back and rise over the sleeper
+  camB+=((knockedOut?1:0)-camB)*Math.min(1,dt*2.4);      // blend into the nap framing
+  const dd=CAM.d*camZ;
+  const wantBias=napC?(1-2*clamp(room*0.5+0.02,0.08,0.55))*dd*Math.tan(camera.fov*Math.PI/360):0;
+  napBias+=(wantBias-napBias)*Math.min(1,dt*2.4);
+  const fx=napC?napC.x:player.x, fz=napC?napC.z:player.z;
+  camera.position.set(fx+Math.sin(camYaw)*dd,(napC?napC.y:player.y)+CAM.h*camZ+1.1*camB,fz+Math.cos(camYaw)*dd);
   const ch2=terrainH(camera.position.x,camera.position.z);
   if(camera.position.y<ch2+1.6)camera.position.y=ch2+1.6;
-  camera.lookAt(tx,ty+(player.sp.kind==='quad'?1.5:2.4),tz);
+  camera.lookAt(fx,(napC?napC.y:player.y+(q?1.5:2.4))-napBias,fz);
 }
 
 /* ============================== main loop ============================ */
 let last=performance.now(),fps=60,fpsAcc=0,fpsN=0,previewT=0;
 function loop(now){
-  try{frame(now);}finally{pressed.length=0;padTaps.length=0;}   // taps are spent once, whatever the fps
+  try{frame(now);}
+  finally{                                  // taps and one-shot flags are spent once, whatever the fps
+    pressed.length=0;padTaps.length=0;
+    IN.roar=IN.start=IN.mute=IN.menu=IN.back=false;
+  }
 }
 function frame(now){
   requestAnimationFrame(loop);
@@ -1628,6 +1766,21 @@ function frame(now){
       water.position.y=WATER+0.16+Math.sin(now/900)*0.06;
     }
     renderer.render(scene,camera);return;
+  }
+  if(knockedOut){                    // your dino is down: the game waits for a button
+    downT+=dt;pollPad();
+    if(tap('KeyM'))toggleMute();
+    if(DEMO&&downT>1.8)wakeUp(true);
+    else if(downT>0.6&&(tap('Space')||tap('Enter')||tap('NumpadEnter')||tap('KeyR')||
+                       IN.bite||IN.start||ovWake))wakeUp();
+    ovWake=false;
+    stepPlayer(dt);
+    for(const en of[...enemies])stepEnemy(en,dt);
+    separate();stepRipples(dt);stepConfetti(dt);stepCamera(dt);
+    water.position.y=WATER+0.16+Math.sin(now/900)*0.06;
+    renderer.render(scene,camera);
+    drawMap();updateHUD();
+    consume();return;
   }
   if(tap('Escape'))menuOpen?closeMenu():openMenu();
   PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1))&&!menuOpen)switchSpecies(k);});
@@ -1686,7 +1839,7 @@ window.__probe={
   get ready(){return started&&player&&enemies.length>0;},
   state(){return{hearts,roar:+roarGauge.toFixed(2),kills:defeated.size,defeated:[...defeated],won,
     muted,
-    species:player.key,goalLeft:goalLeft(),menu:menuOpen,pick:pickKey,
+    species:player.key,goalLeft:goalLeft(),menu:menuOpen,pick:pickKey,down:knockedOut,
     enemies:enemies.map(e=>({key:e.key,alive:e.alive,hp:e.hp,x:+e.x.toFixed(1),z:+e.z.toFixed(1),
       state:e.state,fear:+e.fear.toFixed(1)})),
     player:{x:+player.x.toFixed(1),z:+player.z.toFixed(1),yaw:+player.yaw.toFixed(2),state:player.state},
@@ -1727,6 +1880,24 @@ window.__probe={
   placeAt(x,z,yaw){player.x=x;player.z=z;player.y=terrainH(x,z);
     if(yaw!==undefined){player.yaw=yaw;player.lastYaw=yaw;}},
   clearInvuln(){invulnT=0;},
+  knockOutPlayer(){invulnT=0;hurt(player,99,player.x+1,player.z);return knockedOut;},
+  downInfo(){return{down:knockedOut,downT:+downT.toFixed(2),deadT:+player.deadT.toFixed(2),
+    ov:!downOvEl.classList.contains('hidden'),ground:+terrainH(player.x,player.z).toFixed(2),
+    at:[+player.x.toFixed(1),+player.z.toFixed(1)],hearts,
+    op:+player.mats[0].opacity.toFixed(2),inScene:!!player.root.parent,
+    shadow:+player.shadow.scale.x.toFixed(2)};},
+  wake(){return wakeUp();},
+  project(x,y,z){const v=new THREE.Vector3(x,y,z).project(camera);
+    return{x:+(v.x*0.5+0.5).toFixed(3),y:+(-v.y*0.5+0.5).toFixed(3),front:v.z<1};},
+  bodyBox(which='player'){                            // where the body actually lands on screen
+    const ch=which==='player'?player:enemies.find(e=>e.key===which);if(!ch)return null;
+    const bb=new THREE.Box3().setFromObject(ch.model),v=new THREE.Vector3();let x0=9,y0=9,x1=-9,y1=-9,vis=0;
+    for(let i=0;i<8;i++){
+      v.set(i&1?bb.max.x:bb.min.x,i&2?bb.max.y:bb.min.y,i&4?bb.max.z:bb.min.z).project(camera);
+      const sx=v.x*0.5+0.5,sy=-v.y*0.5+0.5;
+      if(v.z<1){vis++;x0=Math.min(x0,sx);x1=Math.max(x1,sx);y0=Math.min(y0,sy);y1=Math.max(y1,sy);}}
+    return vis?{x0:+x0.toFixed(2),y0:+y0.toFixed(2),x1:+x1.toFixed(2),y1:+y1.toFixed(2),
+      w:+(x1-x0).toFixed(2),h:+(y1-y0).toFixed(2)}:null;},
   inFlags(){return{menu:IN.menu,back:IN.back,start:IN.start,mute:IN.mute,roar:IN.roar,
     prevMenu:IN.prev.menu,pressed:pressed.length,taps:pressed.slice(0,6)};},
   setRoar(v=1){roarGauge=v;roarCd=0;return +roarGauge.toFixed(2);},
