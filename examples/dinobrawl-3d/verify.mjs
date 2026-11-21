@@ -60,6 +60,22 @@ ok(roster.cast.length === 5 && !roster.cast.includes(roster.pick),
   'the island raises five challengers that are not you', roster.cast.join(','));
 ok(roster.flags.dilopho.venom && roster.flags.brachiosaurus.huge && roster.flags.trike.charge,
   'the newcomers keep their tricks', 'venom + huge + charge');
+ok(roster.flags.mosasaurus.sea && roster.flags.trike.herb && roster.flags.stego.herb,
+  'the Mosasaurus owns the sea, the plant-eaters are peaceful by default', 'sea + herb');
+
+// ---------- the Mosasaurus: a real animal in a real sea ----------
+const mosa = await page.evaluate(async () => {
+  await new Promise(r => setTimeout(r, 400));
+  const m = window.__probe.mosaInfo();
+  const s = window.__probe.shellCheck('mosasaurus'), l = window.__probe.limbCheck('mosasaurus');
+  return { m, joints: Object.keys(window.__probe.joints('mosasaurus')).length,
+    shell: s ? s.agree / (s.agree + s.opp) : 0, limbs: l || [] };
+});
+ok(mosa.m && mosa.m.alive && mosa.m.g < -2, 'a Mosasaurus patrols the deep water', JSON.stringify(mosa.m));
+const badLim = mosa.limbs.filter(x => !x.ok);
+ok(mosa.joints > 4 && mosa.shell > 0.9 && mosa.limbs.length >= 2 && !badLim.length,
+  'the Mosasaurus is built right',
+  `joints=${mosa.joints} shell=${(mosa.shell * 100).toFixed(0)}% limbs=${mosa.limbs.length}${badLim.length ? ' ' + JSON.stringify(badLim) : ''}`);
 
 // ---------- bodies: rigs, shells, and legs that meet the belly ----------
 for (const k of roster.list) {
@@ -121,12 +137,12 @@ const goo = await page.evaluate(async () => {
   const flight = { glob: pr.venomCount(), trail: pr.gooCount() };
   for (let i = 0; i < 30 && pr.venomCount(); i++) await sleep(120);
   const ended = pr.venomLast();
-  let victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die') || {}).key;
+  let victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die' && e.key !== 'mosasaurus') || {}).key;
   if (!victim) {                       // every challenger died of stray causes earlier: grow a fresh island
     pr.newExpedition(null, null, true);
     for (let i = 0; i < 40 && !victim; i++) {
       await sleep(150);
-      victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die') || {}).key;
+      victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die' && e.key !== 'mosasaurus') || {}).key;
     }
   }
   const p2 = pr.state().player;
@@ -165,6 +181,117 @@ ok(/GROW|NEW/i.test(menu.label2) && /TRICERATOPS/i.test(menu.label2),
 ok(menu.after.map !== menu.before.map && menu.after.sp === 'trike',
   'one press grows a new island and changes your dinosaur together',
   `${menu.before.map}/${menu.before.sp} -> ${menu.after.map}/${menu.after.sp}`);
+
+// ---------- plant-eaters graze peacefully until you hurt them ----------
+const calm = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  pr.setCast(['stego', 'ankylo', 'diplodocus', 'brachiosaurus', 'trike']);   // all plant-eaters
+  pr.newExpedition('forest', 777, true);
+  for (let i = 0; i < 40 && !pr.ready; i++) await sleep(150);
+  await sleep(1200);
+  const p = pr.state().player;
+  const vic = (pr.state().enemies.find(e => ['stego', 'ankylo'].includes(e.key) && e.alive) || {}).key;
+  if (!vic) return { vic: null };
+  pr.placeEnemy(vic, p.x + 7, p.z, Math.PI);
+  pr.setEnemy(vic, { cool: 0, fear: 0 });
+  let hostile = 0;
+  for (let i = 0; i < 24; i++) {                                  // stand right in front of it
+    await sleep(150);
+    const e = pr.state().enemies.find(x => x.key === vic);
+    if (!e || !e.alive) break;
+    if (['chase', 'attack', 'flee'].includes(e.state)) hostile++;
+    if (pr.moveOf(vic).angry) hostile++;
+  }
+  const heartsBefore = pr.state().hearts;
+  pr.hurtEnemy(vic, 1);                                          // bite it: now it is MAD
+  let angry = false, attacks = 0;
+  for (let i = 0; i < 30; i++) {
+    await sleep(150);
+    const e = pr.state().enemies.find(x => x.key === vic);
+    if (!e || !e.alive) break;
+    if (pr.moveOf(vic).angry) angry = true;
+    if (['chase', 'attack'].includes(e.state)) attacks++;
+    if (angry && attacks >= 2) break;
+  }
+  return { vic, hostile, heartsBefore, heartsAfter: pr.state().hearts, angry, attacks };
+});
+ok(calm.vic && calm.hostile === 0 && calm.heartsBefore === calm.heartsAfter,
+  'a plant-eater just grazes when you leave it alone', JSON.stringify(calm));
+ok(calm.vic && calm.angry && calm.attacks >= 2,
+  'but hurt it once and it fights back', JSON.stringify(calm));
+
+// ---------- the Mosasaurus eats a swimming dinosaur whole ----------
+const gulp = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  const vic = (pr.state().enemies.find(e => e.alive && e.key !== 'mosasaurus'
+    && ['stego', 'diplodocus', 'ankylo', 'allo', 'spino', 'raptor', 'dilopho'].includes(e.key)) || {}).key;
+  // a paddling-deep but not drowning patch of sea, with real deep water right next to it
+  let spot = null, mos = null;
+  for (let g = 0; g < 4000 && !spot; g++) {
+    const a = Math.random() * 6.283, r = 95 + Math.random() * 38;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (!(pr.ground(x, z) < -0.4 && pr.ground(x, z) > -1.2)) continue;
+    const n = Math.hypot(x, z) || 1;
+    const dirs = [[x / n, z / n], [-x / n, -z / n], [-z / n, x / n], [z / n, -x / n]];
+    for (const [dx, dz] of dirs) for (let d = 5; d <= 12 && !spot; d += 1.5) {
+      const ox = x + dx * d, oz = z + dz * d;
+      if (pr.ground(ox, oz) < -1.0) {
+        spot = [+x.toFixed(1), +z.toFixed(1)];
+        mos = [+ox.toFixed(1), +oz.toFixed(1)];
+        break;
+      }
+    }
+  }
+  if (!vic || !spot) return { vic, spot, eaten: false, noSpot: true };
+  pr.setEnemy('mosasaurus', { x: mos[0], z: mos[1], cool: 0, fear: 0, windup: 0 });
+  let eaten = false;
+  for (let i = 0; i < 80 && !eaten; i++) {
+    pr.placeEnemy(vic, spot[0], spot[1], Math.PI);               // keep it paddling there
+    if (i % 8 === 7) pr.setEnemy('mosasaurus', { cool: 0, fear: 0 });
+    await sleep(250);
+    const st = pr.state();
+    eaten = st.defeated.includes(vic) || st.enemies.some(e => e.key === vic && e.swallowed);
+  }
+  return { vic, spot, mos, eaten, def: pr.state().defeated };
+});
+ok(gulp.eaten, 'the Mosasaurus swallows a swimming dinosaur whole',
+  `${gulp.vic}@${gulp.spot} defeated=${JSON.stringify(gulp.def)}`);
+
+// ---------- hold-to-grab: clamp on and drag a smaller dinosaur ----------
+const grab = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  pr.setGrab(false);
+  const p0 = pr.state().player;
+  const vic = (pr.state().enemies.find(e => e.alive && e.key !== 'mosasaurus' && e.key !== 'brachiosaurus') || {}).key;
+  if (!vic) return { vic: null };
+  pr.placeAt(p0.x, p0.z, 0);                                     // face down +x
+  pr.placeEnemy(vic, p0.x + 2.6, p0.z, Math.PI);
+  pr.setEnemy(vic, { cool: 0, fear: 0 });
+  pr.setGrab(true);
+  await sleep(250);
+  const g1 = pr.grabInfo();
+  for (let i = 0; i < 20; i++) {                                 // walk: each step drags it along
+    pr.placeAt(p0.x + i * 0.45, p0.z, 0);
+    await sleep(120);
+  }
+  await sleep(400);
+  const g2 = pr.grabInfo(), v2 = pr.enemyInfo(vic);
+  pr.setGrab(false);
+  await sleep(300);
+  const g3 = pr.grabInfo(), v3 = pr.enemyInfo(vic);
+  return { vic, g1, g2, g3, v2, v3, p0 };
+});
+ok(grab.vic && grab.g1.held === grab.vic && grab.g1.d < 6,
+  'you can clamp onto a smaller dinosaur by holding GRAB', JSON.stringify(grab.g1));
+ok(grab.g2.held === grab.vic && grab.v2 && grab.v2.x > grab.p0.x + 3,
+  'holding drags it along as you walk', `victim x=${grab.v2 && grab.v2.x} from x=${grab.p0.x}`);
+ok(grab.g2 && grab.g1 && grab.g2.hp < grab.g1.hp,
+  'holding on by the teeth hurts', `${grab.g1.hp} -> ${grab.g2.hp}`);
+ok(grab.g3.held === null && grab.v3 && !grab.v3.grabbed,
+  'letting go lets it go', JSON.stringify(grab.g3));
 await page.close();
 
 // ---------- phone: the twelve-card strip fits and the game plays ----------
