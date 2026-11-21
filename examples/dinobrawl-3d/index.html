@@ -682,7 +682,7 @@ function disposeWorld(){
 /* build one whole island: terrain + palette + sky + decor + zones + camp */
 function buildWorld(key,seed){
   SEED=seed>>>0;RNG=mulberry32(SEED);WORLDSEED=SEED;
-  CAST=CASTLOCK?CASTLOCK.slice():rollCast(SEED,player&&player.key);   // this island's five challengers
+  CAST=CASTLOCK?CASTLOCK.slice():rollCast(SEED,player?player.key:pickKey);   // this island's five challengers
   disposeWorld();
   curMap=MAPS[key]();
   terrainH=curMap.height;ZONES=curMap.zones;FLATNAME=curMap.flat;
@@ -1306,6 +1306,7 @@ async function initGame(){
   player=makeChar(pickKey);player.isPlayer=true;
   player.x=CAMP[0];player.z=CAMP[1];player.y=terrainH(CAMP[0],CAMP[1]);
   player.yaw=Math.atan2(-CAMP[1],-CAMP[0]);player.lastYaw=player.yaw;
+  if(CAST.includes(pickKey))CAST=rollCast(WORLDSEED,pickKey);   // your kind never lines up against you
   await spawnEnemies();
   started=true;
   toast(goalLeft()<5?`Go beat the ${goalLeft()} challengers — your kind is with you!`
@@ -2352,6 +2353,9 @@ window.__probe={
     o.matrixWorld.decompose(T,q,s);
     return {p:[+T.x.toFixed(2),+T.y.toFixed(2),+T.z.toFixed(2)],
       r:[+q.x.toFixed(2),+q.y.toFixed(2),+q.z.toFixed(2)]};},
+  jointRot(which,part){const ch=which==='player'?player:enemies.find(e=>e.key===which);
+    if(!ch)return null;const o=ch.model.getObjectByName(part);if(!o)return null;
+    return [o.rotation.x,o.rotation.y,o.rotation.z].map(v=>+v.toFixed(2));},
   openMenu(){openMenu();return menuOpen;},
   closeMenu(){closeMenu();return menuOpen;},
   map(){return{key:previewMap,seed:WORLDSEED,name:curMap.name,flat:FLATNAME,
@@ -2368,7 +2372,7 @@ window.__probe={
   cast(){return{cast:CAST.slice(),seed:WORLDSEED,lock:CASTLOCK?CASTLOCK.slice():null};},
   territories(){return Object.fromEntries(Object.entries(TERRITORY).map(([k,v])=>[k,[Math.round(v[0]),Math.round(v[1])]]));},
   setCast(list){CASTLOCK=list&&list.length?[...list]:null;
-    CAST=CASTLOCK?CASTLOCK.slice():rollCast(WORLDSEED,player&&player.key);return CAST.slice();},
+    CAST=CASTLOCK?CASTLOCK.slice():rollCast(WORLDSEED,player?player.key:pickKey);return CAST.slice();},
   speciesList(){return Object.keys(SPECIES);},
   speciesFlags(){return Object.fromEntries(Object.entries(SPECIES).map(([k,s])=>[k,
     {huge:!!s.huge,gentle:!!s.gentle,venom:!!s.venom,pack:!!s.pack,charge:!!s.charge,
@@ -2424,18 +2428,21 @@ window.__probe={
       fov:camera.fov,tall:+(player.tall||0).toFixed(2),len:+(player.len||0).toFixed(2)};},
   shellCheck(which='player'){                              // is the skin on the outside? (winding vs normals)
     const ch=which==='player'?player:enemies.find(e=>e.key===which);if(!ch)return null;
-    let agree=0,opp=0;
+    let agree=0,opp=0,bad=[];
     ch.model.traverse(o=>{if(!o.isMesh)return;
       const g=o.geometry,p=g.attributes.position,n=g.attributes.normal,ix=g.index&&g.index.array;
       if(!p||!n||!ix)return;
+      let t_opp=0;
       for(let t=0;t<ix.length;t+=3){const a=ix[t],b=ix[t+1],c=ix[t+2];
         const ax=p.getX(a),ay=p.getY(a),az=p.getZ(a);
         const ux=p.getX(b)-ax,uy=p.getY(b)-ay,uz=p.getZ(b)-az;
         const vx=p.getX(c)-ax,vy=p.getY(c)-ay,vz=p.getZ(c)-az;
         const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+        if(nx*nx+ny*ny+nz*nz<1e-10)continue;               // zero-area specks can't be inside-out
         const dx=n.getX(a)+n.getX(b)+n.getX(c),dy=n.getY(a)+n.getY(b)+n.getY(c),dz=n.getZ(a)+n.getZ(b)+n.getZ(c);
-        if(nx*dx+ny*dy+nz*dz>0)agree++;else opp++;}});
-    return{agree,opp,side:ch.mats[0]&&ch.mats[0].side};},
+        if(nx*dx+ny*dy+nz*dz>0)agree++;else{opp++;t_opp++;}}
+      if(t_opp)bad.push([o.name,t_opp]);});
+    return{agree,opp,side:ch.mats[0]&&ch.mats[0].side,bad};},
   neckState(which='player'){const ch=which==='player'?player:enemies.find(e=>e.key===which);
     if(!ch)return null;const o={t:+ch.t.toFixed(3),state:ch.state,speed:+ch.speed.toFixed(2),
       graze:+(ch.grazeT||0).toFixed(2),neck:{}};

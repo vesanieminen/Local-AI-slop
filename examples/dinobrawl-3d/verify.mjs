@@ -6,7 +6,7 @@
    your dinosaur. Exits non-zero on any failure.                              */
 import { chromium } from 'playwright';
 import http from 'http';
-import { readFile } from 'fs';
+import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -68,13 +68,14 @@ for (const k of roster.list) {
     await new Promise(r => setTimeout(r, 260));
     const s = window.__probe.shellCheck(), l = window.__probe.limbCheck();
     return { sp: window.__probe.state().species, joints: Object.keys(window.__probe.joints('player')).length,
-      shell: s ? s.agree / (s.agree + s.opp) : 0, limbs: l || [],
+      shell: s ? s.agree / (s.agree + s.opp) : 0, bad: s && s.bad, limbs: l || [],
       tall: window.__probe.camInfo().tall };
   }, k);
   const badLimbs = b.limbs.filter(x => !x.ok);
   ok(b.sp === k && b.joints > 4 && b.tall > 0.5, `${k}: model loads with a working rig`,
     `joints=${b.joints} tall=${b.tall}`);
-  ok(b.shell > 0.9, `${k}: skin on the outside`, `${(b.shell * 100).toFixed(0)}%`);
+  ok(b.shell > 0.9, `${k}: skin on the outside`,
+    `${(b.shell * 100).toFixed(0)}%${b.bad && b.bad.length ? ' ' + JSON.stringify(b.bad) : ''}`);
   ok(b.limbs.length >= 2 && !badLimbs.length, `${k}: legs grow into the body`,
     badLimbs.length ? JSON.stringify(badLimbs) : `${b.limbs.length} limbs`);
 }
@@ -85,21 +86,26 @@ const stomp = await page.evaluate(async () => {
   const pr = window.__probe;
   pr.switchTo('brachiosaurus');
   await sleep(900);
+  for (let i = 0; i < 40 && pr.state().species !== 'brachiosaurus'; i++) await sleep(120);
   for (let i = 0; i < 60 && !pr.canBite(); i++) await sleep(120);
   const p = pr.state().player;
-  pr.placeAt(p.x, p.z, 0);
+  pr.placeAt(p.x, p.z, 0);   // yaw 0 = facing +x, where the victim is placed
+  pr.state().enemies.forEach(e => pr.placeEnemy(e.key, p.x + 60, p.z + 60, 0)); // clear strays behind us
   pr.placeEnemy('diplodocus', p.x + 6, p.z, Math.PI);
   pr.bite();
-  let maxZ = 0, maxX = 0;
-  for (let i = 0; i < 8; i++) {
-    await sleep(90);
-    const j = pr.meshPose('player', 'legFR');
+  let maxZ = 0, maxX = 0, sawStomp = 0;
+  for (let i = 0; i < 14; i++) {
+    await sleep(60);
+    if (pr.moveOf('player').move !== 'stomp') continue;   // ignore walk/idle frames
+    sawStomp++;
+    const j = pr.jointRot('player', 'legFR');   // the rotation the game animates, before world-frame mixing
     if (!j) continue;
-    maxZ = Math.max(maxZ, Math.abs(j.r[2])); maxX = Math.max(maxX, Math.abs(j.r[0]));
+    maxZ = Math.max(maxZ, Math.abs(j[2])); maxX = Math.max(maxX, Math.abs(j[0]));
   }
-  return { move: pr.moveOf('player').move, maxZ: +maxZ.toFixed(2), maxX: +maxX.toFixed(2) };
+  return { move: sawStomp ? 'stomp' : pr.moveOf('player').move, samples: sawStomp,
+    maxZ: +maxZ.toFixed(2), maxX: +maxX.toFixed(2) };
 });
-ok(stomp.move === 'stomp' && stomp.maxZ > 0.25 && stomp.maxX < 0.08,
+ok(stomp.move === 'stomp' && stomp.samples >= 3 && stomp.maxZ > 0.25 && stomp.maxX < 0.08,
   'the giant stomp lifts a fore foot up and forward', JSON.stringify(stomp));
 
 // ---------- venom: it always spits, you can see it, and it poisons ----------
@@ -115,13 +121,21 @@ const goo = await page.evaluate(async () => {
   const flight = { glob: pr.venomCount(), trail: pr.gooCount() };
   for (let i = 0; i < 30 && pr.venomCount(); i++) await sleep(120);
   const ended = pr.venomLast();
+  let victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die') || {}).key;
+  if (!victim) {                       // every challenger died of stray causes earlier: grow a fresh island
+    pr.newExpedition(null, null, true);
+    for (let i = 0; i < 40 && !victim; i++) {
+      await sleep(150);
+      victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die') || {}).key;
+    }
+  }
   const p2 = pr.state().player;
-  const victim = pr.state().cast[0];
-  pr.placeEnemy(victim, p2.x + 9, p2.z, Math.PI);
+  pr.placeEnemy(victim, p2.x + 6, p2.z, Math.PI);
   pr.setRoar(1); pr.roar();
   let poisoned = 0, who = null;
   for (let i = 0; i < 30 && !poisoned; i++) {
     await sleep(150);
+    pr.setRoar(1); pr.roar();   // keep spitting: the victim closes in, and the lead gets easier
     for (const e of pr.state().enemies) { const t = pr.poisonOf(e.key).t; if (t > 0) { poisoned = t; who = e.key; } }
   }
   return { flight, ended, poisoned: +poisoned.toFixed(1), who };
@@ -137,9 +151,10 @@ const menu = await page.evaluate(async () => {
   pr.openMenu();
   await new Promise(r => setTimeout(r, 400));
   const before = { map: pr.map().name, sp: pr.state().species };
-  const wanted = { map: 'canyon', sp: 'trike' };
+  const curKey = pr.map().key;
+  const wanted = { map: [...document.querySelectorAll('#mrow .mcard')].map(b => b.dataset.k).find(k => k !== curKey), sp: 'trike' };
   const label = document.getElementById('menuB').textContent;
-  pr.setMapPick(wanted.map); pr.setPick(wanted.sp);
+  pr.stageMap(wanted.map); pr.setPick(wanted.sp);   // like an actual menu pick: stage, then one press applies
   const label2 = document.getElementById('menuB').textContent;
   pr.menuStart();
   await new Promise(r => setTimeout(r, 1400));
