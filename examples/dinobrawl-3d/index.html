@@ -682,7 +682,7 @@ function disposeWorld(){
 /* build one whole island: terrain + palette + sky + decor + zones + camp */
 function buildWorld(key,seed){
   SEED=seed>>>0;RNG=mulberry32(SEED);WORLDSEED=SEED;
-  CAST=CASTLOCK?CASTLOCK.slice():rollCast(SEED,player&&player.key);   // this island's five challengers
+  CAST=CASTLOCK?CASTLOCK.slice():rollCast(SEED,player?player.key:pickKey);   // this island's five challengers
   disposeWorld();
   curMap=MAPS[key]();
   terrainH=curMap.height;ZONES=curMap.zones;FLATNAME=curMap.flat;
@@ -867,10 +867,10 @@ function poseChar(ch,dt){
       if(J.neck)J.neck.rotation.z=0.30;
     }
     let stompLift=0;
-    if(ch.stompT>0&&J.legFR){                          // Brachiosaurus: foot up, then down hard
+    if(ch.stompT>0&&J.legFR){                          // giants: one fore foot up and forward, then down hard
       const u=clamp(1-ch.stompT/0.5,0,1);
       stompLift=u<0.45?easeOut(u/0.45):1-easeOut((u-0.45)/0.55);
-      J.legFR.rotation.x=-1.05*stompLift;J.legFL.rotation.x=-0.85*stompLift;
+      J.legFR.rotation.z+=1.25*stompLift;J.legFL.rotation.z+=0.45*stompLift;   // rotation.z swings a foreleg fore/aft
     }
     if(ch.spinT>0&&ch.tail.length){                    // the whole tail sweeps a full circle
       const u=clamp(1-ch.spinT/0.66,0,1),a=easeOut(u)*Math.PI*2;
@@ -882,8 +882,8 @@ function poseChar(ch,dt){
     }
     if(J.head){J.head.rotation.y=headY;J.head.rotation.z=headZ;}
     M.rotation.z=-0.01+Math.sin(p)*0.012*(moving?1:0.3)+flashK*2+(hurtK?Math.sin(ch.hurtT*50)*0.04:0)
-                 -(ch.spinT>0?0.04:0);
-    M.rotation.x=ch.stompT>0?-0.06*stompLift:0;
+                 -(ch.spinT>0?0.04:0)+0.07*stompLift;      // chest dips as the foot comes down
+    M.rotation.x=0;
     M.position.y=(hurtK?Math.sin(ch.hurtT*40)*0.03:0)+0.12*stompLift;   // rises as the foot lifts, drops as it lands
     const bs=1+breath*0.010*(moving?0.3:1)+roarK*0.025;
     M.scale.set(s*(1+(bs-1)*0.5),s*bs,s*(1+(bs-1)*0.7));
@@ -1306,6 +1306,7 @@ async function initGame(){
   player=makeChar(pickKey);player.isPlayer=true;
   player.x=CAMP[0];player.z=CAMP[1];player.y=terrainH(CAMP[0],CAMP[1]);
   player.yaw=Math.atan2(-CAMP[1],-CAMP[0]);player.lastYaw=player.yaw;
+  if(CAST.includes(pickKey))CAST=rollCast(WORLDSEED,pickKey);   // your kind never lines up against you
   await spawnEnemies();
   started=true;
   toast(goalLeft()<5?`Go beat the ${goalLeft()} challengers — your kind is with you!`
@@ -1370,18 +1371,25 @@ function goreHit(e){                                        // Triceratops ends 
 }
 
 /* ===================== venom spit (Dilophosaurus) ======================
-   The ROAR button is this dinosaur's move: a gooey green glob that arcs out
-   and poisons whatever it lands on — slowed, green and much less keen on you */
-const venom=[];
-const spitG=new THREE.SphereGeometry(0.28,7,5);
+   The ROAR button is this dinosaur's move: a fat green glob of goo that arcs out
+   and poisons whatever it lands on — slowed, green and much less keen on you.
+   It is big and slow on purpose, with a streak of droplets behind it, so small
+   players can see it fly; and it always spits, even at nothing.               */
+const venom=[],goo=[];
+let lastVenom=null;                                     // why the last glob went away (debug + tests)
+const spitG=new THREE.SphereGeometry(0.44,9,6);
+const spitM=new THREE.MeshLambertMaterial({color:0x7fd44a,emissive:0x3f7a1c});
+const gooG=new THREE.SphereGeometry(0.17,6,4);
+const gooM=new THREE.MeshBasicMaterial({color:0xa6ee63,transparent:true,opacity:0.85,depthWrite:false});
 function spit(ch,target){
   const s=ch.sp.scale,mv=ch.sp.kind==='quad'?2.6:2.3;
   const ox=ch.x+Math.cos(ch.yaw)*1.9*s, oz=ch.z-Math.sin(ch.yaw)*1.9*s, oy=ch.y+mv*s;
-  const m=new THREE.Mesh(spitG,new THREE.MeshLambertMaterial({color:0x7fd44a,emissive:0x2c5c14}));
+  const m=new THREE.Mesh(spitG,spitM);
   m.position.set(ox,oy,oz);scene.add(m);
-  const d=Math.hypot(target.x-ch.x,target.z-ch.z)||1,tt=clamp(d/20,0.18,0.95);
-  venom.push({m,x:ox,y:oy,z:oz,vx:(target.x-ch.x)/tt,vy:(target.y+1.2-oy)/tt+5.2,
-    vz:(target.z-ch.z)/tt,t:0,from:ch});
+  const d=Math.hypot(target.x-ch.x,target.z-ch.z)||1,tt=clamp(d/10,0.35,1.1);
+  const ts=(target.sp&&target.sp.scale)||1,ty=target.y+1.45*ts,g=15;
+  venom.push({m,x:ox,y:oy,z:oz,vx:(target.x-ch.x)/tt,vy:(ty-oy+0.5*g*tt*tt)/tt,
+    vz:(target.z-ch.z)/tt,t:0,trail:0,from:ch});
   SFX.spit();flare(ch,1.0);startRoar(ch,0.42);
   return venom.length;
 }
@@ -1403,6 +1411,9 @@ function stepVenom(dt){
     v.t+=dt;v.vy-=15*dt;
     v.x+=v.vx*dt;v.y+=v.vy*dt;v.z+=v.vz*dt;
     v.m.position.set(v.x,v.y,v.z);v.m.rotation.x+=dt*7;
+    v.trail-=dt;                                       // a streak of droplets, so you can see it fly
+    if(v.trail<=0){v.trail=0.055;const g=new THREE.Mesh(gooG,gooM);
+      g.position.set(v.x,v.y,v.z);scene.add(g);goo.push({m:g,t:0.45});}
     let hit=false;
     if(v.from.isPlayer){
       for(const e of enemies){if(!e.alive)continue;
@@ -1414,10 +1425,16 @@ function stepVenom(dt){
       if(Math.hypot(player.x-v.x,player.z-v.z)<rr&&Math.abs(player.y+player.sp.scale*1.8-v.y)<2.6+player.sp.scale){
         poison(player);hit=true;}
     }
-    if(hit||v.t>1.7||v.y<terrainH(v.x,v.z)){
+    if(hit||v.t>1.9||v.y<terrainH(v.x,v.z)){
+      lastVenom={hit,t:+v.t.toFixed(2),y:+v.y.toFixed(2),g:+terrainH(v.x,v.z).toFixed(2),
+        x:+v.x.toFixed(2),z:+v.z.toFixed(2),
+        near:enemies.filter(e=>e.alive).map(e=>[e.key,+Math.hypot(e.x-v.x,e.z-v.z).toFixed(1)]).sort((a,b)=>a[1]-b[1])[0]};
       splat(v.x,Math.max(v.y,terrainH(v.x,v.z)),v.z);
       scene.remove(v.m);venom.splice(i,1);}
   }
+  for(let i=goo.length-1;i>=0;i--){const q=goo[i];q.t-=dt;    // the droplets shrink out
+    if(q.t<=0){scene.remove(q.m);goo.splice(i,1);continue;}
+    q.m.scale.setScalar(0.35+1.5*q.t);}
 }
 function hurt(ch,dmg,fromX,fromZ){
   if(!ch.alive)return;
@@ -1617,17 +1634,20 @@ function playerBite(){
 function playerRoar(){
   if(!player.alive||roarCd>0)return;
   if(player.sp.venom){                                  // for a Dilophosaurus the roar IS a venom spit
-    if(roarGauge<0.2)return;
-    let best=null,bd=17;
+    if(roarGauge<0.2){toast('PFFFT... not enough venom yet — land some bites to fill the bar!');return;}
+    let best=null,bd=22;
     for(const e of enemies){if(!e.alive)continue;
       const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<bd){bd=d;best=e;}}
-    if(!best){toast('PFFFT! ...but there is nobody to spit at!');return;}
+    const fake=!best;
+    if(fake)best={x:player.x+Math.cos(player.yaw)*13,y:player.y-1.2,z:player.z-Math.sin(player.yaw)*13,
+      sp:{scale:1}};                                    // nobody near: it spits forward and splats anyway
     roarGauge=Math.max(0,roarGauge-0.2);roarCd=1.2;
-    player.yaw+=clamp(angDiff(Math.atan2(-(best.z-player.z),best.x-player.x),player.yaw),-0.5,0.5);
-    spit(player,best);toast('PFFFTT! Gooey green venom!');
+    player.yaw+=clamp(angDiff(Math.atan2(-(best.z-player.z),best.x-player.x),player.yaw),-0.9,0.9);
+    spit(player,best);
+    toast(fake?'PFFFT! Gooey green venom — SPLAT!':'PFFFTT! Gooey green venom!');
     return;
   }
-  if(roarGauge<0.35)return;
+  if(roarGauge<0.35){toast('The roar is still rumbling — hit something to fill the bar!');return;}
   roarGauge=0;roarCd=1.2;SFX.roar(player.key);startRoar(player,1.0);
   ripple(player.x,player.y+0.25,player.z);
   for(const e of enemies){
@@ -2333,6 +2353,9 @@ window.__probe={
     o.matrixWorld.decompose(T,q,s);
     return {p:[+T.x.toFixed(2),+T.y.toFixed(2),+T.z.toFixed(2)],
       r:[+q.x.toFixed(2),+q.y.toFixed(2),+q.z.toFixed(2)]};},
+  jointRot(which,part){const ch=which==='player'?player:enemies.find(e=>e.key===which);
+    if(!ch)return null;const o=ch.model.getObjectByName(part);if(!o)return null;
+    return [o.rotation.x,o.rotation.y,o.rotation.z].map(v=>+v.toFixed(2));},
   openMenu(){openMenu();return menuOpen;},
   closeMenu(){closeMenu();return menuOpen;},
   map(){return{key:previewMap,seed:WORLDSEED,name:curMap.name,flat:FLATNAME,
@@ -2349,7 +2372,7 @@ window.__probe={
   cast(){return{cast:CAST.slice(),seed:WORLDSEED,lock:CASTLOCK?CASTLOCK.slice():null};},
   territories(){return Object.fromEntries(Object.entries(TERRITORY).map(([k,v])=>[k,[Math.round(v[0]),Math.round(v[1])]]));},
   setCast(list){CASTLOCK=list&&list.length?[...list]:null;
-    CAST=CASTLOCK?CASTLOCK.slice():rollCast(WORLDSEED,player&&player.key);return CAST.slice();},
+    CAST=CASTLOCK?CASTLOCK.slice():rollCast(WORLDSEED,player?player.key:pickKey);return CAST.slice();},
   speciesList(){return Object.keys(SPECIES);},
   speciesFlags(){return Object.fromEntries(Object.entries(SPECIES).map(([k,s])=>[k,
     {huge:!!s.huge,gentle:!!s.gentle,venom:!!s.venom,pack:!!s.pack,charge:!!s.charge,
@@ -2361,6 +2384,34 @@ window.__probe={
     return{in:r.left>=0&&r.right<=innerWidth,left:Math.round(r.left),right:Math.round(r.right),
       width:Math.round(r.width)};},
   venomCount(){return venom.length;},
+  venomInfo(){return venom.map(v=>({x:+v.x.toFixed(2),y:+v.y.toFixed(2),z:+v.z.toFixed(2),t:+v.t.toFixed(2),
+    vx:+v.vx.toFixed(1),vy:+v.vy.toFixed(1),ground:+terrainH(v.x,v.z).toFixed(2),fromPlayer:!!v.from.isPlayer}));},
+  venomLast(){return lastVenom;},
+  gooCount(){return goo.length;},
+  limbCheck(which='player'){                              // do the legs actually reach the body?
+    const ch=which==='player'?player:enemies.find(e=>e.key===which);if(!ch)return null;
+    let body=null;const legs=[];
+    ch.model.traverse(o=>{if(!o.isMesh)return;
+      const g=o.geometry,bb=g.boundingBox||(g.computeBoundingBox(),g.boundingBox);
+      if(o.name==='bodym')body={bb,pos:g.attributes.position};
+      else if(/^legm|thighm/.test(o.name))legs.push({name:o.name,bb,pos:g.attributes.position});});
+    if(!body)return null;
+    const out=[];
+    for(const l of legs){
+      let sx=0,sz=0,n=0;
+      for(let i=0;i<l.pos.count;i++){sx+=l.pos.getX(i);sz+=l.pos.getZ(i);n++;}
+      const cx=sx/n,cz=sz/n;
+      let lo=Infinity,hi=-Infinity;
+      for(let i=0;i<body.pos.count;i++){
+        const x=body.pos.getX(i),y=body.pos.getY(i),z=body.pos.getZ(i);
+        if(Math.abs(x-cx)<0.55&&Math.abs(z-cz)<0.55){if(y<lo)lo=y;if(y>hi)hi=y;}
+      }
+      if(lo===Infinity)continue;
+      const want=lo+0.18*(hi-lo)-0.06;
+      out.push({leg:l.name,top:+l.bb.max.y.toFixed(2),need:+want.toFixed(2),
+        belly:+lo.toFixed(2),flank:+hi.toFixed(2),ok:l.bb.max.y>=want});
+    }
+    return out;},
   poisonOf(which='player'){const ch=which==='player'?player:enemies.find(e=>e.key===which);
     return ch?{t:+(ch.poisonT||0).toFixed(2),tint:ch.mats[0].color.getHex().toString(16)}:null;},
   moveOf(which='player'){const ch=which==='player'?player:enemies.find(e=>e.key===which);
@@ -2377,18 +2428,21 @@ window.__probe={
       fov:camera.fov,tall:+(player.tall||0).toFixed(2),len:+(player.len||0).toFixed(2)};},
   shellCheck(which='player'){                              // is the skin on the outside? (winding vs normals)
     const ch=which==='player'?player:enemies.find(e=>e.key===which);if(!ch)return null;
-    let agree=0,opp=0;
+    let agree=0,opp=0,bad=[];
     ch.model.traverse(o=>{if(!o.isMesh)return;
       const g=o.geometry,p=g.attributes.position,n=g.attributes.normal,ix=g.index&&g.index.array;
       if(!p||!n||!ix)return;
+      let t_opp=0;
       for(let t=0;t<ix.length;t+=3){const a=ix[t],b=ix[t+1],c=ix[t+2];
         const ax=p.getX(a),ay=p.getY(a),az=p.getZ(a);
         const ux=p.getX(b)-ax,uy=p.getY(b)-ay,uz=p.getZ(b)-az;
         const vx=p.getX(c)-ax,vy=p.getY(c)-ay,vz=p.getZ(c)-az;
         const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+        if(nx*nx+ny*ny+nz*nz<1e-10)continue;               // zero-area specks can't be inside-out
         const dx=n.getX(a)+n.getX(b)+n.getX(c),dy=n.getY(a)+n.getY(b)+n.getY(c),dz=n.getZ(a)+n.getZ(b)+n.getZ(c);
-        if(nx*dx+ny*dy+nz*dz>0)agree++;else opp++;}});
-    return{agree,opp,side:ch.mats[0]&&ch.mats[0].side};},
+        if(nx*dx+ny*dy+nz*dz>0)agree++;else{opp++;t_opp++;}}
+      if(t_opp)bad.push([o.name,t_opp]);});
+    return{agree,opp,side:ch.mats[0]&&ch.mats[0].side,bad};},
   neckState(which='player'){const ch=which==='player'?player:enemies.find(e=>e.key===which);
     if(!ch)return null;const o={t:+ch.t.toFixed(3),state:ch.state,speed:+ch.speed.toFixed(2),
       graze:+(ch.grazeT||0).toFixed(2),neck:{}};
