@@ -12,3 +12,4 @@ examples/cyberdeck/rune
 examples/cyberdeck/rune/
 examples/cyberdeck/target/
 !examples/cyberdeck/dist/
+*.blend1
