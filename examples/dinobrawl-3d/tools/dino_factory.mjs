@@ -50,6 +50,42 @@ function shade(part, colFn) {                         // paint every vertex of a
   }
   return part;
 }
+/* how high the body comes above a hip column — legs have to sink into the shell,
+   not dangle under it. shellAt gives the body's low and high points over a spot. */
+function shellAt(part, x, z, r = 0.55) {
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < part.pos.length; i += 3)
+    if (Math.abs(part.pos[i] - x) < r && Math.abs(part.pos[i + 2] - z) < r) {
+      if (part.pos[i + 1] < lo) lo = part.pos[i + 1];
+      if (part.pos[i + 1] > hi) hi = part.pos[i + 1];
+    }
+  return lo === Infinity ? null : { lo, hi };
+}
+const bellyAt = (part, x, z, r) => { const s = shellAt(part, x, z, r); return s && s.lo; };
+/* the guard rail: a leg that barely reaches the belly is a leg you can see
+   floating, and a model with no point near the ground is standing on air */
+function checkLimbs(model, key = '?') {
+  const body = model.meshes.find(m => m.name === 'bodym');
+  const bad = [];
+  let floor = Infinity;
+  for (const m of model.meshes) {
+    let top = -Infinity, lo = Infinity, sx = 0, sz = 0, n = 0;
+    for (let i = 0; i < m.part.pos.length; i += 3) {
+      const y = m.part.pos[i + 1];
+      if (y > top) top = y;
+      if (y < lo) lo = y;
+      sx += m.part.pos[i]; sz += m.part.pos[i + 2]; n++;
+    }
+    if (n) floor = Math.min(floor, lo);
+    if (!body || !/^legm|thighm/.test(m.name)) continue;
+    const sh = shellAt(body.part, sx / n, sz / n);
+    if (!sh) continue;
+    const want = sh.lo + 0.18 * (sh.hi - sh.lo) - 0.06;  // a fifth of the way up the flank, whatever the size
+    if (top < want) bad.push(`${m.name} tops out at y=${top.toFixed(2)} but needs y=${want.toFixed(2)} to reach inside the body (belly y=${sh.lo.toFixed(2)}, flank top y=${sh.hi.toFixed(2)})`);
+  }
+  if (floor > 0.25) bad.push(`nothing reaches the ground: lowest point y=${floor.toFixed(2)}`);
+  if (bad.length) throw new Error(`${key}: limbs do not attach — ${bad.join('; ')}`);
+}
 function computeNormals(part) {                       // flat-ish: per-face, then average
   const n = Array(part.pos.length / 3).fill(null).map(() => [0, 0, 0]);
   for (let i = 0; i < part.idx.length; i += 3) {
@@ -417,4 +453,4 @@ function crc32(buf2) {
 }
 
 export { sub, add, mul, cross, norm, lerp3, catmull, hash, empty, merge, shade, tube, cone, ball, fin, plateRow, spikeLine,
-  rgb, mixc, hide, buildGLB, renderCard, computeNormals };
+  rgb, mixc, hide, buildGLB, renderCard, computeNormals, bellyAt, shellAt, checkLimbs };

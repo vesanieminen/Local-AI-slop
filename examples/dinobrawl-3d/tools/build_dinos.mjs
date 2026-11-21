@@ -8,7 +8,7 @@
 import { writeFileSync } from 'fs';
 import path from 'path';
 import { tube, cone, ball, fin, plateRow, spikeLine, merge, empty, shade, rgb, hide,
-  buildGLB, renderCard } from './dino_factory.mjs';
+  buildGLB, renderCard, bellyAt, checkLimbs } from './dino_factory.mjs';
 
 const J = (name, t, parent) => ({ name, t, parent });
 const M = (name, parent, part) => ({ name, parent, part });
@@ -248,16 +248,21 @@ function sauropod(o) {
   const paint = hide(rgb(o.base), rgb(o.dark), rgb(o.belly), rgb(o.dark),
     { bellyY: o.bellyY, grad: 0.15, speck: 0.15, stripes: o.stripes, stripeFreq: 1.05, spots: o.spots });
   const joints = [], meshes = [];
-  for (const [n, x, top, r0, r1] of o.legs) {
+  /* the body first, so the hips can be set from where the shell actually is:
+     a joint below the belly leaves a leg you can see floating in mid air */
+  const bodyP = tube(o.body, f => {
+    const d = Math.abs(f - 0.45); return [o.bodyR * (1 - d * 1.15), o.bodyR * o.tall * (1 - d * 1.25)];
+  }, { rings: 9, segs: 12 });
+  for (const [n, x, top0, r0, r1] of o.legs) {
     const z = (n[1] === 'L' ? -1 : 1) * o.legZ(n[0] === 'F');
+    const bel = bellyAt(bodyP, x, z);
+    const top = bel == null ? top0 : Math.max(top0, bel + 0.55);   // the hip sits inside the body
     joints.push(J('leg' + n, [x, top, z]));
-    meshes.push(M('legm' + n, 'leg' + n, shade(tube([[x, top + 0.2, z], [x, top * 0.5, z], [x, 0.2, z]],
+    meshes.push(M('legm' + n, 'leg' + n, shade(tube([[x, top + 0.3, z], [x, top * 0.5, z], [x, 0.2, z]],
       f => [r0 - (r0 - r1) * f, r0 - (r0 - r1) * f], { rings: 7, segs: 4 }), paint)));
     meshes.push(M('footm' + n, 'leg' + n, shade(ball([x, 0.22, z], r1 * 1.2, { sx: 1.2, sy: 0.6, sz: 1.1, rings: 6, segs: 3 }), paint)));
   }
-  meshes.push(M('bodym', null, shade(tube(o.body, f => {
-    const d = Math.abs(f - 0.45); return [o.bodyR * (1 - d * 1.15), o.bodyR * o.tall * (1 - d * 1.25)];
-  }, { rings: 9, segs: 12 }), paint)));
+  meshes.push(M('bodym', null, shade(bodyP, paint)));
   const nc = chain('neck', o.neck, o.neckR, paint, { rings: 8, lift: 0.05 });
   joints.push(...nc.joints); meshes.push(...nc.meshes);
   const last = 'neck' + (o.neck.length - 1), hd = o.head;
@@ -305,6 +310,7 @@ const OUT = path.resolve(import.meta.dirname, '..');
 const keys = process.argv.slice(2).filter(k => BUILDERS[k]);
 for (const k of (keys.length ? keys : Object.keys(BUILDERS))) {
   const model = BUILDERS[k]();
+  checkLimbs(model, k);                              // refuses to ship a dino with floating legs
   const glb = buildGLB(model);
   writeFileSync(path.join(OUT, 'assets', k + '.glb'), glb);
   writeFileSync(path.join(OUT, 'assets', 'select', k + '.png'),
