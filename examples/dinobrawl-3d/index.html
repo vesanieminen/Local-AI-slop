@@ -1515,7 +1515,7 @@ const PICKTAG={trex:'the balanced hero',allo:'fast but squishy',spino:'big tail 
   ankylo:'armored tank',im:'nearly invisible',dr:'strongest of all',
   raptor:'tiny — JUMP on giants!',dilopho:'spits gooey venom!',trike:'horns and a charge',
   stego:'thagomizer!',diplodocus:'huge whip tail',brachiosaurus:'GIANT stomp + tail spin',
-  mosasaurus:'king of the sea!'};
+  mosasaurus:'king of the sea — ROAR hauls bait ashore!'};
 // your own kind never counts against you: goal = challengers that aren't any hero.
 // (In the winter world the raptors are hungry — they'll even eat their own.)
 const goalKeys=()=>curMap&&curMap.winter?CAST.slice():CAST.filter(k=>!players.some(p=>p.key===k));
@@ -2130,6 +2130,8 @@ function newExpedition(k,seed,keepPlayer,newKey){
   enemies.length=0;
   for(const v of[...venom])scene.remove(v.m);
   venom.length=0;
+  for(const b of[...baits])scene.remove(b.m);
+  baits.length=0;
   spawnEnemies();
   const dry=terrainH(px,pz)>WATER+0.25;             // the new island may hold sea where you stood
   if(player)resetPlayerAt(player,keepPlayer&&dry?px:CAMP[0],keepPlayer&&dry?pz:CAMP[1]);
@@ -2209,6 +2211,13 @@ function playerBite(){
 }
 function playerRoar(){
   if(!player.alive||roarCd>0)return;
+  if(player.sp.sea){                                    // sea king: ROAR = haul a bait fish ashore
+    const s=curMap&&!curMap.noSea?shoreNear(player.x,player.z):null;
+    if(s&&dropBait(s[0],s[1])){roarCd=8;SFX.roar('trex');
+      toast('You dragged a fat fish onto the beach — the whole island can smell it now!');}
+    else{SFX.roar('trex');roarCd=4;toast('ROOOAR! Nothing but open water or ice to land a bait on.');}
+    return;
+  }
   if(player.sp.venom){                                  // for a Dilophosaurus the roar IS a venom spit
     if(roarGauge<0.2){toast('PFFFT... not enough venom yet — land some bites to fill the bar!');return;}
     let best=null,bd=22;
@@ -2309,6 +2318,51 @@ function stepRipples(dt){
   for(let i=ripples.length-1;i>=0;i--){const r=ripples[i];r.t+=dt;
     const s=1+r.t*9;r.m.scale.set(s,s,s);r.m.material.opacity=Math.max(0,0.9-r.t*1.6);
     if(r.t>0.6){scene.remove(r.m);ripples.splice(i,1);}}
+}
+/* ============ the Mosasaurus's bait ======================================
+   Now and then the sea king drags a fat fish up onto the beach and leaves it
+   there like a present nobody asked for. Every animal on land can smell it
+   from far away and can't help trotting over to see what all the fuss is
+   about — and what does the fuss turn out to be. Free dinner, everyone.     */
+const baits=[];
+const BAIT_PULL=130;                                   // the smell reaches a huge way
+function baitMesh(){
+  const g=new THREE.Group();g.scale.set(1.4,1.4,1.4);       // big enough to smell from orbit
+  const body=new THREE.Mesh(new THREE.SphereGeometry(0.62,9,7),
+    new THREE.MeshLambertMaterial({color:0x86a7b8}));   // a plump, well-rounded fish
+  body.scale.set(1.7,0.75,0.8);g.add(body);
+  const tail=new THREE.Mesh(new THREE.ConeGeometry(0.5,1,5),
+    new THREE.MeshLambertMaterial({color:0x5f8296}));
+  tail.rotation.z=Math.PI/2;tail.position.set(-1.5,0.14,0);tail.scale.set(0.7,1.4,0.25);g.add(tail);
+  const eye=new THREE.Mesh(new THREE.SphereGeometry(0.14,6,5),
+    new THREE.MeshLambertMaterial({color:0xdff0f6}));
+  eye.position.set(0.78,0.3,0.3);g.add(eye);
+  return g;
+}
+function dropBait(x,z){
+  if(curMap&&curMap.noSea)return null;                  // frozen seas keep their fish to themselves
+  while(baits.length>=3){scene.remove(baits[0].m);baits.shift();}   // a beach only holds so much
+  const m=baitMesh(),h=terrainH(x,z);
+  m.position.set(x,h+0.42,z);m.rotation.y=rand(0,6.283);
+  scene.add(m);
+  const b={m,x,z,hp:7,t:100};
+  baits.push(b);
+  ripple(x,WATER+0.1,z);SFX.splash();
+  if(player&&Math.hypot(x-player.x,z-player.z)<130)
+    toast('The Mosasaurus dragged something out onto the beach... the animals can smell it!');
+  return b;
+}
+function baitNear(x,z,r){
+  let best=null,bd=r;
+  for(const b of baits){const d=Math.hypot(b.x-x,b.z-z);if(d<bd){bd=d;best=b;}}
+  return best;
+}
+function stepBaits(dt){
+  for(let i=baits.length-1;i>=0;i--){const b=baits[i];
+    b.t-=dt;
+    b.m.rotation.y+=dt*0.15;                            // slow, sinister, fishy rotation
+    b.m.position.y=terrainH(b.x,b.z)+0.42+Math.sin(performance.now()/650+i)*0.05;
+    if(b.t<=0||b.hp<=0){scene.remove(b.m);baits.splice(i,1);}}
 }
 /* confetti — because every win deserves a shower of it */
 const confetti=[];
@@ -2511,6 +2565,20 @@ function stepEnemyAI(e,dt){
     if(Math.random()<dt*0.25)e.dispT=1.2;
   } else {
     e.state='idle';e.prevAgg=0;
+    const bb=baitNear(e.x,e.z,BAIT_PULL);
+    if(bb){                                   // it simply cannot stay away from that fish
+      e.state='snack';
+      const d=Math.hypot(bb.x-e.x,bb.z-e.z);
+      if(d>2.4)walkToward(e,e.sp.speed*(d>50?1.25:0.8),bb.x,bb.z,dt);
+      else{                                   // arrived: heads down, crunching happily
+        e.speed*=0.8;
+        e.yaw+=clamp(angDiff(Math.atan2(-(bb.z-e.z),bb.x-e.x),e.yaw),-1.4*dt,1.4*dt);
+        e.grazeT=Math.max(e.grazeT,0.8);      // the munch animation everyone already has
+        e.baitCd=(e.baitCd||0)-dt;
+        if(e.baitCd<=0){e.baitCd=rand(0.9,1.6);bb.hp--;SFX.chomp();
+          if(bb.hp<=0)toast('They got every last bite of the Mosasaurus\'s bait!');}
+      }
+    } else {
     const dw=Math.hypot(e.wander.x-e.x,e.wander.z-e.z);
     if(dw<3||Math.random()<0.002){
       if(e.sp.fisher&&Math.random()<0.5){                // Spinosaurus patrols the shore
@@ -2532,6 +2600,7 @@ function stepEnemyAI(e,dt){
       else if(r<0.55){e.grazeT=rand(1.4,2.6);
         if(e.sp.fisher&&terrainH(e.x+Math.cos(e.yaw)*2,e.z-Math.sin(e.yaw)*2)<1.4&&Math.random()<0.5)SFX.splash();}
       else if(r<0.7){startRoar(e,0.55);if(Math.random()<0.5)SFX.roar(e.key);}
+    }
     }
   }
   poseAndPlace(e,dt);
@@ -2605,6 +2674,13 @@ function poseSea(e,dt){
 }
 function stepMosasaur(e,dt){
   e.speed=0;e.sneak=false;
+  e.baitT=(e.baitT===undefined?rand(12,26):e.baitT)-dt;  // the urge to leave a gift, ticking always
+  if(e.baitT<=0){                              // gift due: hand it to whatever beach is close
+    if(e.baitSpot===undefined)e.baitSpot=shoreNear(e.x,e.z)||false;
+    const s=e.baitSpot;
+    if(!s)e.baitT=rand(6,12);
+    else if(Math.hypot(s[0]-e.x,s[1]-e.z)<18){dropBait(s[0],s[1]);e.baitSpot=undefined;e.baitT=rand(45,80);}
+  }
   e.hurtT=Math.max(0,e.hurtT-dt);e.flash=Math.max(0,e.flash-dt);
   e.cool=Math.max(0,e.cool-dt);
   if(e.poisonT>0){e.poisonT-=dt;if(e.poisonT<=0){e.poisonT=0;unpoison(e);}}
@@ -2656,6 +2732,13 @@ function stepMosasaur(e,dt){
     swimToward(e,e.sp.speed*0.45,tg.x,tg.z,dt);
   } else {
     e.state='idle';e.prevAgg=0;
+    if(e.baitT<=0){                              // due, but that beach is far: haul over to it
+      if(e.baitSpot===undefined)e.baitSpot=shoreNear(e.x,e.z)||false;
+      if(e.baitSpot)swimToward(e,e.sp.run*0.9,e.baitSpot[0],e.baitSpot[1],dt);
+      else e.baitT=rand(6,12);                   // nowhere to land: try again later
+    } else if(e.baitT<=6&&e.baitSpot){
+      swimToward(e,e.sp.speed*0.55,e.baitSpot[0],e.baitSpot[1],dt);   // something on its mind
+    } else {
     const dw=Math.hypot(e.wander.x-e.x,e.wander.z-e.z);
     if(dw<4||Math.random()<dt*0.08){
       let wx,wz,g2=0;
@@ -2664,6 +2747,7 @@ function stepMosasaur(e,dt){
       while(g2<10&&terrainH(wx,wz)>WATER-2.5);
       e.wander={x:wx,z:wz};}
     swimToward(e,e.sp.speed*0.55,e.wander.x,e.wander.z,dt);
+    }
     if(Math.random()<dt*0.15)SFX.splash();
   }
   poseSea(e,dt);
@@ -2797,7 +2881,7 @@ function collideSolids(ch){
    big dinos still stand — pools, channels and the open sea are terrain. ---- */
 const drownLimit=ch=>(ch.sp.drown!=null?ch.sp.drown:(ch.sp.fisher?4.5:(ch.sp.kind==='quad'?1.4:2.8)))*ch.sp.scale;
 function shoreNear(x,z){
-  for(let r=4;r<=190;r+=4)for(let k=0;k<16;k++){
+  for(let r=4;r<=270;r+=4)for(let k=0;k<16;k++){
     const a=k/16*6.283,nx=x+Math.cos(a)*r,nz=z+Math.sin(a)*r,h=terrainH(nx,nz);
     if(h>-0.1&&h<3.5)return[nx,nz];}
   return null;}
@@ -3089,6 +3173,7 @@ function frame(now){
   enterP(players[0]);                    // HUD, minimap and probes speak with P1's mouth
   separate();
   stepRipples(dt);
+  stepBaits(dt);
   stepConfetti(dt);
   stepVenom(dt);
   water.position.y=WATER+0.16+Math.sin(now/900)*0.06;
@@ -3278,6 +3363,16 @@ window.__probe={
     fps:Math.round(fps),tier};},
   teleport(x,z){player.x=x;player.z=z;player.y=terrainH(x,z);},
   spawnDino(key){const e=spawnWild(key,0);return{key:e.key,x:+e.x.toFixed(1),z:+e.z.toFixed(1)};},
+  baits(){return baits.map(b=>({x:+b.x.toFixed(1),z:+b.z.toFixed(1),hp:b.hp,t:Math.round(b.t)}));},
+  dropBait(x,z){return dropBait(x,z)?{ok:true}:{ok:false};},
+  clearBaits(){for(const b of[...baits])scene.remove(b.m);baits.length=0;return true;},
+  mosaShore(){                                  // fast-forward: nudge the sea king to its beach
+    const m=enemies.find(e=>e.key==='mosasaurus'&&e.alive);
+    if(!m)return{ok:false,why:'no mosasaurus'};
+    const s=shoreNear(m.x,m.z);if(!s)return{ok:false,why:'no shore'};
+    const a=Math.atan2(-(s[1]-m.z),s[0]-m.x);
+    m.x=s[0]-Math.cos(a)*10;m.z=s[1]-Math.sin(a)*10;m.baitSpot=[s[0],s[1]];m.baitT=0.02;
+    return{ok:true,shore:[+s[0].toFixed(1),+s[1].toFixed(1)]};},
   pk(key){                              // challengers answer first — ambient herds are just scenery
     return enemies.find(e=>e.alive&&!e.counted&&e.key===key)||enemies.find(e=>e.alive&&e.key===key);
   },
