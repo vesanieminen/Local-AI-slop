@@ -57,6 +57,10 @@ for i in range(4):
     dt.paint(tl, *P)
     prev = "tail"+str(i+1)
 
+# continuous tail: sleeve each segment over the one ahead of it
+for i in range(1, 5):
+    dt.flare("tailm" + str(i), 0.5)
+
 for o in (body, nk, hd, jw, cr): dt.paint(o, *P)
 dt.assign_vcol("root")
 tot = sum(len(p.vertices)-2 for o in bpy.data.objects if not o.name.startswith("REF_") and o.type=="MESH" for p in o.data.polygons)

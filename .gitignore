@@ -13,3 +13,4 @@ examples/cyberdeck/rune/
 examples/cyberdeck/target/
 !examples/cyberdeck/dist/
 *.blend1
+__pycache__/

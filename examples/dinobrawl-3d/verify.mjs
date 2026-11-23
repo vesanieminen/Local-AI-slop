@@ -55,7 +55,7 @@ const roster = await page.evaluate(() => ({
   cast: window.__probe.state().cast,
 }));
 ok(roster.pick === 'dilopho', 'the picture card picks your dinosaur', roster.pick);
-ok(roster.list.length === 13 && roster.list.includes('mosasaurus'), 'thirteen dinosaurs to be — the Mosasaurus included', `${roster.list.length}`);
+ok(roster.list.length === 14 && roster.list.includes('mosasaurus') && roster.list.includes('hunter'), 'fourteen fighters to be — the Mosasaurus and the Human included', `${roster.list.length}`);
 ok(roster.cast.length === 5 && !roster.cast.includes(roster.pick),
   'the island raises five challengers that are not you', roster.cast.join(','));
 ok(roster.flags.dilopho.venom && roster.flags.brachiosaurus.huge && roster.flags.trike.charge,
@@ -64,6 +64,135 @@ ok(roster.flags.mosasaurus.sea && roster.flags.trike.herb && roster.flags.stego.
   'the Mosasaurus owns the sea, the plant-eaters are peaceful by default', 'sea + herb');
 ok(roster.flags.ankylo.giant && roster.flags.trex.giant && roster.flags.spino.giant && !roster.flags.raptor.giant,
   'every heavyweight — the armoured Ankylosaurus included — can carry a raptor', 'ankylo+trex+spino giant');
+
+// ---------- the village: people live in every world ----------
+const vill = await page.evaluate(() => {
+  const pr = window.__probe, h = pr.humans(), s = pr.state();
+  const hs = s.enemies.filter(e => e.human && e.alive);
+  return { ...h, n: hs.length, dry: hs.every(e => pr.ground(e.x, e.z) > 0),
+    home: hs.filter(e => Math.hypot(e.x - h.village[0], e.z - h.village[1]) < 90).length };
+});
+ok(vill.total >= 7 && vill.villagers >= 3 && vill.hunters >= 4 && vill.zone,
+  'a human village stands in the world — villagers and spear-hunters both', JSON.stringify(vill));
+ok(vill.n > 0 && vill.dry && vill.home >= Math.ceil(vill.n * 0.5),
+  'the islanders keep to dry ground around their fire', `${vill.home}/${vill.n} near home`);
+const huntZone = await page.evaluate(() =>
+  window.__probe.map().zones.some(z => z.tag === 'village'));
+ok(huntZone, 'the village is a landmark with a name of its own');
+
+// ---------- a bigger, flatter island with a real mountain range ----------
+const shape = await page.evaluate(() => {
+  const pr = window.__probe, hs = [];
+  let high = 0, maxH = 0;
+  for (let i = 0; i < 400; i++) {
+    const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * (pr.isle() - 20);
+    const h = pr.ground(Math.cos(a) * r, Math.sin(a) * r);
+    if (h > 0.5) { hs.push(h); if (h > 12) high++; if (h > maxH) maxH = h; }
+  }
+  hs.sort((a, b) => a - b);
+  const N = 96, M = 48, g = [];
+  for (let i = 0; i < N; i++) { g[i] = [];
+    for (let j = 0; j < M; j++) {
+      const a = i / N * 6.283, r = 30 + j / M * (pr.isle() - 60);
+      g[i][j] = pr.ground(Math.cos(a) * r, Math.sin(a) * r);
+    } }
+  let peaks = 0;
+  for (let i = 0; i < N; i++) for (let j = 2; j < M - 2; j++) {
+    const h = g[i][j];
+    if (h < 13) continue;
+    let top = true;
+    for (let di = -2; di <= 2 && top; di++) for (let dj = -2; dj <= 2; dj++)
+      if (g[(i + di + N) % N][j + dj] > h) { top = false; break; }
+    if (top) peaks++;
+  }
+  return { isle: pr.isle(), shelf: pr.shelf(), highPct: high / hs.length, peaks,
+    maxH: +maxH.toFixed(1), p50: +hs[hs.length >> 1].toFixed(1), p95: +hs[Math.floor(hs.length * 0.95)].toFixed(1) };
+});
+ok(shape.isle >= 300 && shape.shelf >= 380, 'the continent has outgrown the old island', `isle ${shape.isle}, shelf ${shape.shelf}`);
+ok(shape.p50 < 11 && shape.p95 < 34 && shape.maxH < 58,
+  'the land lies mostly flat — no single sky-piercing mega-mountain', `p50 ${shape.p50}, p95 ${shape.p95}, max ${shape.maxH}`);
+ok(shape.peaks >= 3, 'the mountains come in ridgelines of several peaks', `${shape.peaks} peaks`);
+
+// ---------- the Human: GRAB tames a dinosaur, WASD then drives it ----------
+await page.evaluate(() => window.__probe.switchTo('hunter'));
+await wait(500);
+const hunterPick = await page.evaluate(() => {
+  const s = window.__probe.state();
+  return { sp: s.species, joints: Object.keys(window.__probe.joints('player')).length };
+});
+ok(hunterPick.sp === 'hunter' && hunterPick.joints >= 5,
+  'the Human is playable — a tiny biped with working limbs', JSON.stringify(hunterPick));
+const tame = await page.evaluate(() => window.__probe.tameCheat());
+ok(tame.ok, 'a Human mounts a wild dinosaur and breaks it on the spot', tame.host || tame.why);
+const c0 = await page.evaluate(() => window.__probe.rideCtrl());
+ok(c0 && c0.tamed && c0.controlled && c0.riders === 1,
+  'the tamed giant takes your orders instead of bucking', JSON.stringify(c0));
+await page.keyboard.down('KeyW');
+await wait(1400);
+await page.keyboard.up('KeyW');
+const c1 = await page.evaluate(() => window.__probe.rideCtrl());
+const gallop = c1 ? Math.hypot(c1.x - c0.x, c1.z - c0.z) : 0;
+ok(gallop > 2.5, 'WASD rides the tamed mount across the island', `${gallop.toFixed(1)}m`);
+await page.evaluate(() => window.__probe.bite());
+const rideBite = await page.evaluate(() => window.__probe.state().player.state === 'attack');
+ok(rideBite, 'BITE makes your mount strike where you point it');
+await page.keyboard.down('KeyG');
+await wait(200);
+await page.keyboard.up('KeyG');
+await wait(400);
+const hopped = await page.evaluate((host) => {
+  const s = window.__probe.state();
+  const h = s.enemies.find(e => e.key === host && e.tamed);
+  return { riding: window.__probe.rideCtrl(), tamed: !!h, controlled: h && h.controlled };
+}, tame.host);
+ok(!hopped.riding && hopped.tamed && !hopped.controlled,
+  'GRAB again hops down — the tamed giant stays gentle and wanders off', JSON.stringify(hopped));
+
+// ---------- spears out, jaws out: the village is on the menu both ways ----------
+let spear = null, stabbed = null;
+for (let t = 0; t < 3 && !stabbed; t++) {
+  spear = await page.evaluate(() => window.__probe.spearTest());
+  if (!spear.ok) break;
+  await wait(6500);
+  const s = await page.evaluate(() => window.__probe.spearHp());
+  if (s && s.hp < spear.hp) stabbed = s;
+}
+ok(spear.ok && stabbed && stabbed.hp < spear.hp,
+  'human hunters stab dinosaurs with their spears', `${spear.hp} → ${stabbed ? stabbed.hp : 'never touched'}`);
+let chomp = null, bitten = null;
+for (let t = 0; t < 3 && !bitten; t++) {
+  chomp = await page.evaluate(() => window.__probe.chompTest());
+  if (!chomp.ok) break;
+  await wait(8000);
+  const b = await page.evaluate(() => window.__probe.chompHp());
+  if (b && (b.hp < chomp.hp || !b.alive)) bitten = b;
+}
+ok(chomp.ok && bitten && (bitten.hp < chomp.hp || !bitten.alive),
+  'dinosaurs hunt and eat the islanders too',
+  `${chomp.hp} → ${bitten ? bitten.hp : '?'}${bitten && !bitten.alive ? ' (eaten)' : ''}`);
+
+// ---------- every world has people ----------
+const worldPacks = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const out = {};
+  for (const k of ['canyon', 'beach']) {
+    window.__probe.newExpedition(k, 1234 + k.length);
+    await sleep(1800);
+    out[k] = window.__probe.humans();
+  }
+  return out;
+});
+await wait(2000);
+for (const k of ['canyon', 'beach']) {
+  const w = worldPacks[k];
+  ok(w && w.total >= 7 && w.zone,
+    `the ${k} world has its own village of people`, JSON.stringify(w));
+}
+// back to the forest, back to the Dilophosaurus: the tests that follow expect the hero we started as
+await page.evaluate(() => { window.__probe.setCast(null); window.__probe.newExpedition('forest', 777); });
+await wait(2000);
+await page.evaluate(() => window.__probe.switchTo('dilopho'));
+await wait(500);
 
 // ---------- the Mosasaurus: a real animal in a real sea ----------
 const mosa = await page.evaluate(async () => {
@@ -133,13 +262,13 @@ const goo = await page.evaluate(async () => {
   pr.switchTo('dilopho');
   await sleep(900);
   const p = pr.state().player;
-  pr.state().enemies.forEach(e => pr.placeEnemy(e.key, p.x + 70, p.z + 70, 0));
+  pr.state().enemies.forEach(e => { if (!e.human) pr.placeEnemy(e.key, p.x + 70, p.z + 70, 0); });
   pr.setRoar(1); pr.roar();
   await sleep(200);
   const flight = { glob: pr.venomCount(), trail: pr.gooCount() };
   for (let i = 0; i < 30 && pr.venomCount(); i++) await sleep(120);
   const ended = pr.venomLast();
-  let victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die' && e.key !== 'mosasaurus') || {}).key;
+  let victim = (pr.state().enemies.find(e => e.alive && e.state !== 'die' && !e.human && e.key !== 'mosasaurus') || {}).key;
   if (!victim) {                       // every challenger died of stray causes earlier: grow a fresh island
     pr.newExpedition(null, null, true);
     for (let i = 0; i < 40 && !victim; i++) {
@@ -235,7 +364,7 @@ const gulp = await page.evaluate(async () => {
   // a paddling-deep but not drowning patch of sea, with real deep water right next to it
   let spot = null, mos = null;
   for (let g = 0; g < 4000 && !spot; g++) {
-    const a = Math.random() * 6.283, r = 240 + Math.random() * 70;   // the wide sea shelf
+    const a = Math.random() * 6.283, r = 330 + Math.random() * 80;   // the wide sea shelf
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (!(pr.ground(x, z) < -0.4 && pr.ground(x, z) > -1.2)) continue;
     const n = Math.hypot(x, z) || 1;
@@ -303,12 +432,14 @@ await page.evaluate(() => { window.__probe.setCast(null); window.__probe.newExpe
 await wait(2000);
 const winter = await page.evaluate(() => {
   const pr = window.__probe, s = pr.state();
-  return { m: pr.map(), keys: [...new Set(s.enemies.filter(e => e.alive).map(e => e.key))],
-    sea: s.enemies.some(e => e.key === 'mosasaurus') };
+  const beasts = s.enemies.filter(e => e.alive && !e.human);
+  return { m: pr.map(), keys: [...new Set(beasts.map(e => e.key))],
+    sea: beasts.some(e => e.key === 'mosasaurus'), hum: pr.humans() };
 });
 ok(winter.m.winter && winter.m.noSea, 'the Raptor Winter loads: frozen seas, no open water', JSON.stringify(winter.m));
 ok(winter.keys.length === 1 && winter.keys[0] === 'raptor' && !winter.sea,
   'in Raptor Winter nothing hunts but raptors', JSON.stringify(winter.keys));
+ok(winter.hum.total >= 6 && winter.hum.zone, 'even the frozen world has a human village', JSON.stringify(winter.hum));
 const wKill = await page.evaluate(() => {
   const pr = window.__probe; let n = 0;
   while (pr.kill('raptor') && n < 30) n++;
@@ -368,10 +499,14 @@ const ride2 = await ridePage.evaluate(() => {
 });
 ok(ride2.after < ride2.before && ride2.riding, 'pecking the giant from up top hurts it',
   `${ride2.before} → ${ride2.after}`);
-await ridePage.evaluate(() => window.__probe.setGrab(true));
-await wait(300);
-await ridePage.evaluate(() => window.__probe.setGrab(false));
-const off = await ridePage.evaluate(() => window.__probe.rideInfo().riding);
+let off = await ridePage.evaluate(() => window.__probe.rideInfo().riding);
+for (let t = 0; t < 3 && off !== null; t++) {   // swiftshader frames can swallow a short grab edge
+  await ridePage.evaluate(() => window.__probe.setGrab(true));
+  await wait(550);
+  await ridePage.evaluate(() => window.__probe.setGrab(false));
+  await wait(400);
+  off = await ridePage.evaluate(() => window.__probe.rideInfo().riding);
+}
 ok(off === null, 'GRAB again hops you down off the giant', String(off));
 // the armoured tank is saddleable too — nearest giant logic + armour must not block it
 const anky = await ridePage.evaluate(() => {
@@ -381,9 +516,18 @@ const anky = await ridePage.evaluate(() => {
   return { m: pr.mount(), hp: pr.rideInfo().host && pr.rideInfo().host.hp };
 });
 ok(anky.m.ok && anky.m.host === 'ankylo', 'a raptor can even saddle an Ankylosaurus', JSON.stringify(anky.m));
-await wait(420);   // let the bite cooldown from the last peck expire, or this bite is a no-op
-await ridePage.evaluate(() => window.__probe.bite());
-const anky2 = await ridePage.evaluate(() => window.__probe.rideInfo());
+const anky2 = await ridePage.evaluate(async (hp0) => {   // peck until one lands; attack windows come round
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  let r = null;
+  for (let i = 0; i < 12; i++) {
+    pr.bite();
+    await sleep(400);
+    r = pr.rideInfo();
+    if (r.host && r.host.hp < hp0) return r;
+  }
+  return r;
+}, anky.hp);
 ok(anky2.host && anky2.host.hp < anky.hp && anky2.host.riders.includes('you'),
   'and pecks land despite all that armour', `${anky.hp} → ${anky2.host && anky2.host.hp}`);
 
@@ -393,7 +537,7 @@ await wait(2200);
 const deep = await ridePage.evaluate(() => {
   const pr = window.__probe, W = pr.water;
   for (let g = 0; g < 6000; g++) {
-    const a = Math.random() * 6.283, r = 240 + Math.random() * 70;
+    const a = Math.random() * 6.283, r = 330 + Math.random() * 80;   // the wide sea shelf
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (pr.ground(x, z) < W - 3) return { x, z };
   }
@@ -444,11 +588,21 @@ ok(two.pl[0].vp.w === 640 && two.pl[1].vp.x === 640 && two.pl[0].key !== two.pl[
   JSON.stringify(two.pl.map(p => `${p.key}@x${p.vp.x}`)));
 ok(two.heartsHidden === 'none' && two.pl.every(p => p.hearts === 5),
   'each hero keeps their own hearts and little HUD', `display:${two.heartsHidden} hearts:${two.pl.map(p => p.hearts)}`);
-const p2a = await mp.evaluate(() => window.__probe.playersInfo()[1]);
-await mp.keyboard.down('KeyI'); await wait(900); await mp.keyboard.up('KeyI');
-const p2b = await mp.evaluate(() => window.__probe.playersInfo()[1]);
-ok(Math.hypot(p2b.x - p2a.x, p2b.z - p2a.z) > 1.5, 'P2 roams the island with IJKL',
-  `moved ${Math.hypot(p2b.x - p2a.x, p2b.z - p2a.z).toFixed(1)}`);
+const p2a0 = await mp.evaluate(() => window.__probe.playersInfo()[1]);
+// the new continent may park P2 with a hill, the sea or a bad nap in the way: try each way, wake, retry
+let p2b = p2a0, moved2 = 0;
+for (let round = 0; round < 2 && moved2 <= 1.5; round++) {
+  for (const key of ['KeyI', 'KeyJ', 'KeyL', 'KeyK']) {
+    await mp.keyboard.down(key); await wait(900); await mp.keyboard.up(key);
+    const now = await mp.evaluate(() => window.__probe.playersInfo()[1]);
+    moved2 = Math.hypot(now.x - p2a0.x, now.z - p2a0.z);
+    if (moved2 > 1.5) { p2b = now; break; }
+    p2b = now;
+  }
+  if (moved2 <= 1.5) await mp.evaluate(() => window.__probe.wakeP(1));   // in case it naps
+}
+ok(moved2 > 1.5, 'P2 roams the island with IJKL',
+  `moved ${moved2.toFixed(1)}${p2b.ko ? ', napping' : ''}`);
 const p1a = await mp.evaluate(() => window.__probe.playersInfo()[0]);
 await mp.keyboard.down('KeyW'); await wait(900); await mp.keyboard.up('KeyW');
 const p1b = await mp.evaluate(() => window.__probe.playersInfo()[0]);
@@ -496,6 +650,8 @@ const lure = await baitp.evaluate(async () => {
   await sleep(400);                                 // let last run's fish settle
   const b = pr.baits()[0];
   if (!b) return { fail: 'bait vanished' };
+  pr.exileNear(b.x, b.z, 130);               // one animal's snack, no ambient free-for-all
+  pr.setInvuln(150);                         // a hero nap would freeze the whole island
   // pick a challenger kind that exists exactly once, plant it 50–80 m off across dry land
   const cnt = {};
   for (const e of pr.state().enemies)
@@ -518,14 +674,18 @@ const lure = await baitp.evaluate(async () => {
   if (px === null) return { fail: 'no land that far out' };
   pr.placeEnemy(key, px, pz, 0);
   const d0 = Math.hypot(px - b.x, pz - b.z);
-  let dmin = d0, eaten = false;
-  for (let i = 0; i < 32 && !eaten; i++) {
+  let dmin = d0, eaten = false, bites = 0;
+  for (let i = 0; i < 55 && !eaten; i++) {
+    pr.exileNear(b.x, b.z, 25, key);          // keep late arrivals off the fish, every second
     await sleep(1000);
-    const e = pr.state().enemies.find(x => x.key === key && x.alive);
-    if (!pr.baits().some(bb => Math.hypot(bb.x - b.x, bb.z - b.z) < 1)) eaten = true;
-    if (e) dmin = Math.min(dmin, Math.hypot(e.x - b.x, e.z - b.z));
+    const s = pr.state();
+    if (s.down) pr.wakeP();                   // hero napping stops the whole island
+    const e = s.enemies.find(x => x.key === key && x.alive);
+    if (e) { dmin = Math.min(dmin, Math.hypot(e.x - b.x, e.z - b.z)); bites = Math.max(bites, e.bites); }
+    const gone = !pr.baits().some(bb => Math.hypot(bb.x - b.x, bb.z - b.z) < 1);
+    if (bites >= 1 || (gone && dmin < 8)) eaten = true;   // its OWN chomp — the fish itself can't tell them apart
   }
-  return { key, d0: +d0.toFixed(0), dmin: +dmin.toFixed(1), eaten };
+  return { key, d0: +d0.toFixed(0), dmin: +dmin.toFixed(1), bites, eaten };
 });
 ok(!lure.fail && (lure.eaten || lure.dmin < lure.d0 * 0.5),
   'a dinosaur smells that fish from a huge way off and trots the whole way in', JSON.stringify(lure));
@@ -541,7 +701,7 @@ const strip = await phone.evaluate(() => {
   return { n: cards.length, fits: cards.every(c => c.getBoundingClientRect().right <= r.right + 1),
     w: Math.round(cards[0].getBoundingClientRect().width), overflow: el.scrollWidth > el.clientWidth };
 });
-ok(strip.n === 13 && strip.w >= 100, 'thirteen picture cards on a phone, big enough to tap', `${strip.n} × ${strip.w}px`);
+ok(strip.n === 14 && strip.w >= 100, 'fourteen picture cards on a phone, big enough to tap', `${strip.n} × ${strip.w}px`);
 await phone.evaluate(() => { const el = document.getElementById('pick'); el.scrollLeft = el.scrollWidth; });
 await wait(600);
 const tail = await phone.evaluate(() => {

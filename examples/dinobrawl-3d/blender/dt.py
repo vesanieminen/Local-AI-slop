@@ -920,12 +920,46 @@ def render_card2(key, yaw=-0.62, pitch=0.16, fit=0.9, out=None):
 
 
 
+# ---- patch FIX @tail-continuity ------------------------------------------
+
+def flare(name, k=0.5, win=0.28, depth=0.10):
+    """Bulge a tube's leading end outward around its own axis so a chain of
+    tubes reads as one continuous limb/tail instead of a bead chain. Call
+    after building, on each tube that plugs into the end of the one ahead."""
+    import mathutils
+    ob = bpy.data.objects[name]
+    for m in list(ob.modifiers):                      # bake subsurf first:
+        bpy.context.view_layer.objects.active = ob    # a live subsurf would
+        bpy.ops.object.modifier_apply(modifier=m.name)  # soak up the bulge
+    M = ob.matrix_world; Mi = M.inverted()
+    ws = [M @ v.co for v in ob.data.vertices]
+    xm = sum(w.x for w in ws)/len(ws)
+    Cf = mathutils.Vector((0, 0, 0)); Cb = mathutils.Vector((0, 0, 0)); nf = nb = 0
+    for w in ws:
+        if w.x > xm: Cf += w; nf += 1
+        else: Cb += w; nb += 1
+    if not nf or not nb: return
+    Cf /= nf; Cb /= nb
+    u = (Cb - Cf).normalized() * -1.0
+    proj = [(w - Cf).dot(u) for w in ws]
+    pmax = max(proj); pmin = min(proj); w0 = pmax - (pmax - pmin) * win
+    for v, w, p in zip(ob.data.vertices, ws, proj):
+        if p <= w0: continue
+        f = (p - w0) / (pmax - w0)
+        foot = Cf + u * p
+        w2 = foot + u * (f * depth) + (w - foot) * (1 + k * f)
+        v.co = Mi @ w2
+    ob.data.update()
+
+
 import sys as _sys
 if 'dt' not in _sys.modules or _sys.modules['dt'] is None:
-    import types as _t
-    _m = _t.ModuleType('dt')
-    _m.__dict__.update({k: v for k, v in globals().items() if not k.startswith('__')})
-    _sys.modules['dt'] = _m
+    import types as _types
+    _newmod = _types.ModuleType('dt')
+    _newmod.__dict__.update({k: v for k, v in globals().items() if not k.startswith('__')})
+    _sys.modules['dt'] = _newmod
 else:
     _sys.modules['dt'].__dict__.update({k: v for k, v in globals().items()
                                         if not k.startswith('__')})
+
+

@@ -65,6 +65,9 @@ for i in range(3):
                  "tail"+str(i+1), subsurf=1, prev_pt=(tp[i-1] if i else (-2.3,0,1.7)))
     dt.paint(tl, *P)
     prev = "tail"+str(i+1)
+# continuous tail: sleeve each segment over the one ahead of it
+for i in range(1, 4):
+    dt.flare("tailm" + str(i), 0.5)
 # thagomizer: two pairs of spikes on tail3
 for y, tag in ((-0.15,"L"), (0.15,"R")):
     s1 = dt.spike_line("spikem"+tag+"1", [(-4.35, y, 1.5),(-4.9, y*1.9, 2.25)], 0.085, "tail3", segs=5)

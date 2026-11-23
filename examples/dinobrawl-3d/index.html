@@ -238,6 +238,9 @@
      The plant-eaters just graze — they only ever fight back if you bite them first.
      The giants can't even see a raptor: play one, <b>JUMP</b> onto a giant's back with GRAB and
      peck it while it bucks and thunders trying to shake you off!
+      Every island has a <b>human village</b> — and you can play as one of them: pick the
+      <b>Human</b>, hold <b>GRAB</b> beside any dinosaur to <b>tame and ride</b> it, and its spears
+      will even defend the village from hungry dinosaurs… who happily eat the villagers too.
      Dinosaurs wade into water — but too deep drowns them, for you and for them (unless you ARE
      the Mosasaurus — the sea is your dinner plate).
      Hold <b>GRAB</b> next to a smaller dinosaur to clamp onto it and drag it around.
@@ -339,7 +342,8 @@ const SFX={
   roar(kind='trex'){const P={trex:[200,90,0.7,0.45,300],allo:[340,150,0.5,0.35,500],spino:[160,240,0.6,0.3,400],
     ankylo:[120,70,0.4,0.3,200],im:[150,60,0.9,0.5,260],dr:[90,45,1.1,0.55,180],
     raptor:[520,300,0.3,0.25,900],dilopho:[300,150,0.5,0.3,620],trike:[140,80,0.5,0.35,220],
-    stego:[110,60,0.5,0.3,180],diplodocus:[85,48,0.8,0.35,150],brachiosaurus:[58,34,1.3,0.4,100]}[kind]||[200,90,0.7,0.4];
+    stego:[110,60,0.5,0.3,180],diplodocus:[85,48,0.8,0.35,150],brachiosaurus:[58,34,1.3,0.4,100],
+    human:[620,380,0.35,0.22,1100],hunter:[560,330,0.4,0.25,950]}[kind]||[200,90,0.7,0.4,300];
     tone('sawtooth',P[0],P[1],P[2],P[3],0,P[4]);tone('sawtooth',P[0]*1.02,P[1]*0.97,P[2],P[3]*0.8,0.02,P[4]);
     hiss(P[1]*3,P[1],P[2]*0.8,P[3]*0.4,0,0.6);},
 };
@@ -353,8 +357,8 @@ function ambient(){try{const c=actx(),t=c.currentTime;const s=c.createBufferSour
    expedition re-rolls a seed, so the terrain, landmark names, decorations
    and challenger territories are new each run. The land is ringed by a wide
    sea with a shallow shelf and a proper deep beyond the drop-off. */
-const WORLD=720, HALF=WORLD/2, SEG=tier==='low'?144:224, WATER=0;
-const ISLE=235, SHELF=288, EDGE=HALF-22;      // coast ring, shelf-drop ring, play bounds
+const WORLD=1000, HALF=WORLD/2, SEG=tier==='low'?176:256, WATER=0;
+const ISLE=332, SHELF=404, EDGE=HALF-22;      // coast ring, shelf-drop ring, play bounds
 let terrainH=(x,z)=>0, ZONES=[], FLATNAME='', CAMP=[0,200], TERRITORY={}, curMap=null, WORLDSEED=0;
 const worldGroup=new THREE.Group();scene.add(worldGroup);
 const solids=[];
@@ -364,11 +368,58 @@ function putIM(im,k,x,y,z,rx,ry,rz,sx,sy,sz){
   _P.set(x,y,z);_E.set(rx,ry,rz);_Q.setFromEuler(_E);_S.set(sx,sy,sz);
   _M.compose(_P,_Q,_S);im.setMatrixAt(k,_M);}
 function islandBump(r){
-  return 7*Math.max(0,1-r/260)+3*Math.max(0,1-r/90);}
+  return 2.4*Math.max(0,1-r/330);}
+/* mountains you can actually point at: a few ridgelines per map, each a chain of
+   overlapping peaks — never one lonely lump in the middle of the island */
+function ridgedPeaks(nH){
+  const out=[];
+  for(let c=0;c<nH;c++){
+    const a=rand(0,6.283),d=rand(110,240);
+    const px=Math.cos(a)*d,pz=Math.sin(a)*d;
+    const dir=rand(0,6.283),len=rand(80,150),np=3+Math.floor(rand(0,3));
+    for(let k=0;k<np;k++){
+      const t=(np===1?0:(k/(np-1)-0.5))*len;
+      const mid=Math.abs(k-(np-1)/2)<0.75?1.25:1;
+      out.push({x:px+Math.cos(dir)*t+rand(-16,16),z:pz+Math.sin(dir)*t+rand(-16,16),
+        R:rand(30,48),H:rand(15,25)*mid});
+    }
+  }
+  return out;
+}
+/* the humans' home: a ring of round houses around a fire — every world has one */
+function villageDecor(height,cx,cz){
+  const HN=7;
+  const wallI=new THREE.InstancedMesh(new THREE.CylinderGeometry(1.15,1.3,1.5,7),
+    new THREE.MeshLambertMaterial({color:0xb59064}),HN),
+    roofI=new THREE.InstancedMesh(new THREE.ConeGeometry(1.8,1.35,7),
+    new THREE.MeshLambertMaterial({color:0x8a4a2e}),HN);
+  let placed=0,guard=0;
+  while(placed<HN&&guard++<500){
+    const a=(placed/HN)*6.283+rand(-0.3,0.3),d=rand(6.5,13.5);
+    const x=cx+Math.cos(a)*d,z=cz+Math.sin(a)*d,h=height(x,z);
+    if(h<0.7)continue;
+    putIM(wallI,placed,x,h+0.75,z,0,rand(0,6),0,1,1,1);
+    putIM(roofI,placed,x,h+2.05,z,0,rand(0,6),0,1,1,1);
+    solids.push({x,z,r:1.5});placed++;}
+  wallI.count=roofI.count=placed;worldGroup.add(wallI,roofI);
+  const fh=height(cx,cz);
+  const fire=new THREE.Mesh(new THREE.SphereGeometry(0.55,8,6),
+    new THREE.MeshLambertMaterial({color:0xff8a3c,emissive:0xd8480f}));
+  fire.scale.set(1,0.7,1);fire.position.set(cx,fh+0.36,cz);worldGroup.add(fire);
+  const stI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.34,0),
+    new THREE.MeshLambertMaterial({color:0x8f8a80}),8);
+  for(let k=0;k<8;k++){const a=k/8*6.283;
+    putIM(stI,k,cx+Math.cos(a)*1.2,fh+0.1,cz+Math.sin(a)*1.2,0,a,0,1,0.7,1);}
+  worldGroup.add(stI);
+}
 function islandFall(h,r){
-  h+=islandBump(r);
-  h-=(r-ISLE)*0.14;
-  if(r>SHELF)h-=(r-SHELF)*0.24;              // the drop-off: shelves into real deep ocean
+  h+=islandBump(r);                                   // a mild swell, not a mountain
+  if(r>ISLE-45){                                      // the inland keeps its shape; only the
+    const s=clamp((r-(ISLE-45))/75,0,1);              // last stretch of coast sinks to sea
+    h-=(h+0.7)*s;
+  }
+  if(r>ISLE+25)h-=(r-ISLE-25)*0.085;                  // a wide shallow shelf, gently deepening
+  if(r>SHELF)h-=(r-SHELF)*0.24;                       // the drop-off: shelves into real deep ocean
   return Math.max(-16,h);}
 /* deep water for the Mosasaurus: spiral the rings of sea outward until the
    floor drops properly — the channels between sandbanks come first on a beach */
@@ -410,30 +461,31 @@ const MAPS={
 forest(){
   const p=[...Array(8)].map(()=>rand(0,6.283));
   const f=[.008,.007,.019,.016,.042,.036,.0034,.003].map(v=>v*rand(0.85,1.15));
-  // pine ridges and mountains — proper height variation
-  const mts=[...Array(3)].map(()=>{const a=rand(0,6.283),d=rand(70,165);
-    return{x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(48,84),H:rand(9,15)};});
+  // broad flat valleys; the height lives in two ridgelines of stacked peaks
+  const mts=ridgedPeaks(2);
   // one forest lake sunk below sea level — shallow shores, deep middle
   let lx=0,lz=90,lh=1e9;
   for(let j=-6;j<=6;j++)for(let i=-6;i<=6;i++){
-    const x=i*26,z=j*26,r=Math.hypot(x,z);if(r<60||r>160)continue;
-    let base=6*Math.sin(x*f[0])*Math.cos(z*f[1])+3.4*Math.sin(x*f[2])*Math.sin(z*f[3])+4.2*Math.sin(x*f[6])*Math.cos(z*f[7]);
+    const x=i*34,z=j*34,r=Math.hypot(x,z);if(r<60||r>220)continue;
+    let base=3.2*Math.sin(x*f[0])*Math.cos(z*f[1])+1.8*Math.sin(x*f[2])*Math.sin(z*f[3])+2.2*Math.sin(x*f[6])*Math.cos(z*f[7]);
     if(base<lh){lh=base;lx=x;lz=z;}}
   const lake={x:lx,z:lz,R:rand(36,54),D:rand(7,10)};
   const height=(x,z)=>{const r=Math.hypot(x,z);
-    let h=6*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
-        +3.4*Math.sin(x*f[2]+p[2])*Math.sin(z*f[3]+p[3])
-        +1.6*Math.sin(x*f[4]+p[4])*Math.cos(z*f[5]+p[5])
-        +4.2*Math.sin(x*f[6]+p[6])*Math.cos(z*f[7]+p[7]);
+    let h=3.2*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
+        +1.8*Math.sin(x*f[2]+p[2])*Math.sin(z*f[3]+p[3])
+        +1.0*Math.sin(x*f[4]+p[4])*Math.cos(z*f[5]+p[5])
+        +2.2*Math.sin(x*f[6]+p[6])*Math.cos(z*f[7]+p[7]);
     for(const m of mts){const d=Math.hypot(x-m.x,z-m.z);h+=m.H*Math.exp(-d*d/(m.R*m.R*0.5));}
     const ld=Math.hypot(x-lake.x,z-lake.z);
     if(ld<lake.R*2.4)h-=lake.D*Math.exp(-ld*ld/(lake.R*lake.R*0.42));
     return islandFall(h,r);};
   const ga=rand(0,6.283),gd=rand(85,150),gx=Math.cos(ga)*gd,gz=Math.sin(ga)*gd;
   const m0=mts[0];
+  const humans=findSpot(height,(x,z,h)=>h>1&&h<5&&Math.hypot(x,z)>70,[rand(-180,180),rand(-180,180)],110);
   const zones=[{name:pickFrom(['PINE FOREST','THE DEEP PINES','MOSSY WOODS']),x:gx,z:gz,r:92},
                {name:pickFrom(['THE HIGHLANDS','BIG HILL','THE MOSS HILLS']),x:m0.x,z:m0.z,r:52},
-               {name:pickFrom(['DEEP LAKE','THE STILL WATER','FISH LAKE']),x:lake.x,z:lake.z,r:lake.R*1.4}];
+               {name:pickFrom(['DEEP LAKE','THE STILL WATER','FISH LAKE']),x:lake.x,z:lake.z,r:lake.R*1.4},
+               {name:pickFrom(['HUMAN VILLAGE','THE REED VILLAGE','SMOKE VILLAGE']),tag:'village',x:humans[0],z:humans[1],r:26}];
   const flat=pickFrom(['GRASSY FLATS','THE MEADOWS','GREEN VALLEY']);
   const gcol=new THREE.Color(0x2f6b34);
   const tint=(c,x,z)=>{const d=Math.hypot(x-gx,z-gz);
@@ -459,9 +511,10 @@ forest(){
     stego:findSpot(height,inGrove(60),[gx+38,gz+34],70),
     diplodocus:findSpot(height,(x,z,h)=>h>1.6&&h<4.5&&Math.hypot(x,z)>150,[-160,50],80),
     brachiosaurus:findSpot(height,(x,z,h)=>h>6&&Math.hypot(x,z)<210,[mts[1].x,mts[1].z],90),
-    mosasaurus:seaSpot(height)};
+    mosasaurus:seaSpot(height),humans};
   const camp=findSpot(height,(x,z,h)=>h>0.4&&h<3&&Math.hypot(x,z)>ISLE-80&&Math.hypot(x,z)<ISLE+16,[0,200],150);
   function decor(){
+    villageDecor(height,humans[0],humans[1]);
     // the pine grove — dense around the grove centre
     const tn=tier==='low'?150:340;
     const tA=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16,0.26,1.8,5),
@@ -479,7 +532,7 @@ forest(){
       solids.push({x,z,r:0.6*s});placed++;}
     tA.count=tB.count=placed;worldGroup.add(tA,tB);
     // island-wide trees + rocks — the whole continent gets forest
-    const trees=tier==='low'?260:620,rocks=tier==='low'?90:240;
+    const trees=tier==='low'?430:1150,rocks=tier==='low'?150:430;
     const bA=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14,0.22,1.6,5),
       new THREE.MeshLambertMaterial({color:0x6d4a2c}),trees),
       bB=new THREE.InstancedMesh(new THREE.ConeGeometry(1.25,2.6,6),
@@ -487,7 +540,7 @@ forest(){
       rI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.7,0),
       new THREE.MeshLambertMaterial({color:0x8b8377}),rocks);
     placed=0;guard=0;
-    while(placed<trees&&guard++<16000){
+    while(placed<trees&&guard++<30000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
       if(h<1.4||h>8.6||Math.hypot(x,z)>ISLE-10)continue;
       if(Math.hypot(x-camp[0],z-camp[1])<9)continue;
@@ -519,11 +572,11 @@ forest(){
       putIM(mcI,mc,x,h+0.44*s,z,0,0,0,s,s,s);mc++;}
     msI.count=mcI.count=mc;worldGroup.add(msI,mcI);
     // low bushes so the meadows feel alive
-    const bs=tier==='low'?120:300;
+    const bs=tier==='low'?180:480;
     const bshI=new THREE.InstancedMesh(new THREE.SphereGeometry(0.62,7,5),
       new THREE.MeshLambertMaterial({color:0x3f7a3a}),bs);
     let bp=0;guard=0;
-    while(bp<bs&&guard++<9000){
+    while(bp<bs&&guard++<13000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
       if(h<1.1||h>7.5||Math.hypot(x,z)>ISLE-8)continue;
       const s=rand(0.55,1.3);
@@ -532,20 +585,20 @@ forest(){
   }
   return{name:'PINE FOREST',height,zones,flat,flatAt:(x,z,h)=>h<-0.5?'THE GREEN BAY':null,
     pix,terr,camp,decor,
-    env:{sky:0x9fd8e8,fogCol:0x9fd8e8,far:640,sunCol:0xfff2cf,sunInt:1.7,sunPos:[60,90,30],
+    env:{sky:0x9fd8e8,fogCol:0x9fd8e8,far:880,sunCol:0xfff2cf,sunInt:1.7,sunPos:[60,90,30],
       hemiSky:0xffffff,hemiGnd:0x54703f,waterCol:0x3d8fb0,waterOp:0.72}};
 },
 /* ---------------------------------------------------- CRYSTAL CANYON -- */
 canyon(){
   const p=[...Array(6)].map(()=>rand(0,6.283));
   const f=[.0075,.0065,.009,.008,.016,.014].map(v=>v*rand(0.85,1.15));
-  const mesas=[...Array(4)].map(()=>{const a=rand(0,6.283),d=rand(40,150);
+  const mesas=[...Array(5)].map(()=>{const a=rand(0,6.283),d=rand(40,230);
     return{x:Math.cos(a)*d,z:Math.sin(a)*d,r:rand(28,46),h:rand(7,13)};});
-  const pools=[...Array(2)].map(()=>{const a=rand(0,6.283),d=rand(60,160);
+  const pools=[...Array(2)].map(()=>{const a=rand(0,6.283),d=rand(60,220);
     return{x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(26,40),D:rand(5,7.5)};});
   const height=(x,z)=>{const r=Math.hypot(x,z);
     let h=9.5+3*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
-         +1.8*Math.max(0,1-r/170);                     // gentle mesa dome
+         +1.8*Math.max(0,1-r/240);                      // gentle mesa dome
     const rx=Math.sin(x*f[2]+p[2])*Math.cos(z*f[3]+p[3])
             +0.5*Math.sin(x*f[4]+p[4])*Math.sin(z*f[5]+p[5]);
     const cut=clamp((0.3-Math.abs(rx))*12,0,1);
@@ -558,10 +611,12 @@ canyon(){
     return Math.max(-16,h);};
   const cave=findSpot(height,(x,z,h)=>h>1.4&&h<3&&Math.hypot(x,z)<190,[130,18],120);
   const m0=mesas[0];
+  const humans=findSpot(height,(x,z,h)=>h>1.2&&h<9&&Math.hypot(x,z)>90,[rand(-190,190),rand(-190,190)],120);
   const zones=[{name:pickFrom(['CRYSTAL CANYON','THE RED CANYON','WHISPER CANYON']),x:cave[0],z:cave[1],r:90},
                {name:pickFrom(['CAVE OF ECHOES','THE GLOW CAVE','THE DARK CAVE']),x:cave[0],z:cave[1],r:22},
                {name:pickFrom(['THE BIG MESA','SUNSET MESA','TALL ROCK']),x:m0.x,z:m0.z,r:32},
-               {name:pickFrom(['THE HIGH SPIRE','SKY NEEDLE','EAGLE ROCK']),x:mesas[1].x,z:mesas[1].z,r:26}];
+               {name:pickFrom(['THE HIGH SPIRE','SKY NEEDLE','EAGLE ROCK']),x:mesas[1].x,z:mesas[1].z,r:26},
+               {name:pickFrom(['HUMAN VILLAGE','CLIFF VILLAGE','FIRE PIT HAMLET']),tag:'village',x:humans[0],z:humans[1],r:26}];
   const flat=pickFrom(['DUSTY FLATS','THE PLATEAU','RED PLAINS']);
   const purp=new THREE.Color(0x8d6ab8);
   const tint=(c,x,z)=>{const d=Math.hypot(x-cave[0],z-cave[1]);
@@ -585,14 +640,15 @@ canyon(){
     stego:findSpot(height,(x,z,h)=>h>8&&Math.hypot(x,z)<210,[m0.x+24,m0.z+18],80),
     diplodocus:findSpot(height,(x,z,h)=>h>0.5&&h<2.6&&Math.hypot(x,z)>150,[-170,110],90),
     brachiosaurus:findSpot(height,(x,z,h)=>h>9&&Math.hypot(x,z)<220,[mesas[2].x,mesas[2].z],110),
-    mosasaurus:seaSpot(height)};
+    mosasaurus:seaSpot(height),humans};
   const camp=findSpot(height,(x,z,h)=>h>0.3&&h<3.5&&Math.hypot(x,z)<200,[cave[0]+8,cave[1]-8],90);
   function decor(){
+    villageDecor(height,humans[0],humans[1]);
     // boulders along the canyon walls
     const rockI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1,0),
-      new THREE.MeshLambertMaterial({color:0x8d6247}),90);
+      new THREE.MeshLambertMaterial({color:0x8d6247}),170);
     let rk=0,guard=0;
-    while(rk<90&&guard++<3000){
+    while(rk<170&&guard++<5000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
       if(h<2.2||h>4.4)continue;
       const s=rand(1.2,2.6);
@@ -620,13 +676,13 @@ canyon(){
     caveM.position.set(cave[0],height(cave[0],cave[1])+0.1,cave[1]);
     caveM.scale.set(1.25,0.9,1.05);worldGroup.add(caveM);
     // junipers on the plateau
-    const jn=tier==='low'?110:280;
+    const jn=tier==='low'?190:470;
     const jA=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.13,0.2,1.4,5),
       new THREE.MeshLambertMaterial({color:0x6b4f33}),jn),
       jB=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.1,0),
       new THREE.MeshLambertMaterial({color:0x4f6b45}),jn);
     let jp=0;guard=0;
-    while(jp<jn&&guard++<12000){
+    while(jp<jn&&guard++<19000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
       if(h<5.5||h>16)continue;
       if(Math.hypot(x-camp[0],z-camp[1])<9)continue;
@@ -669,7 +725,7 @@ canyon(){
   }
   return{name:'CRYSTAL CANYON',height,zones,flat,flatAt:(x,z,h)=>h<-0.2?'THE CANYON POOLS':null,
     pix,terr,camp,decor,
-    env:{sky:0xf2c496,fogCol:0xf2c496,far:700,sunCol:0xffdcae,sunInt:1.75,sunPos:[75,48,-35],
+    env:{sky:0xf2c496,fogCol:0xf2c496,far:880,sunCol:0xffdcae,sunInt:1.75,sunPos:[75,48,-35],
       hemiSky:0xffe6cc,hemiGnd:0x6b5335,waterCol:0x2f8fa0,waterOp:0.72}};
 },
 /* ------------------------------------------------------ SUNSET BEACH -- */
@@ -677,10 +733,14 @@ beach(){
   const p=[...Array(2)].map(()=>rand(0,6.283));
   const f=[0.012,0.0105];
   const blobs=[];
-  for(let k=0;k<3;k++){const a=rand(0,6.283),d=rand(25,115);
-    blobs.push({x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(58,96),H:rand(9.5,15)});}
-  for(let k=0;k<5;k++){const a=rand(0,6.283),d=rand(70,180);
+  for(let k=0;k<3;k++){const a=rand(0,6.283),d=rand(30,190);
+    blobs.push({x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(70,115),H:rand(8,12.5)});}
+  for(let k=0;k<6;k++){const a=rand(0,6.283),d=rand(90,240);
     blobs.push({x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(24,42),H:rand(4,7.5)});}
+  // the volcano and its little sibling cone
+  {const a=rand(0,6.283),d=rand(70,170),b=rand(0,6.283);
+   blobs.push({x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(20,28),H:rand(11,14.5)});
+   blobs.push({x:Math.cos(a)*d+Math.cos(b)*46,z:Math.sin(a)*d+Math.sin(b)*46,R:rand(14,20),H:rand(7,9.5)});}
   const lobe=blobs[0],lobe2=blobs[1];
   const lagoon={x:(lobe.x+lobe2.x)/2,z:(lobe.z+lobe2.z)/2,R:rand(34,50),D:rand(6,8.5)};
   const height=(x,z)=>{const r=Math.hypot(x,z);
@@ -690,17 +750,19 @@ beach(){
     const ld=Math.hypot(x-lagoon.x,z-lagoon.z);      // the big lagoon: shallow rim, deep heart
     if(ld<lagoon.R*2.6)h-=lagoon.D*Math.exp(-ld*ld/(lagoon.R*lagoon.R*0.5));
     if(h>0.2)h+=1.8*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1]);   // dunes
-    h-=Math.max(0,r-215)*0.13;
+    h-=Math.max(0,r-315)*0.13;
     if(r>SHELF)h-=(r-SHELF)*0.26;                    // drop-off into the deep
     return Math.max(-16,h);};
-  // the high point (where two islands overlap) is the volcano hill
+  // the high point (the volcano cone) is the volcano hill
   let vx=0,vz=0,vh=-99;
-  for(let j=-10;j<=10;j++)for(let i=-10;i<=10;i++){
-    const x=i*22,z=j*22,h=height(x,z);if(h>vh){vh=h;vx=x;vz=z;}}
+  for(let j=-11;j<=11;j++)for(let i=-11;i<=11;i++){
+    const x=i*28,z=j*28,h=height(x,z);if(h>vh){vh=h;vx=x;vz=z;}}
+  const humans=findSpot(height,(x,z,h)=>h>0.6&&h<5&&Math.hypot(x,z)>80,[rand(-200,200),rand(-200,200)],120);
   const zones=[{name:pickFrom(['THE LAGOON','BLUE LAGOON','SPLASH LAGOON']),x:lagoon.x,z:lagoon.z,r:66},
                {name:pickFrom(['PALM COVE','THE COVES','TURTLE SANDS']),x:lobe.x+lobe.R*0.7,z:lobe.z+lobe.R*0.4,r:50},
                {name:pickFrom(['VOLCANO HILL','SUNSET PEAK','THE HIGH NEST']),x:vx,z:vz,r:38},
-               {name:pickFrom(['OUTER REEF','THE SHALLOWS','CORAL FLATS']),x:-vx*0.9,z:-vz*0.9,r:44}];
+               {name:pickFrom(['OUTER REEF','THE SHALLOWS','CORAL FLATS']),x:-vx*0.9,z:-vz*0.9,r:44},
+               {name:pickFrom(['HUMAN VILLAGE','FISHING VILLAGE','PALM VILLAGE']),tag:'village',x:humans[0],z:humans[1],r:26}];
   const flat=pickFrom(['SILVERY SANDS','THE WHITE SHORES','WARM SANDS']);
   const tint=(c)=>c;
   const deepC=new THREE.Color(0x1e6f8c),shallowC=new THREE.Color(0x3fa8b8),
@@ -722,15 +784,16 @@ beach(){
     dr:[vx,vz],
     raptor:sand(blobs[2].x,blobs[2].z,blobs[2].R),
     dilopho:sand(blobs[4].x,blobs[4].z,blobs[4].R),
-    trike:findSpot(height,(x,z,h)=>h>0.5&&h<4.5&&Math.hypot(x,z)<200,[vx+50,vz+40],110),
-    stego:findSpot(height,(x,z,h)=>h>3&&h<10&&Math.hypot(x,z)<190,[blobs[1].x-34,blobs[1].z],110),
+    trike:findSpot(height,(x,z,h)=>h>0.5&&h<4.5&&Math.hypot(x,z)<300,[vx+70,vz+55],130),
+    stego:findSpot(height,(x,z,h)=>h>3&&h<10&&Math.hypot(x,z)<290,[blobs[1].x-34,blobs[1].z],130),
     diplodocus:sand(lobe.x,lobe.z+lobe.R*0.35,lobe.R*0.8),
-    brachiosaurus:findSpot(height,(x,z,h)=>h>5&&Math.hypot(x,z)<190,[vx-44,vz-40],110),
-    mosasaurus:seaSpot(height)};
+    brachiosaurus:findSpot(height,(x,z,h)=>h>5&&Math.hypot(x,z)<290,[vx-60,vz-54],130),
+    mosasaurus:seaSpot(height),humans};
   const camp=sand(lobe.x,lobe.z,lobe.R*0.9);
   function decor(){
+    villageDecor(height,humans[0],humans[1]);
     // palms all along the sand
-    const pl=tier==='low'?130:320;
+    const pl=tier==='low'?210:520;
     const pI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.11,0.2,3.4,5),
       new THREE.MeshLambertMaterial({color:0x8a6a3c}),pl),
       pfI=new THREE.InstancedMesh(new THREE.ConeGeometry(0.55,1.9,4),
@@ -749,7 +812,7 @@ beach(){
       solids.push({x,z,r:0.45});pc++;}
     pI.count=pc;pfI.count=pc*4;worldGroup.add(pI,pfI);
     // banyan trees inland
-    const bn=tier==='low'?90:230;
+    const bn=tier==='low'?150:390;
     const bA=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.24,0.4,2.2,6),
       new THREE.MeshLambertMaterial({color:0x6d4a2c}),bn),
       bB=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.9,0),
@@ -764,7 +827,7 @@ beach(){
       solids.push({x,z,r:0.7*s});bp++;}
     bA.count=bB.count=bp;worldGroup.add(bA,bB);
     // pink flower bushes + beach rocks
-    const fwN=tier==='low'?80:210;
+    const fwN=tier==='low'?130:340;
     const fwI=new THREE.InstancedMesh(new THREE.SphereGeometry(0.5,7,5),
       new THREE.MeshLambertMaterial({color:0xf08bb0,emissive:0x331018}),fwN);
     let fc=0;guard=0;
@@ -773,7 +836,7 @@ beach(){
       if(h<0.5||h<0||h>5)continue;
       const s=rand(0.5,1.1);putIM(fwI,fc,x,h+0.35*s,z,0,rand(0,6),0,s,s*0.8,s);fc++;}
     fwI.count=fc;worldGroup.add(fwI);
-    const rN=tier==='low'?34:80;
+    const rN=tier==='low'?60:150;
     const rI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.6,0),
       new THREE.MeshLambertMaterial({color:0x9a9282}),rN);
     let rp=0;guard=0;
@@ -786,26 +849,27 @@ beach(){
   }
   return{name:'SUNSET BEACH',height,zones,flat,flatAt:(x,z,h)=>h<-0.05?'THE SHALLOWS':null,
     pix,terr,camp,decor,
-    env:{sky:0xf7b988,fogCol:0xf0b184,far:760,sunCol:0xffc37e,sunInt:1.85,sunPos:[-70,34,-40],
+    env:{sky:0xf7b988,fogCol:0xf0b184,far:920,sunCol:0xffc37e,sunInt:1.85,sunPos:[-70,34,-40],
       hemiSky:0xffd7ae,hemiGnd:0x77624a,waterCol:0x3fa8b8,waterOp:0.66}};
 },
 /* ------------------------------------------------- Raptor Winter world -- */
 winter(){
   const p=[...Array(6)].map(()=>rand(0,6.283));
   const f=[.007,.006,.015,.013,.032,.028].map(v=>v*rand(0.85,1.15));
-  const peaks=[...Array(3)].map(()=>{const a=rand(0,6.283),d=rand(80,175);
-    return{x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(42,70),H:rand(13,20)};});
+  const peaks=ridgedPeaks(2);
   const height=(x,z)=>{const r=Math.hypot(x,z);
-    let h=5*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
-        +2.6*Math.sin(x*f[2]+p[2])*Math.sin(z*f[3]+p[3])
-        +1.4*Math.sin(x*f[4]+p[4])*Math.cos(z*f[5]+p[5])
-        +5.5*Math.sin(x*0.0036+p[0])*Math.cos(z*0.0031+p[2]);
+    let h=3.2*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
+        +1.7*Math.sin(x*f[2]+p[2])*Math.sin(z*f[3]+p[3])
+        +1.0*Math.sin(x*f[4]+p[4])*Math.cos(z*f[5]+p[5])
+        +3.6*Math.sin(x*0.0028+p[0])*Math.cos(z*0.0024+p[2]);
     for(const m of peaks){const d=Math.hypot(x-m.x,z-m.z);h+=m.H*Math.exp(-d*d/(m.R*m.R*0.45));}
     return islandFall(h,r);};
   const m0=peaks[0];
-  const zones=[{name:pickFrom(['THE WHITE WASTE','FROSTFALL','THE SNOW SEA']),x:0,z:0,r:120},
+  const humans=findSpot(height,(x,z,h)=>h>1&&h<8&&Math.hypot(x,z)>80,[rand(-190,190),rand(-190,190)],110);
+  const zones=[{name:pickFrom(['THE WHITE WASTE','FROSTFALL','THE SNOW SEA']),x:0,z:0,r:150},
                {name:pickFrom(['THE TEETH RIDGE','BONE RIDGE','GREY FANGS']),x:m0.x,z:m0.z,r:58},
-               {name:pickFrom(['THE FROZEN MIRE','ICE SHELL FLATS','CRACKED ICE']),x:-m0.x*0.6,z:-m0.z*0.6,r:56}];
+               {name:pickFrom(['THE FROZEN MIRE','ICE SHELL FLATS','CRACKED ICE']),x:-m0.x*0.6,z:-m0.z*0.6,r:56},
+               {name:pickFrom(['HUMAN VILLAGE','FUR VILLAGE','EMBER VILLAGE']),tag:'village',x:humans[0],z:humans[1],r:26}];
   const flat=pickFrom(['ENDLESS SNOW','THE COLD PLAIN','DEEP DRIFT']);
   const tint=(c)=>c;
   const snowA=new THREE.Color(0xeef4f8),snowB=new THREE.Color(0xcfdbe8),
@@ -817,21 +881,22 @@ winter(){
     else{c=snowB.clone().lerp(snowA,Math.abs(Math.sin(x*0.05)*Math.cos(z*0.055))*0.6);
       c.lerp(rockC,clamp((h-11)/9,0,1)*0.6);}
     tint(c,x,z);shade(c,x,z,0.03);return[c.r*255,c.g*255,c.b*255];};
-  const ridge=d=>(x,z,h)=>h>1&&h<14&&Math.hypot(x-m0.x,z-m0.z)<d;
-  const terr={raptor:findSpot(height,ridge(120),[m0.x,m0.z],110),
+  const ridge=d=>(x,z,h)=>h>1&&h<22&&Math.hypot(x-m0.x,z-m0.z)<d;
+  const terr={raptor:findSpot(height,ridge(150),[m0.x,m0.z],120),humans,
     mosasaurus:[0,0]};
   const camp=findSpot(height,(x,z,h)=>h>0.8&&h<6&&Math.hypot(x,z)<ISLE-30,[0,150],150);
   function decor(){
+    villageDecor(height,humans[0],humans[1]);
     // frosted black pines, sparse and shivering
-    const tn=tier==='low'?90:230;
+    const tn=tier==='low'?150:400;
     const tA=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14,0.24,2.2,5),
       new THREE.MeshLambertMaterial({color:0x3a2f28}),tn),
       tB=new THREE.InstancedMesh(new THREE.ConeGeometry(1.3,3.6,6),
       new THREE.MeshLambertMaterial({color:pineC}),tn);
     let placed=0,guard=0;
-    while(placed<tn&&guard++<9000){
+    while(placed<tn&&guard++<15000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
-      if(h<0.9||h>13||Math.hypot(x,z)>ISLE-12)continue;
+      if(h<0.9||h>16||Math.hypot(x,z)>ISLE-12)continue;
       if(Math.hypot(x-camp[0],z-camp[1])<9)continue;
       const s=rand(0.9,1.8);
       putIM(tA,placed,x,h,z,0,rand(0,6),0,s,s,1);
@@ -840,29 +905,29 @@ winter(){
     tA.count=tB.count=placed;worldGroup.add(tA,tB);
     // ice boulders and frozen bones of the old world
     const rI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.8,0),
-      new THREE.MeshLambertMaterial({color:0x8f97a6}),tier==='low'?60:160);
+      new THREE.MeshLambertMaterial({color:0x8f97a6}),tier==='low'?110:320);
     let rp=0;guard=0;
-    while(rp<rI.count&&guard++<6000){
+    while(rp<rI.count&&guard++<12000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
       if(h<0||h>15)continue;
       const s=rand(0.6,2);
       putIM(rI,rp,x,h-0.2*s,z,rand(0,1),rand(0,6),rand(0,1),s,s*rand(0.6,1),s);rp++;}
     rI.count=rp;worldGroup.add(rI);
     // dead trees — the forest that froze
-    const dn=tier==='low'?40:110;
+    const dn=tier==='low'?70:200;
     const dI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12,0.2,3,5),
       new THREE.MeshLambertMaterial({color:0x584a40}),dn);
     let dp=0;guard=0;
-    while(dp<dn&&guard++<5000){
+    while(dp<dn&&guard++<8000){
       const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
-      if(h<0.8||h>12||Math.hypot(x,z)>ISLE-10)continue;
+      if(h<0.8||h>15||Math.hypot(x,z)>ISLE-10)continue;
       const s=rand(0.8,1.5);
       putIM(dI,dp,x,h+1.3*s,z,rand(-0.12,0.12),rand(0,6),rand(-0.12,0.12),s,s,s);dp++;}
     dI.count=dp;worldGroup.add(dI);
   }
   return{name:'RAPTOR WINTER',height,zones,flat,flatAt:(x,z,h)=>h<-0.4?'THE FROZEN SEA':null,
     pix,terr,camp,decor,winter:true,noSea:true,
-    env:{sky:0xdfe9f2,fogCol:0xd8e4ee,far:560,sunCol:0xdfe8ff,sunInt:1.1,sunPos:[-40,70,60],
+    env:{sky:0xdfe9f2,fogCol:0xd8e4ee,far:700,sunCol:0xdfe8ff,sunInt:1.1,sunPos:[-40,70,60],
       hemiSky:0xe8f1fa,hemiGnd:0x93a4b8,waterCol:0xbcd8e6,waterOp:0.92}};
 },
 };
@@ -928,7 +993,14 @@ const SPECIES={
   im:    {name:'Indominus rex',hp:13,dmg:2,speed:7.0,run:10.0,aggro:38,atk:0.50,scale:1.02,reach:3.5,kind:'thero',col:'#aeb4c6',camo:true,sneak:true},
   dr:    {name:'Distortus rex',hp:16,dmg:2,speed:6.4,run:9.2,aggro:36,atk:0.65,scale:1.12,reach:3.8,kind:'thero',col:'#6c6f8a',stomp:true,brute:true,giant:true,saddle:3.1},
   mosasaurus:{name:'Mosasaurus',hp:20,dmg:2,speed:5.2,run:8.6,aggro:30,atk:0.42,scale:1.15,reach:3.6,kind:'marine',col:'#2f6478',sea:true,turn:2.2,drown:99},
+  /* the islanders: tiny, quick-witted, and fearless once their spears are out.
+     Villagers have no weapon — the game hides their spear joint. Hunters carry
+     one, hunt dinosaurs as a pack, and will even break a young giant to ride. */
+  human: {name:'Villager',hp:4,dmg:1,speed:5.4,run:7.4,aggro:0,atk:0.45,scale:1.0,reach:1.4,kind:'human',col:'#c98a4b',thin:true,noSpear:true,turn:6,drown:1.0,villager:true},
+  hunter:{name:'Human',hp:5,dmg:2,speed:6.0,run:8.2,aggro:16,atk:0.36,scale:1.0,reach:2.2,kind:'human',col:'#d0643a',thin:true,spear:true,tamer:true,rider:true,pack:true,coward:0.45,turn:6,drown:1.0},
 };
+/* species keys that reuse another model file */
+const ASSET={hunter:'human'};
 /* every island gets its own five challengers, rolled from that island's seed,
    so a new map means a new cast — and never two of the mountain-sized giants.
    The winter world is special: nothing lives there but raptors. */
@@ -962,7 +1034,8 @@ function zoneAt(x,z){
 const loader=new GLTFLoader();
 const geoCache={};
 async function loadSpecies(key){
-  if(!geoCache[key]){const g=await loader.loadAsync(`assets/${key}.glb`);geoCache[key]={scene:g.scene};}
+  const file=`assets/${ASSET[key]||key}.glb`;
+  if(!geoCache[key]){const g=await loader.loadAsync(file);geoCache[key]={scene:g.scene};}
   return geoCache[key];
 }
 const shadowG=new THREE.CircleGeometry(1,18).rotateX(-Math.PI/2);
@@ -978,6 +1051,8 @@ function makeChar(key){
     else joints[o.name]=o;
   });
   const root=new THREE.Group();          // outer: position+yaw only
+  if(sp.noSpear&&joints.spear){joints.spear.visible=false;
+    joints.spear.traverse(o=>{o.visible=false;});}   // villagers carry nothing but courage
   root.add(model);                       // model: pose pitch/roll/breathe/bob
   const shadow=new THREE.Mesh(shadowG,shadowM.clone());
   root.add(shadow);
@@ -1092,6 +1167,39 @@ function poseChar(ch,dt){
     M.position.y=(hurtK?Math.sin(ch.hurtT*40)*0.03:0)+0.12*stompLift;   // rises as the foot lifts, drops as it lands
     const bs=1+breath*0.010*(moving?0.3:1)+roarK*0.025;
     M.scale.set(s*(1+(bs-1)*0.5),s*bs,s*(1+(bs-1)*0.7));
+  } else if(sp.kind==='human'){
+    /* A person, not a dinosaur: upright stride with a real knee swing, arms
+       counter-swinging, and a spear arm that pulls back to throw and thrusts
+       on the strike. Villagers (spear hidden) just scurry with their hands. */
+    const A=(0.42+spdN*0.62)*(moving?1:0.04);
+    const sw=q=>Math.sin(q+0.4*Math.sin(q));
+    if(!J.legL)return;
+    J.legL.rotation.z=A*sw(p);
+    J.legR.rotation.z=A*sw(p+Math.PI);
+    let armL=-A*0.85*sw(p)-0.06, armR=-A*0.85*sw(p+Math.PI)-0.06;
+    ch.bob=moving?Math.abs(Math.sin(p))*(0.035+0.075*spdN):0;
+    let headY=ch.look.y*0.5-ch.yawLag*0.08, headZ=0;
+    if(ch.windup>0){                                   // draw back the spear arm
+      const w=1-ch.windup/ch.windupMax;
+      armR=lerp(armR,-1.15,w);armL=lerp(armL,0.5,w);
+      headZ=lerp(headZ,-0.14,w);
+    } else if(ch.strikeT>0){                           // and drive it through
+      const u=clamp(1-ch.strikeT/0.26,0,1);
+      armR=lerp(1.35,-0.1,easeOut(clamp(u*1.6,0,1)));armL=-0.4;
+      headZ=0.10*(1-u);
+    }
+    if(hurtK){armL-=0.5;armR-=0.5;headZ+=Math.sin(ch.hurtT*40)*0.12;}
+    if(roarK>0){armL=lerp(armL,2.4,roarK);armR=lerp(armR,2.4,roarK);}   // arms up, big shout
+    J.armL.rotation.z=armL;J.armR.rotation.z=armR;
+    J.head.rotation.y=headY;J.head.rotation.z=headZ;
+    // arms hang out to the sides a touch (the rig models them at the hips)
+    J.armL.rotation.x=0.10;J.armR.rotation.x=0.10;
+    M.rotation.z=-0.01+Math.sin(p)*0.02*(moving?1:0.25)
+                 +(hurtK?Math.sin(ch.hurtT*50)*0.06:0);
+    M.rotation.x=0;
+    M.position.y=hurtK?Math.sin(ch.hurtT*40)*0.03:0;
+    const bs=1+breath*0.016*(moving?0.3:1);
+    M.scale.set(s*(1+(bs-1)*0.5),s*bs,s*(1+(bs-1)*0.7));
   } else if(sp.kind==='marine'){
     /* Mosasaurus: whole-body swim wave down the tail, paddles steering,
        jaws gape wide for the snatch then slam shut */
@@ -1183,8 +1291,9 @@ function poseChar(ch,dt){
     M.position.y+=Math.abs(Math.sin(bk*13))*0.18;
     if(J.head)J.head.rotation.y+=Math.sin(bk*11)*0.35;
   }
-  if(ch.riding&&J.thighL){                               // rider: legs dangling along the flanks
-    J.thighL.rotation.z+=0.35;J.thighR.rotation.z+=0.35;
+  if(ch.riding&&(J.thighL||J.legL)){                     // rider: legs dangling along the flanks
+    const k=sp.kind==='human'?0.9:0.35;
+    (J.thighL||J.legL).rotation.z+=k;(J.thighR||J.legR).rotation.z+=k;
     if(J.shinL){J.shinL.rotation.z-=0.2;J.shinR.rotation.z-=0.2;}
   }
   if(J.frill){                                        // Dilophosaurus shows its colours
@@ -1236,10 +1345,16 @@ function poseDeath(ch,dt){
                  J.legFR.rotation.x=J.legBR.rotation.x=-0.5*fall;
                  J.legFL.rotation.z*=1-dt;J.legFR.rotation.z*=1-dt;
                  J.legBL.rotation.z*=1-dt;J.legBR.rotation.z*=1-dt;}
-  else if(J.thighL){J.thighL.rotation.z=lerp(J.thighL.rotation.z,0.5,buckle);    // knees give
-                    J.thighR.rotation.z=lerp(J.thighR.rotation.z,0.4,buckle);
-                    J.shinL.rotation.z=lerp(J.shinL.rotation.z,-0.85,buckle);
-                    J.shinR.rotation.z=lerp(J.shinR.rotation.z,-0.75,buckle);}
+  else if(J.thighL||J.legL){
+    const L=J.thighL||J.legL,R=J.thighR||J.legR;
+    L.rotation.z=lerp(L.rotation.z,0.5,buckle);    // knees give
+    R.rotation.z=lerp(R.rotation.z,0.4,buckle);
+    if(J.shinL){
+      J.shinL.rotation.z=lerp(J.shinL.rotation.z,-0.85,buckle);
+      J.shinR.rotation.z=lerp(J.shinR.rotation.z,-0.75,buckle);}
+    if(J.armL){J.armL.rotation.z=lerp(J.armL.rotation.z,0.8,buckle);
+               J.armR.rotation.z=lerp(J.armR.rotation.z,0.7,buckle);}   // arms flop forward
+  }
   if(J.neck)J.neck.rotation.z=lerp(J.neck.rotation.z,q?0:-0.5,buckle*0.8);       // neck goes limp
   for(let i=1;i<=3;i++){const j=J['neck'+i];if(j)j.rotation.z=lerp(j.rotation.z,0.5,buckle*0.8);}
   if(J.head)J.head.rotation.z=lerp(J.head.rotation.z,0.25,buckle*0.8);
@@ -1274,6 +1389,7 @@ let camYaw=0,camDrag=null;
    with its own camera, minimap and little HUD.                          */
 let nWant=1;
 const players=[];                      // players[0] is always the original `player`
+let spearVic=null,chompVic=null;       // victims pinned for the probe's spearTest / chompTest
 function makePm(ch,slot){
   return{slot,hearts:5,maxHearts:5,invulnT:0,roarGauge:1,roarCd:0,
     knockedOut:false,downT:0,ovWake:false,grabTarget:null,grabT:0,grabCd:0,
@@ -1342,7 +1458,7 @@ addEventListener('pointerup',()=>{IN.biteHeld=false;IN.grabHeld=false;});
 bindBtn('roarB',()=>IN.roar=true);
 const muteB=document.getElementById('muteB');
 const grabBtn=document.getElementById('grabB');
-function grabLbl(ch){grabBtn.textContent=ch&&ch.sp.rider?'JUMP':'GRAB';}
+function grabLbl(ch){grabBtn.textContent=ch&&ch.sp.tamer?'MOUNT':ch&&ch.sp.rider?'JUMP':'GRAB';}
 muteB.addEventListener('pointerdown',e=>{e.preventDefault();toggleMute();});
 function toggleMute(){muted=!muted;if(AU.mg)AU.mg.gain.value=muted?0:0.5;muteB.textContent=muted?'♪×':'♪';}
 if(muted)muteB.textContent='♪×';
@@ -1446,7 +1562,28 @@ function spawnAmbientLife(){
 function spawnAmbientOne(key,i,hint){
   const e=spawnWild(key,i,hint);
   e.counted=true;                       // never part of the challenge, never on the compass
+  if(SPECIES[key].kind==='human'){      // people keep their berries to themselves
+    e.remove=()=>{scene.remove(e.root);const j=enemies.indexOf(e);if(j>=0)enemies.splice(j,1);};}
   return e;
+}
+/* every world has people: villagers round the fire, spear-hunters in a war party
+   near the village, and one small band daring the far side of the island */
+function spawnHumanPacks(){
+  if(curMap&&curMap.noHumans)return;
+  const base=TERRITORY.humans||[0,0];
+  const dry=(x,z,hh)=>hh>0.8;
+  for(let i=0;i<(tier==='low'?3:4);i++){
+    const h=findSpot(terrainH,dry,[base[0]+Math.cos(i*2.2)*9,base[1]+Math.sin(i*2.2)*9],16);
+    spawnAmbientOne('human',i,h);
+  }
+  for(let i=0;i<(tier==='low'?3:5);i++){
+    const a=rand(0,6.283),r=rand(18,55);
+    const h=findSpot(terrainH,dry,[base[0]+Math.cos(a)*r,base[1]+Math.sin(a)*r],30);
+    spawnAmbientOne('hunter',i,h);
+  }
+  const a=rand(0,6.283),r=Math.sqrt(rand(0,1))*(ISLE-70);
+  const far=findSpot(terrainH,dry,[Math.cos(a)*r,Math.sin(a)*r],80);
+  for(let i=0;i<2;i++)spawnAmbientOne('hunter',i+1,far);
 }
 function spawnEnemies(){
   if(curMap&&curMap.winter){            // the winter world: only raptors, and they hunt in packs
@@ -1462,6 +1599,7 @@ function spawnEnemies(){
       const hint=findSpot(terrainH,(x,z,h)=>h>0.8,[Math.cos(a)*r,Math.sin(a)*r],80);
       spawnWild('raptor',i+3,hint);
     }
+    spawnHumanPacks();                  // the fur-village stands even here
     return;
   }
   for(const key of CAST){
@@ -1472,6 +1610,7 @@ function spawnEnemies(){
   if(!players.some(p=>p.key==='mosasaurus'))spawnSea();   // every island has something huge in the sea —
                                                           // unless a hero IS the one huge thing in the sea
   spawnAmbientLife();                          // plus herds roaming the world
+  spawnHumanPacks();                           // and people: the village and its hunters
 }
 function spawnSea(){                           // the Mosasaurus: born to the deep water
   if(curMap&&curMap.noSea)return null;         // frozen worlds keep the sea empty
@@ -1510,12 +1649,13 @@ function scatterSnacks(n){const H=ISLE-30;
 /* ============================== game state =========================== */
 let player=null, started=false, launching=false, roarGauge=1, hearts=5, maxHearts=5, roarCd=0, won=false;
 let menuOpen=false, pickKey='trex';
-const PICKABLE=['trex','raptor','dilopho','allo','spino','trike','stego','ankylo','diplodocus','brachiosaurus','im','dr','mosasaurus'];
+const PICKABLE=['trex','raptor','dilopho','allo','spino','trike','stego','ankylo','diplodocus','brachiosaurus','im','dr','mosasaurus','hunter'];
 const PICKTAG={trex:'the balanced hero',allo:'fast but squishy',spino:'big tail swish!',
   ankylo:'armored tank',im:'nearly invisible',dr:'strongest of all',
   raptor:'tiny — JUMP on giants!',dilopho:'spits gooey venom!',trike:'horns and a charge',
   stego:'thagomizer!',diplodocus:'huge whip tail',brachiosaurus:'GIANT stomp + tail spin',
-  mosasaurus:'king of the sea — ROAR hauls bait ashore!'};
+  mosasaurus:'king of the sea — ROAR hauls bait ashore!',
+  hunter:'tiny — but GRAB tames and RIDES anything!'};
 // your own kind never counts against you: goal = challengers that aren't any hero.
 // (In the winter world the raptors are hungry — they'll even eat their own.)
 const goalKeys=()=>curMap&&curMap.winter?CAST.slice():CAST.filter(k=>!players.some(p=>p.key===k));
@@ -1535,7 +1675,7 @@ function buildPicker(el,mode){
   for(const k of PICKABLE){const sp=SPECIES[k];
     const b=document.createElement('button');
     b.className='pcard'+(k===pickKey?' sel':'');b.dataset.k=k;
-    b.innerHTML=`<img src="assets/select/${k}.png" alt="${sp.name}" draggable="false"><b>${sp.name}</b><small>${PICKTAG[k]}</small>`;
+    b.innerHTML=`<img src="assets/select/${ASSET[k]||k}.png" alt="${sp.name}" draggable="false"><b>${sp.name}</b><small>${PICKTAG[k]}</small>`;
     b.addEventListener('click',()=>{
       if(mode==='start'){setPick(k);SFX.roar(k);}
       else{if(k!==player.key)switchSpecies(k);closeMenu();}});
@@ -1784,7 +1924,7 @@ function strikeHits(ch,e,move){
 }
 /* how ready a dinosaur is to pick a fight: plant-eaters graze peacefully and
    only ever attack after you hurt them, and venom makes even a hunter sloppy and shy */
-const aggroR=e=>e.sp.aggro*((e.sp.herb&&!e.angry)?0:1)*(e.poisonT>0?0.55:1);
+const aggroR=e=>e.sp.aggro*((e.sp.herb&&!e.angry)?0:1)*(e.poisonT>0?0.55:1)*(e.tamed?0:1);
 const poisK=ch=>ch.poisonT>0?0.72:1;
 const flare=(ch,t)=>{ch.flareT=Math.max(ch.flareT||0,t);};   // Dilophosaurus fans its frill
 function goreHit(e){                                        // Triceratops ends a charge with the horns
@@ -1812,15 +1952,23 @@ function nearestGiant(ch,range){
   }
   return best;
 }
-function mountHost(host,rider){
-  if(!host||!host.alive||!rider||!rider.alive||!host.sp.giant||rider.riding||rider.sp.sea||host===rider)return false;
+function mountHost(host,rider,tame){
+  if(!host||!host.alive||!rider||!rider.alive||(!tame&&!host.sp.giant)||(tame&&host.sp.huge)
+     ||host.sp.sea||rider.riding||rider.sp.sea||host===rider)return false;
   host.riders.push(rider);rider.riding=host;
   rider.yaw=host.yaw;rider.lastYaw=host.yaw;rider.yawLag=0;
   rider.state='ride';rider.windup=0;rider.cool=0;rider.fear=0;rider.peckCd=0.6;rider.rideHop=0.55;
   if(grabTarget===rider)releaseGrab(null);
-  host.shakeT=Math.max(host.shakeT||0,rand(4.5,8));host.angry=true;host.prevAgg=1;host.state='shake';
-  if(rider.isPlayer)toast(`You leapt onto the ${host.sp.name}'s back! BITE to hurt it!`,2400);
-  else if(host.isPlayer)toast(`A raptor leapt onto your back! Run and buck to shake it off!`,2400);
+  if(tame){                                            // broken to the saddle: calm and obedient
+    host.tamed=true;host.controlled=!!rider.isPlayer;
+    host.angry=false;host.prevAgg=0;host.shakeT=0;host.fear=0;host.state='idle';
+    if(rider.isPlayer)toast(`You tamed the ${host.sp.name}! WASD rides it, GRAB hops off, BITE strikes!`,3400);
+    else toast(`The ${host.sp.name} now carries its hunter.`);
+  }else{
+    host.shakeT=Math.max(host.shakeT||0,rand(4.5,8));host.angry=true;host.prevAgg=1;host.state='shake';
+    if(rider.isPlayer)toast(`You leapt onto the ${host.sp.name}'s back! BITE to hurt it!`,2400);
+    else if(host.isPlayer)toast(`A raptor leapt onto your back! Run and buck to shake it off!`,2400);
+  }
   SFX.bite();flare(rider,0.7);
   return true;
 }
@@ -1828,6 +1976,7 @@ function unmountRider(rider,flung){
   const host=rider.riding;if(!host)return;
   const i=host.riders.indexOf(rider);if(i>=0)host.riders.splice(i,1);
   rider.riding=null;
+  if(host.tamed){host.controlled=false;host.state='idle';}
   const lim=ISLE-14;
   if(flung&&host.alive){
     const a=host.yaw+rand(-1.2,1.2);
@@ -1852,6 +2001,25 @@ function unmountRider(rider,flung){
 function stepRider(r,dt){                                    // hard-saddled to the giant's back
   const h=r.riding;
   if(!h||!h.alive){unmountRider(r,false);return;}
+  if(h.tamed&&h.controlled&&r.isPlayer){            // you wear the saddle: YOU steer the mount
+    const mx=IN.move.x,my=IN.move.y,mag=Math.hypot(mx,my);
+    if(mag>0.12){
+      const pcam=r.pm?r.pm.cam:camera;
+      const fx=r.x-pcam.position.x,fz=r.z-pcam.position.z;
+      const fl=Math.hypot(fx,fz)||1;
+      const dirx=(fx/fl)*my-(fz/fl)*mx,dirz=(fz/fl)*my+(fx/fl)*mx;
+      const finalA=Math.atan2(-dirz,dirx);
+      h.yaw+=clamp(angDiff(finalA,h.yaw),-2.1*dt,2.1*dt);
+      const wade=terrainH(h.x,h.z)<WATER-0.15?0.62:1;
+      const spd=h.sp.run*(mag>0.8?1:0.62)*wade*poisK(h);
+      const nx=h.x+Math.cos(h.yaw)*spd*dt,nz=h.z-Math.sin(h.yaw)*spd*dt;
+      if(terrainH(nx,nz)>WATER-drownLimit(h)*0.8&&Math.hypot(nx,nz)<EDGE){h.x=nx;h.z=nz;h.speed=spd;}
+      else h.speed*=0.9;
+    } else h.speed*=0.88;
+    h.y=terrainH(h.x,h.z);
+    h.fear=0;h.windup=0;h.state='ride';
+    r.yaw=h.yaw;
+  }
   // Model centre ≈ mid-back: pin the raptor on the spine just behind the
   // shoulders. Hard-attach — a position lerp always trails the host's turns
   // and reads as sliding around off the back. tall/len are world units already.
@@ -2001,7 +2169,8 @@ function kill(ch){
       else toast(`${ch.sp.name} down!`);
     }
     if(ch.sp.sea){ch.respawnAt=performance.now()+45000;ch.remove=()=>{};}  // the sea always refills
-    else ch.respawnAt=0;
+    else if(ch.sp.kind==='human'){ch.respawnAt=performance.now()+45000;ch.remove=()=>{};}
+    else ch.respawnAt=0;                         // the village regrows; a body waits by the fire
   }
 }
 const defeated=new Set();
@@ -2128,6 +2297,7 @@ function newExpedition(k,seed,keepPlayer,newKey){
   defeated.clear();won=false;curZone=null;
   for(const e of[...enemies])scene.remove(e.root);
   enemies.length=0;
+  spearVic=null;chompVic=null;                  // the world reset takes the test critters with it
   for(const v of[...venom])scene.remove(v.m);
   venom.length=0;
   for(const b of[...baits])scene.remove(b.m);
@@ -2151,9 +2321,32 @@ function newExpedition(k,seed,keepPlayer,newKey){
 
 function playerBite(){
   if(!player.alive||player.atkT>0||player.windup>0)return;
-  if(player.riding){                                   // pecking the giant's back from up top
+  if(player.riding){
+    const h=player.riding;
+    if(h.tamed){                                  // your mount bites where you point it
+      let aid=null,ad=1e9;
+      for(const e of enemies){if(!e.alive||e===h||e.tamed)continue;
+        const d=Math.hypot(e.x-h.x,e.z-h.z);
+        if(d<strikeR(h)*1.6&&d<ad){ad=d;aid=e;}}
+      const move=atkMoveOf(h,aid);
+      player.atkT=Math.max(h.sp.atk,0.4);player.state='attack';player.strikeT=0.3;
+      h.x+=Math.cos(h.yaw)*0.5;h.z-=Math.sin(h.yaw)*0.5;
+      let hit=false;
+      for(const e of enemies){
+        if(!e.alive||e===h||e.tamed||!strikeHits(h,e,move))continue;
+        hit=true;hurt(e,h.sp.dmg,h.x,h.z);
+        if(move==='gore'){const a=Math.atan2(-(e.z-h.z),e.x-h.x);
+          e.x+=Math.cos(a)*2.4;e.z-=Math.sin(a)*2.4;}
+      }
+      if(hit){SFX.chomp();roarGauge=clamp(roarGauge+0.09,0,1);
+        if(Math.random()<0.16&&performance.now()-lastPraise>4200){lastPraise=performance.now();
+          toast(PRAISE[Math.floor(Math.random()*PRAISE.length)],1400);}}
+      else SFX.bite();
+      return;
+    }
+    // pecking the giant's back from up top
     player.atkT=0.35;player.strikeT=0.2;player.state='attack';SFX.chomp();
-    hurt(player.riding,player.sp.dmg,player.x,player.z);
+    hurt(h,player.sp.dmg,player.x,player.z);
     roarGauge=clamp(roarGauge+0.05,0,1);
     return;
   }
@@ -2281,6 +2474,26 @@ function tryMountPlayer(){                           // raptor: GRAB near a gian
   player.yaw=Math.atan2(-(g.z-player.z),g.x-player.x);
   return mountHost(g,player);
 }
+/* the human's trick: stand beside any land dinosaur that isn't mountain-sized,
+   hold GRAB, and the little islander climbs in and takes the reins. Tamed ones
+   never buck, never fear your ROAR, and strike whatever you BITE at. */
+function tryTameMount(){
+  if(!player.sp.tamer||player.riding||grabCd>0||grabTarget)return false;
+  let best=null,bd=6.5+bodyR(player),own=null,od=9;
+  for(const e of enemies){
+    if(!e.alive||e.sp.sea||e.sp.huge||e.swallowed||e.grabbed||e.riders.length||e.sp.kind==='human')continue;
+    const d=Math.hypot(e.x-player.x,e.z-player.z);
+    if(e.tamed){if(d<od){od=d;own=e;continue;}}
+    if(d<bd&&inFront(player,e,3.4)){bd=d;best=e;}}
+  if(best){
+    player.yaw=Math.atan2(-(best.z-player.z),best.x-player.x);
+    return mountHost(best,player,true);
+  }
+  if(own){                                          // your own mount wandered off: climb back on
+    player.yaw=Math.atan2(-(own.z-player.z),own.x-player.x);
+    return mountHost(own,player,true);}
+  return false;
+}
 function stepGrab(dt,want){
   if(!player||!player.alive){releaseGrab(null);return;}
   if(grabTarget){
@@ -2289,7 +2502,7 @@ function stepGrab(dt,want){
     if(!want||!v.alive||v.swallowed||grabT>8||d>4.2+bodyR(v))
       releaseGrab(!v.alive||v.swallowed?'':(want?'It slipped away!':'Let go!'));
   }
-  if(want&&!grabTarget&&grabCd<=0&&!tryGrab())grabCd=0.45;
+  if(want&&!grabTarget&&grabCd<=0&&!player.riding&&!tryGrab())grabCd=0.45;
   grabCd=Math.max(0,grabCd-dt);
   if(grabTarget){
     grabT+=dt;
@@ -2426,6 +2639,12 @@ function stepEnemyAI(e,dt){
     e.state='ride';stepRider(e,dt);poseChar(e,dt);
     e.shadow.visible=false;
     e.root.position.set(e.x,e.y,e.z);e.root.rotation.y=e.yaw;return;}
+  if(e.tamed&&e.controlled&&e.riders.length){        // a hero is steering this one right now:
+    e.state='ride';stepDrown(e,dt,false);            // no mind of its own, no bucking either
+    if(e.alive===false)return;
+    poseAndPlace(e,dt);return;}
+  if(e.tamed&&!e.riders.length)e.controlled=false;   // unhitched: back to being a wild animal
+  if(e.sp.kind==='human'){stepHumanAI(e,dt);return;} // people think differently to dinosaurs
   if(e.riders&&e.riders.length){                   // a big one with riders: buck until they fly
     shakeStep(e,dt);poseAndPlace(e,dt);return;}
   stepDrown(e,dt,false);
@@ -2559,7 +2778,8 @@ function stepEnemyAI(e,dt){
     e.yaw+=clamp(angDiff(toG,e.yaw),-(e.sp.turn||4)*dt,(e.sp.turn||4)*dt);
     if(dg>e.sp.reach)walkToward(e,e.sp.run,g.x,g.z,dt);
     if(dg<e.sp.reach+2.6&&e.cool<=0&&Math.abs(angDiff(toG,e.yaw))<0.9)mountHost(g,e);
-  } else if(!giantBlind(e)&&dp<e.sp.aggro*1.8&&Math.abs(player.speed)<0.6&&e.key!=='dr'&&e.key!=='im'){
+  } else if(!giantBlind(e)&&dp<e.sp.aggro*1.8&&Math.abs(player.speed)<0.6&&e.key!=='dr'&&e.key!=='im'
+            &&!baitNear(e.x,e.z,BAIT_PULL)){   // …but not while there's a fish to get to
     e.state='watch';                                     // you stopped: it stops and stares
     e.yaw+=clamp(angDiff(Math.atan2(-(player.z-e.z),player.x-e.x),e.yaw),-1.5*dt,1.5*dt);
     if(Math.random()<dt*0.25)e.dispT=1.2;
@@ -2575,7 +2795,7 @@ function stepEnemyAI(e,dt){
         e.yaw+=clamp(angDiff(Math.atan2(-(bb.z-e.z),bb.x-e.x),e.yaw),-1.4*dt,1.4*dt);
         e.grazeT=Math.max(e.grazeT,0.8);      // the munch animation everyone already has
         e.baitCd=(e.baitCd||0)-dt;
-        if(e.baitCd<=0){e.baitCd=rand(0.9,1.6);bb.hp--;SFX.chomp();
+        if(e.baitCd<=0){e.baitCd=rand(0.9,1.6);bb.hp--;e.bites=(e.bites||0)+1;SFX.chomp();
           if(bb.hp<=0)toast('They got every last bite of the Mosasaurus\'s bait!');}
       }
     } else {
@@ -2632,7 +2852,7 @@ function walkToward(e,spd,tx,tz,dt,deep=false){
   const mv=Math.min(spd,10)*dt;
   const nx=e.x+Math.cos(e.yaw)*mv,nz=e.z-Math.sin(e.yaw)*mv;
   // cautious paths stop before chest-deep; committed charges wade in (and may drown)
-  const lim=deep?9:drownLimit(e)*0.8;
+  const lim=deep?9:(e.sp.kind==='human'?0.35:drownLimit(e)*0.8);   // people fear deep water
   if(terrainH(nx,nz)>WATER-lim&&Math.hypot(nx,nz)<EDGE){e.x=nx;e.z=nz;e.speed=spd;}
   else e.yaw+=rand(1.5,2.5);
 }
@@ -2643,6 +2863,135 @@ function flee(e,dt){
   const nx=e.x+Math.cos(a)*sp*dt,nz=e.z-Math.sin(a)*sp*dt;
   if(terrainH(nx,nz)>WATER-drownLimit(e)*0.7&&Math.hypot(nx,nz)<EDGE){e.x=nx;e.z=nz;}
   e.speed=sp;e.state='flee';
+}
+
+/* ============================== the humans ===========================
+   Villagers tend the fire and run screaming from anything with teeth.
+   Spear hunters are a war party on foot: they stick whatever dinosaur
+   they can reach, and a bold one may even leap on a giant's back and
+   ride it like a raptor does. Nobody, villager or hunter, survives
+   wading past their chest.                                             */
+function humanThreat(e){
+  const R=e.sp.villager?16:12;
+  let best=null,bd=R;
+  const scan=t=>{
+    if(!t||t===e||!t.alive||t.swallowed||t.riding)return;
+    if(t.sp.kind==='human')return;
+    if(t.sp.sea&&!wetAt(t.x,t.z))return;
+    if(t.sp.herb&&!t.angry)return;
+    const d=Math.hypot(t.x-e.x,t.z-e.z);
+    if(d<bd){bd=d;best=t;}};
+  for(const o of enemies)scan(o);
+  for(const pl of players)scan(pl);
+  return best;
+}
+function stepHumanAI(e,dt){
+  e.y=terrainH(e.x,e.z);
+  e.speed=0;
+  if(terrainH(e.x,e.z)<-0.15){                      // shoved into the drink by a thrashing herd:
+    if(e.safeLand){e.x=e.safeLand[0];e.z=e.safeLand[1];e.drownT=0;}}  // scramble straight back
+  else e.safeLand=[e.x,e.z];
+  e.hurtT=Math.max(0,e.hurtT-dt);e.flash=Math.max(0,e.flash-dt);
+  e.cool=Math.max(0,e.cool-dt);
+  stepDrown(e,dt,false);
+  if(e.alive===false)return;                        // the water just took them
+  if(e.windup>0){                                   // the spear goes in now
+    e.windup-=dt;
+    if(e.windup<=0){e.windup=0;e.strikeT=0.26;e.cool=1.4;
+      const tg=e.huntTg;
+      SFX.bite();
+      if(tg&&tg.alive&&Math.hypot(tg.x-e.x,tg.z-e.z)<e.sp.reach+bodyR(tg)+1.6)
+        hurt(tg,e.sp.dmg,e.x,e.z);}
+  }
+  const threat=humanThreat(e);
+  if(threat){
+    e.state='flee';e.prevAgg=0;e.huntTg=null;
+    const base=TERRITORY.humans||[0,0];
+    const dh=Math.hypot(e.x-base[0],e.z-base[1]);
+    let tx,tz;
+    if(dh>30){tx=base[0];tz=base[1];}                // the village fire is the safest place out here
+    else{tx=e.x+(e.x-threat.x)*3;tz=e.z+(e.z-threat.z)*3;}
+    if(Math.random()<dt*1.2)SFX.roar(e.key);         // shrieking at the top of their lungs
+    walkToward(e,e.sp.run*1.02,tx,tz,dt);            // …but nobody swims for a living
+    poseAndPlace(e,dt);return;
+  }
+  if(!e.sp.villager&&e.windup<=0){
+    // the war party: they spear plant-eaters and small things — never a giant theropod
+    let tg=null,bd=e.sp.aggro*1.5;
+    for(const o of enemies){
+      if(!o.alive||o.swallowed||o.grabbed||o.riding||o.sp.sea||o.sp.huge||(o.sp.giant&&!o.sp.herb))continue;
+      if(o.sp.kind==='human'||o.tamed)continue;
+      const d=Math.hypot(o.x-e.x,o.z-e.z);
+      if(d<bd){bd=d;tg=o;}}
+    if(tg){
+      e.state='chase';e.huntTg=tg;
+      const atkR=e.sp.reach+bodyR(tg)+0.6;
+      const toT=Math.atan2(-(tg.z-e.z),tg.x-e.x);
+      e.yaw+=clamp(angDiff(toT,e.yaw),-6*dt,6*dt);
+      if(bd>atkR)walkToward(e,e.sp.run,tg.x,tg.z,dt);
+      else if(e.cool<=0){e.windup=e.sp.atk;e.windupMax=e.sp.atk;}
+      poseAndPlace(e,dt);return;}
+    // nothing worth hunting: a bold one breaks a young giant for a mount
+    if((e.shakeCd||0)<=0&&Math.random()<dt*0.06){    // once in a blue moon, one breaks a giant in
+      const g=nearestGiant(e,26);
+      if(g){
+        const dg=Math.hypot(g.x-e.x,g.z-e.z),toG=Math.atan2(-(g.z-e.z),g.x-e.x);
+        e.state='chase';
+        e.yaw+=clamp(angDiff(toG,e.yaw),-4*dt,4*dt);
+        if(dg>e.sp.reach)walkToward(e,e.sp.run,g.x,g.z,dt);
+        else mountHost(g,e);
+        poseAndPlace(e,dt);return;}
+    }
+  }
+  // village life: mill about home, or patrol far from it
+  e.state='idle';e.prevAgg=0;
+  const dw=Math.hypot(e.wander.x-e.x,e.wander.z-e.z);
+  if(dw<2.5||terrainH(e.wander.x,e.wander.z)<=0.8||Math.random()<0.003){
+    const a=rand(0,6.283),r=rand(6,e.sp.villager?26:44);
+    let wx=e.home.x+Math.cos(a)*r,wz=e.home.z+Math.sin(a)*r;
+    const rr=Math.hypot(wx,wz);                       // the beach is not the goal: stay inland
+    if(rr>ISLE-55){wx*=(ISLE-55)/rr;wz*=(ISLE-55)/rr;}
+    e.wander={x:wx,z:wz};}
+  if(terrainH(e.wander.x,e.wander.z)>0.6)walkToward(e,e.sp.speed*0.55,e.wander.x,e.wander.z,dt);
+  if(Math.random()<dt*0.1)SFX.roar(e.key);
+  poseAndPlace(e,dt);
+}
+/* dinosaurs eating people: hungry carnivores that have nothing better to do
+   stalk the islanders — every world's food chain runs right through the village */
+function stepPredatorHunts(dt){
+  if(!player||!player.alive)return;
+  for(const e of enemies){
+    if(!e.alive||e.sp.herb||e.sp.sea||e.sp.kind==='human'||e.grabbed||e.riding||e.tamed
+       ||e.swallowed||e.windup>0)continue;
+    if(e.riders&&e.riders.length)continue;
+    if(['chase','attack','flee','retreat','shake','ride','snack'].includes(e.state))continue;
+    e.huntCd=(e.huntCd||0)-dt;
+    if(e.huntCd>0)continue;
+    let tg=null,bd=40;
+    for(const o of enemies){
+      if(!o.alive||o.sp.kind!=='human'||o.swallowed||o.grabbed||o.riding)continue;
+      const d=Math.hypot(o.x-e.x,o.z-e.z);
+      if(d>bd||d<0.4)continue;
+      const dp=Math.hypot(player.x-e.x,player.z-e.z);
+      if(dp<Math.min(30,d))continue;                // the hero is the nearer, louder business
+      bd=d;tg=o;}
+    if(!tg)continue;
+    e.state='hunt';
+    const d=Math.hypot(tg.x-e.x,tg.z-e.z);
+    const atkR=e.sp.reach+bodyR(tg)+0.5;
+    const toT=Math.atan2(-(tg.z-e.z),tg.x-e.x);
+    e.yaw+=clamp(angDiff(toT,e.yaw),-(e.sp.turn||3)*dt,(e.sp.turn||3)*dt);
+    if(d>atkR){
+      walkToward(e,e.sp.run*1.15,tg.x,tg.z,dt,d>48);   // a burst no islander quite matches
+      if(Math.random()<dt*0.3)SFX.roar(e.key);
+    } else if(e.cool<=0){
+      e.cool=e.sp.stomp?2.6:1.4;
+      SFX.bite();
+      hurt(tg,e.sp.dmg+1,e.x,e.z);
+      if(!tg.alive){e.huntCd=rand(30,70);           // one human keeps a hunter busy a good while
+        toast(`The ${e.sp.name} caught a ${tg.sp.name.toLowerCase()}!`,2200);}
+    }
+  }
 }
 
 /* ===================== the Mosasaurus: the sea's appetite =============
@@ -2709,6 +3058,7 @@ function stepMosasaur(e,dt){
   let tg=null,bd=1e9;
   for(const t of [player,...enemies]){
     if(t===e||!t.alive||t.swallowed||t.riding||!wetAt(t.x,t.z))continue;
+    if(baitNear(t.x,t.z,30))continue;             // nobody near my fish gets eaten — that's the point of it
     let d=Math.hypot(t.x-e.x,t.z-e.z);
     if(t.sp.huge)d*=1.8;
     if(d<bd){bd=d;tg=t;}}
@@ -2881,7 +3231,7 @@ function collideSolids(ch){
    big dinos still stand — pools, channels and the open sea are terrain. ---- */
 const drownLimit=ch=>(ch.sp.drown!=null?ch.sp.drown:(ch.sp.fisher?4.5:(ch.sp.kind==='quad'?1.4:2.8)))*ch.sp.scale;
 function shoreNear(x,z){
-  for(let r=4;r<=270;r+=4)for(let k=0;k<16;k++){
+  for(let r=4;r<=340;r+=4)for(let k=0;k<16;k++){
     const a=k/16*6.283,nx=x+Math.cos(a)*r,nz=z+Math.sin(a)*r,h=terrainH(nx,nz);
     if(h>-0.1&&h<3.5)return[nx,nz];}
   return null;}
@@ -2906,15 +3256,17 @@ function stepDrown(ch,dt,isPlayer){
     lastDeepW=performance.now();toast('DEEP WATER! Back to the shore!',1600);}
 }
 /* animals hold personal space: no two bodies occupy the same ground */
-const bodyR=ch=>(ch.sp.kind==='quad'?1.35:1.05)*ch.sp.scale*(ch.sp.huge?1.45:1);
+const bodyR=ch=>(ch.sp.thin?0.5:(ch.sp.kind==='quad'?1.35:1.05))*ch.sp.scale*(ch.sp.huge?1.45:1);
 function separate(){
   for(let i=0;i<enemies.length;i++){const a=enemies[i];if(!a.alive||a.grabbed||a.sp.sea||a.riding)continue;
     for(let j=i+1;j<enemies.length;j++){const b=enemies[j];
       if(!b.alive||b.grabbed||b.sp.sea||b.riding||b.riding===a)continue;
       const dx=b.x-a.x,dz=b.z-a.z,r=bodyR(a)+bodyR(b);
       let d=Math.hypot(dx,dz);
-      if(d<r&&d>1e-4){const push=(r-d)/2,ux=dx/d,uz=dz/d;
-        a.x-=ux*push;a.z-=uz*push;b.x+=ux*push;b.z+=uz*push;}
+      const sa=a.riders&&a.riders.length,sb=b.riders&&b.riders.length;   // a giant carrying a rider
+      if(d<r&&d>1e-4){const ux=dx/d,uz=dz/d;                             // never gets nudged: the
+        const pa=sb&&!sa?r-d:(sa&&!sb?0:(r-d)/2),pb=sa&&!sb?r-d:(sb&&!sa?0:(r-d)/2); // other yields
+        a.x-=ux*pa;a.z-=uz*pa;b.x+=ux*pb;b.z+=uz*pb;}
       else if(d<=1e-4){a.x+=0.3;a.z+=0.3;}
     }
     for(const pl of players){                     // heroes keep a nose's distance too —
@@ -2922,7 +3274,8 @@ function separate(){
       const dx=a.x-pl.x,dz=a.z-pl.z,r=bodyR(a)+bodyR(pl);
       const d=Math.hypot(dx,dz);
       if(d<r&&d>1e-4){const push=(r-d)*0.85,ux=dx/d,uz=dz/d;
-        a.x+=ux*push;a.z+=uz*push;}
+        if(a.riders.length||a.riding){pl.x-=ux*push;pl.z-=uz*push;}   // a mounted beast holds its line
+        else{a.x+=ux*push;a.z+=uz*push;}}
     }
   }
   for(let i=0;i<players.length;i++)for(let j=i+1;j<players.length;j++){   // heroes vs heroes
@@ -3132,7 +3485,7 @@ function frame(now){
     if(!player){                 // slow orbit preview of the selected island
       previewT+=dt;
       const a=previewT*0.06;
-      camera.position.set(Math.sin(a)*250,55+16*Math.sin(previewT*0.1),Math.cos(a)*250);
+      camera.position.set(Math.sin(a)*330,66+18*Math.sin(previewT*0.1),Math.cos(a)*330);
       camera.lookAt(0,3,0);
       water.position.y=WATER+0.16+Math.sin(now/900)*0.06;
     }
@@ -3170,6 +3523,7 @@ function frame(now){
     exitP(pl);
   }
   for(const en of[...enemies])stepEnemy(en,dt);   // AI aims at whoever it's nearest, per enemy
+  stepPredatorHunts(dt);                          // and the food chain comes for the villagers
   enterP(players[0]);                    // HUD, minimap and probes speak with P1's mouth
   separate();
   stepRipples(dt);
@@ -3218,6 +3572,7 @@ function plActions(dt){
     if(grabWant&&!rideGrabPrev){unmountRider(player,false);toast('You hopped down!');SFX.pickup();}
   } else {
     if(player.sp.rider&&grabWant&&!rideGrabPrev)tryMountPlayer();   // raptor: GRAB = JUMP on a giant
+    if(player.sp.tamer&&grabWant&&!rideGrabPrev)tryTameMount();     // human: GRAB = tame and ride
     stepGrab(dt,grabWant);
   }
   rideGrabPrev=grabWant;
@@ -3338,7 +3693,7 @@ document.getElementById('winB').addEventListener('click',closeWin);
 bindBtn('swapB',()=>{menuOpen?closeMenu():openMenu();});
 bindBtn('closeSwapB',closeMenu);
 bindBtn('menuB',menuStart);
-document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • hold G/GRAB to grab and drag • R roar (a Dilophosaurus spits!) • drag mouse to look • SWAP/Select changes dino and world';
+document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • hold G/GRAB to grab and drag • R roar (a Dilophosaurus spits!) • drag mouse to look • SWAP/Select changes dino and world • as a Human, GRAB beside a dinosaur to TAME and RIDE it';
 buildMapRow(document.getElementById('mrow'),setMapPick);
 buildMapRow(document.getElementById('menuMap'),stageMap);
 buildProw();
@@ -3358,7 +3713,8 @@ window.__probe={
       state:e.state,fear:+e.fear.toFixed(1),cool:+(e.cool||0).toFixed(2),
       windup:+(e.windup||0).toFixed(2),tg:e.snatchT?e.snatchT.key:null,
       grabbed:!!e.grabbed,swallowed:!!e.swallowed,
-      counted:!!e.counted,riding:!!e.riding,riders:e.riders.length})),
+      counted:!!e.counted,riding:!!e.riding,riders:e.riders.length,bites:e.bites||0,
+      tamed:!!e.tamed,controlled:!!e.controlled,human:!!(e.sp&&e.sp.kind==='human')})),
     player:{x:+player.x.toFixed(1),z:+player.z.toFixed(1),y:+player.y.toFixed(2),yaw:+player.yaw.toFixed(2),state:player.state},
     fps:Math.round(fps),tier};},
   teleport(x,z){player.x=x;player.z=z;player.y=terrainH(x,z);},
@@ -3366,6 +3722,23 @@ window.__probe={
   baits(){return baits.map(b=>({x:+b.x.toFixed(1),z:+b.z.toFixed(1),hp:b.hp,t:Math.round(b.t)}));},
   dropBait(x,z){return dropBait(x,z)?{ok:true}:{ok:false};},
   clearBaits(){for(const b of[...baits])scene.remove(b.m);baits.length=0;return true;},
+  exileNear(x,z,r,keep=null){                // tests: shoo every rival off a snack's beach
+    let n=0;
+    for(const e of enemies){
+      if(!e.alive||e.sp.sea||e.key==='mosasaurus'||(keep&&e.key===keep))continue;
+      if(Math.hypot(e.x-x,e.z-z)>=r)continue;
+      for(let k=0;k<12;k++){
+        const s=k<6?0.55:0.92,bx=-x*s,bz=-z*s;   // other side, or the far shore
+        const tx=bx+rand(-30,30),tz=bz+rand(-30,30),g=terrainH(tx,tz);
+        if(g<(e.sp.fisher?0:0.6))continue;
+        let ok=true;                          // never dump a rival on the hero's head
+        for(const pl of players)if(Math.hypot(tx-pl.x,tz-pl.z)<70){ok=false;break;}
+        if(!ok)continue;
+        e.x=tx;e.z=tz;e.y=g;e.state='idle';e.fear=0;e.grazeT=0;e.huntTg=null;
+        e.wander={x:tx,z:tz};n++;break;
+      }
+    }
+    return n;},
   mosaShore(){                                  // fast-forward: nudge the sea king to its beach
     const m=enemies.find(e=>e.key==='mosasaurus'&&e.alive);
     if(!m)return{ok:false,why:'no mosasaurus'};
@@ -3373,6 +3746,49 @@ window.__probe={
     const a=Math.atan2(-(s[1]-m.z),s[0]-m.x);
     m.x=s[0]-Math.cos(a)*10;m.z=s[1]-Math.sin(a)*10;m.baitSpot=[s[0],s[1]];m.baitT=0.02;
     return{ok:true,shore:[+s[0].toFixed(1),+s[1].toFixed(1)]};},
+  isle(){return ISLE;},
+  shelf(){return SHELF;},
+  humans(){const h=enemies.filter(e=>e.alive&&e.sp.kind==='human');
+    const t=TERRITORY.humans||[0,0];
+    return{total:h.length,villagers:h.filter(e=>e.sp.villager).length,
+      hunters:h.filter(e=>!e.sp.villager).length,
+      village:[Math.round(t[0]),Math.round(t[1])],
+      zone:ZONES.some(z=>z.tag==='village')};},
+  tameCheat(){                              // tests: tame + saddle the nearest tameable animal
+    let best=null,bd=1e9;
+    for(const e of enemies){if(!e.alive||e.sp.sea||e.sp.huge||e.riders.length||e.sp.kind==='human')continue;
+      const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<bd){bd=d;best=e;}}
+    if(!best)return{ok:false,why:'nothing tameable'};
+    player.x=best.x+Math.cos(best.yaw)*2;player.z=best.z-Math.sin(best.yaw)*2;
+    return{ok:mountHost(best,player,true),host:best.key};},
+  rideAt(x,z,yaw){                            // shots: park the mount you are riding
+    const h=player.riding;if(!h)return false;
+    h.x=x;h.z=z;h.y=terrainH(x,z);if(yaw!==undefined)h.yaw=yaw;return true;},
+  rideCtrl(){const h=player.riding;
+    return h?{host:h.key,tamed:!!h.tamed,controlled:!!h.controlled,
+      x:+h.x.toFixed(1),z:+h.z.toFixed(1),yaw:+h.yaw.toFixed(2),spd:+(h.speed||0).toFixed(1),
+      riders:h.riders.length}:null;},
+  spearTest(){                            // tests: a spear-hunter goes to work on a plant-eater
+    for(const h of enemies)if(h.alive&&h.sp.kind==='human'&&!h.sp.villager&&h.riding)unmountRider(h,false);
+    const spot=findSpot(terrainH,(x,z,h)=>h>1,[rand(-140,140),rand(-140,140)],90);
+    const vic=spawnWild('trike',0,spot);vic.counted=true;
+    let hun=enemies.filter(e=>e.alive&&e.sp.kind==='human'&&!e.sp.villager&&!e.riding)[0];
+    if(!hun){hun=spawnWild('hunter',0,[vic.x+4,vic.z]);hun.counted=true;}  // playing as a Human
+    else{hun.x=vic.x-4;hun.z=vic.z;}                                       // disbanded the village
+    spearVic=vic;
+    hun.cool=0;hun.windup=0;hun.huntTg=null;hun.state='idle';
+    return{ok:true,hp:+vic.hp.toFixed(1),hpx:Math.round(hun.x),hiz:Math.round(hun.z)};
+  },
+  spearHp(){return spearVic?{hp:+spearVic.hp.toFixed(1),alive:!!spearVic.alive}:null;},
+  chompTest(){                            // tests: a hungry carnivore catches an islander
+    const vil=enemies.find(e=>e.alive&&e.sp.kind==='human'&&e.sp.villager&&!e.riding);
+    if(!vil)return{ok:false,why:'no villagers'};
+    const cul=spawnWild('allo',0,[vil.x+4,vil.z]);cul.counted=true;
+    cul.state='idle';cul.cool=0;chompVic=vil;
+    player.x=CAMP[0];player.z=CAMP[1];player.y=terrainH(player.x,player.z);  // hero minds his own business
+    return{ok:true,hp:+vil.hp.toFixed(1)};
+  },
+  chompHp(){return chompVic?{hp:+chompVic.hp.toFixed(1),alive:!!chompVic.alive}:null;},
   pk(key){                              // challengers answer first — ambient herds are just scenery
     return enemies.find(e=>e.alive&&!e.counted&&e.key===key)||enemies.find(e=>e.alive&&e.key===key);
   },
@@ -3422,6 +3838,9 @@ window.__probe={
     op:+player.mats[0].opacity.toFixed(2),inScene:!!player.root.parent,
     shadow:+player.shadow.scale.x.toFixed(2)};},
   wake(){return wakeUp();},
+  setInvuln(s){invulnT=Math.max(invulnT,s);if(player.pm)player.pm.invulnT=invulnT;return +invulnT.toFixed(1);},
+  wakeP(i){const p=players[clamp(i|0,0,players.length-1)];if(!p||!p.pm)return false;
+    enterP(p);const r=wakeUp(true);exitP(p);return r;},
   project(x,y,z){const v=new THREE.Vector3(x,y,z).project(camera);
     return{x:+(v.x*0.5+0.5).toFixed(3),y:+(-v.y*0.5+0.5).toFixed(3),front:v.z<1};},
   bodyBox(which='player'){                            // where the body actually lands on screen
@@ -3490,7 +3909,7 @@ window.__probe={
   closeMenu(){closeMenu();return menuOpen;},
   map(){return{key:previewMap,seed:WORLDSEED,name:curMap.name,flat:FLATNAME,world:WORLD,
     winter:!!curMap.winter,noSea:!!curMap.noSea,
-    zones:ZONES.map(z=>({name:z.name,x:z.x,z:z.z,r:z.r})),
+    zones:ZONES.map(z=>({name:z.name,tag:z.tag||'',x:z.x,z:z.z,r:z.r})),
     terr:Object.fromEntries(Object.entries(TERRITORY).map(([k,v])=>[k,[Math.round(v[0]),Math.round(v[1])]])),
     camp:CAMP.map(Math.round)};},
   buildMap(k,s){previewMap=k;setMapPickSel(k);
@@ -3507,7 +3926,8 @@ window.__probe={
   speciesList(){return Object.keys(SPECIES);},
   speciesFlags(){return Object.fromEntries(Object.entries(SPECIES).map(([k,s])=>[k,
     {huge:!!s.huge,herb:!!s.herb,sea:!!s.sea,venom:!!s.venom,pack:!!s.pack,charge:!!s.charge,
-     stomp:!!s.stomp,tailspin:!!s.tailspin,kind:s.kind,giant:!!s.giant,rider:!!s.rider}]));},
+     stomp:!!s.stomp,tailspin:!!s.tailspin,kind:s.kind,giant:!!s.giant,rider:!!s.rider,
+     tamer:!!s.tamer,villager:!!s.villager}]));},
   pickList(){return PICKABLE.slice();},
   setPick(k){setPick(k);return pickKey;},
   cardInView(k){const b=document.querySelector('#pick .pcard.sel');

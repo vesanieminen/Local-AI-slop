@@ -52,6 +52,9 @@ for i in range(3):
                  "tail"+str(i+1), subsurf=1, prev_pt=(tp[i-1] if i else (-1.7,0,1.5)))
     dt.paint(tl, *P)
     prev = "tail"+str(i+1)
+# continuous tail: sleeve each segment over the one ahead of it
+for i in range(1, 4):
+    dt.flare("tailm" + str(i), 0.5)
 
 for o in (body, nk, hd): dt.paint(o, *P)
 dt.assign_vcol("root")

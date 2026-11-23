@@ -19,7 +19,7 @@ function renderCard(scene){
   scene.traverse(o=>{
     if(!o.isMesh)return;
     const g=o.geometry;
-    const ca=g.getAttribute('COLOR_0');
+    const ca=g.getAttribute('COLOR_0')||g.getAttribute('color');
     const pos=g.getAttribute('position');
     const ix=g.index?g.index.array:null;
     const V=new THREE.Vector3(),A=new THREE.Vector3(),B=new THREE.Vector3(),C=new THREE.Vector3();
