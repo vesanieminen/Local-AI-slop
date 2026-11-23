@@ -55,7 +55,7 @@ const roster = await page.evaluate(() => ({
   cast: window.__probe.state().cast,
 }));
 ok(roster.pick === 'dilopho', 'the picture card picks your dinosaur', roster.pick);
-ok(roster.list.length === 12, 'twelve dinosaurs to be', `${roster.list.length}`);
+ok(roster.list.length === 13 && roster.list.includes('mosasaurus'), 'thirteen dinosaurs to be — the Mosasaurus included', `${roster.list.length}`);
 ok(roster.cast.length === 5 && !roster.cast.includes(roster.pick),
   'the island raises five challengers that are not you', roster.cast.join(','));
 ok(roster.flags.dilopho.venom && roster.flags.brachiosaurus.huge && roster.flags.trike.charge,
@@ -225,17 +225,17 @@ ok(calm.vic && calm.angry && calm.attacks >= 2,
 const gulp = await page.evaluate(async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const pr = window.__probe;
-  const vic = (pr.state().enemies.find(e => e.alive && e.key !== 'mosasaurus'
+  const vic = (pr.state().enemies.find(e => e.alive && !e.counted && e.key !== 'mosasaurus'
     && ['stego', 'diplodocus', 'ankylo', 'allo', 'spino', 'raptor', 'dilopho'].includes(e.key)) || {}).key;
   // a paddling-deep but not drowning patch of sea, with real deep water right next to it
   let spot = null, mos = null;
   for (let g = 0; g < 4000 && !spot; g++) {
-    const a = Math.random() * 6.283, r = 95 + Math.random() * 38;
+    const a = Math.random() * 6.283, r = 240 + Math.random() * 70;   // the wide sea shelf
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (!(pr.ground(x, z) < -0.4 && pr.ground(x, z) > -1.2)) continue;
     const n = Math.hypot(x, z) || 1;
     const dirs = [[x / n, z / n], [-x / n, -z / n], [-z / n, x / n], [z / n, -x / n]];
-    for (const [dx, dz] of dirs) for (let d = 5; d <= 12 && !spot; d += 1.5) {
+    for (const [dx, dz] of dirs) for (let d = 4; d <= 18 && !spot; d += 1.5) {
       const ox = x + dx * d, oz = z + dz * d;
       if (pr.ground(ox, oz) < -1.0) {
         spot = [+x.toFixed(1), +z.toFixed(1)];
@@ -292,7 +292,148 @@ ok(grab.g2 && grab.g1 && grab.g2.hp < grab.g1.hp,
   'holding on by the teeth hurts', `${grab.g1.hp} -> ${grab.g2.hp}`);
 ok(grab.g3.held === null && grab.v3 && !grab.v3.grabbed,
   'letting go lets it go', JSON.stringify(grab.g3));
+
+// ---------- raptor winter: a world where nothing hunts but raptors ----------
+await page.evaluate(() => { window.__probe.setCast(null); window.__probe.newExpedition('winter', 4242); });
+await wait(2000);
+const winter = await page.evaluate(() => {
+  const pr = window.__probe, s = pr.state();
+  return { m: pr.map(), keys: [...new Set(s.enemies.filter(e => e.alive).map(e => e.key))],
+    sea: s.enemies.some(e => e.key === 'mosasaurus') };
+});
+ok(winter.m.winter && winter.m.noSea, 'the Raptor Winter loads: frozen seas, no open water', JSON.stringify(winter.m));
+ok(winter.keys.length === 1 && winter.keys[0] === 'raptor' && !winter.sea,
+  'in Raptor Winter nothing hunts but raptors', JSON.stringify(winter.keys));
+const wKill = await page.evaluate(() => {
+  const pr = window.__probe; let n = 0;
+  while (pr.kill('raptor') && n < 30) n++;
+  return { n, left: pr.state().goalLeft };
+});
+await wait(2800);
+const wonNow = await page.evaluate(() => window.__probe.state().won);
+ok(wKill.n >= 5 && wKill.left === 0, `the whole raptor pack falls (${wKill.n} down)`, `${wKill.left} to go`);
+ok(wonNow, 'beat every raptor and the frozen world is yours');
+await page.evaluate(() => window.__probe.closeWin && window.__probe.closeWin());
 await page.close();
+
+// ---------- raptors ride the giants: leap on, peck, and get shaken off ----------
+const ridePage = await open({ viewport: { width: 1280, height: 800 } });
+await wait(1500);
+await ridePage.evaluate(() => { window.__probe.setPick('raptor'); });
+await ridePage.click('#playB');
+await ridePage.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
+await wait(1500);
+const ride = await ridePage.evaluate(() => {
+  const pr = window.__probe;
+  pr.spawnDino('trike');
+  const m = pr.mount();
+  return { m, after: pr.rideInfo(), flags: pr.speciesFlags() };
+});
+ok(ride.flags.trike.giant && ride.flags.raptor.rider, 'raptors can ride and giants can be ridden',
+  JSON.stringify([ride.flags.trike.giant, ride.flags.raptor.rider]));
+ok(ride.m.ok && ride.after.riding === ride.m.host, 'a raptor can leap onto a giant\'s back',
+  JSON.stringify(ride.m) + ' → riding:' + ride.after.riding);
+ok(ride.after.host && ride.after.host.state === 'shake' && ride.after.host.riders.includes('you'),
+  'the bucking giant thunders around trying to shake you off', JSON.stringify(ride.after.host));
+const ride2 = await ridePage.evaluate(() => {
+  const pr = window.__probe;
+  const before = pr.rideInfo().host.hp;
+  pr.bite();
+  const r = pr.rideInfo();
+  return { before, after: r.host.hp, riding: r.riding };
+});
+ok(ride2.after < ride2.before && ride2.riding, 'pecking the giant from up top hurts it',
+  `${ride2.before} → ${ride2.after}`);
+await ridePage.evaluate(() => window.__probe.setGrab(true));
+await wait(300);
+await ridePage.evaluate(() => window.__probe.setGrab(false));
+const off = await ridePage.evaluate(() => window.__probe.rideInfo().riding);
+ok(off === null, 'GRAB again hops you down off the giant', String(off));
+
+// ---------- the Mosasaurus: selectable, and gloriously at home in the deep ----------
+await ridePage.evaluate(() => window.__probe.newExpedition('beach', 999));
+await wait(2200);
+const deep = await ridePage.evaluate(() => {
+  const pr = window.__probe, W = pr.water;
+  for (let g = 0; g < 6000; g++) {
+    const a = Math.random() * 6.283, r = 240 + Math.random() * 70;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (pr.ground(x, z) < W - 3) return { x, z };
+  }
+  return null;
+});
+ok(deep, 'the beach island has a proper deep ocean to rule', deep ? `deep at ${Math.round(deep.x)},${Math.round(deep.z)}` : 'none found');
+const mm = await ridePage.evaluate((d) => {
+  const pr = window.__probe;
+  pr.switchTo('mosasaurus');
+  pr.teleport(d.x, d.z);
+  return { sp: pr.state().species };
+}, deep);
+await wait(700);
+const float = await ridePage.evaluate(() => {
+  const s = window.__probe.state();
+  return { y: s.player.y, W: window.__probe.water, state: s.player.state };
+});
+ok(mm.sp === 'mosasaurus' && float.y > float.W - 2.2 && float.y < float.W + 0.6,
+  'a playable Mosasaurus floats in the deep sea', `y=${float.y} vs water=${float.W}`);
+const gulp2 = await ridePage.evaluate(() => {
+  const pr = window.__probe, s = pr.state();
+  const vic = s.enemies.find(e => e.alive && !e.swallowed && ['raptor', 'dilopho', 'allo', 'spino'].includes(e.key));
+  if (!vic) return null;
+  pr.placeEnemy(vic.key, s.player.x + 1.6, s.player.z, 0);
+  pr.face(s.player.x + 4, s.player.z);
+  pr.bite();
+  const after = pr.state().enemies.find(e => e.key === vic.key);
+  return { vic: vic.key, swallowed: after ? after.swallowed : 'gone' };
+});
+ok(gulp2 && gulp2.swallowed, 'and it swallows small dinosaurs whole, as is its right', JSON.stringify(gulp2));
+await ridePage.close();
+
+// ---------- split-screen: up to four heroes share one island ----------
+const mp = await open({ viewport: { width: 1280, height: 800 } });
+await wait(1800);
+await mp.evaluate(() => { window.__probe.setPlayers(2); window.__probe.setPick('raptor'); });
+await mp.click('#playB');
+await mp.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
+await wait(1500);
+const two = await mp.evaluate(() => {
+  const pr = window.__probe;
+  return { n: pr.pcount(), pl: pr.playersInfo(), panes: document.querySelectorAll('.vp').length,
+    heartsHidden: getComputedStyle(document.getElementById('hearts')).display };
+});
+ok(two.n === 2 && two.panes === 2, 'two players, two panes, one island', `${two.n} heroes × ${two.panes} panes`);
+ok(two.pl[0].vp.w === 640 && two.pl[1].vp.x === 640 && two.pl[0].key !== two.pl[1].key,
+  'the screen splits in half and no two heroes share a species',
+  JSON.stringify(two.pl.map(p => `${p.key}@x${p.vp.x}`)));
+ok(two.heartsHidden === 'none' && two.pl.every(p => p.hearts === 5),
+  'each hero keeps their own hearts and little HUD', `display:${two.heartsHidden} hearts:${two.pl.map(p => p.hearts)}`);
+const p2a = await mp.evaluate(() => window.__probe.playersInfo()[1]);
+await mp.keyboard.down('KeyI'); await wait(900); await mp.keyboard.up('KeyI');
+const p2b = await mp.evaluate(() => window.__probe.playersInfo()[1]);
+ok(Math.hypot(p2b.x - p2a.x, p2b.z - p2a.z) > 1.5, 'P2 roams the island with IJKL',
+  `moved ${Math.hypot(p2b.x - p2a.x, p2b.z - p2a.z).toFixed(1)}`);
+const p1a = await mp.evaluate(() => window.__probe.playersInfo()[0]);
+await mp.keyboard.down('KeyW'); await wait(900); await mp.keyboard.up('KeyW');
+const p1b = await mp.evaluate(() => window.__probe.playersInfo()[0]);
+ok(Math.hypot(p1b.x - p1a.x, p1b.z - p1a.z) > 1.5, 'while P1 still roams with WASD',
+  `moved ${Math.hypot(p1b.x - p1a.x, p1b.z - p1a.z).toFixed(1)}`);
+await mp.close();
+const mp4 = await open({ viewport: { width: 1280, height: 800 } });
+await wait(1800);
+await mp4.evaluate(() => window.__probe.setPlayers(4));
+await mp4.click('#playB');
+await mp4.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
+await wait(1200);
+const four = await mp4.evaluate(() => {
+  const pr = window.__probe, pl = pr.playersInfo();
+  return { n: pr.pcount(), panes: document.querySelectorAll('.vp').length,
+    corners: [...new Set(pl.map(p => p.vp.x + ',' + p.vp.y))].length, w: pl[0].vp.w,
+    kinds: new Set(pl.map(p => p.key)).size };
+});
+ok(four.n === 4 && four.panes === 4 && four.corners === 4 && four.w <= 640 && four.kinds >= 3,
+  'all four heroes get their own corner of the island',
+  `${four.n} heroes, ${four.corners} corners, ${four.kinds} species`);
+await mp4.close();
 
 // ---------- phone: the twelve-card strip fits and the game plays ----------
 const phone = await open({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -303,7 +444,7 @@ const strip = await phone.evaluate(() => {
   return { n: cards.length, fits: cards.every(c => c.getBoundingClientRect().right <= r.right + 1),
     w: Math.round(cards[0].getBoundingClientRect().width), overflow: el.scrollWidth > el.clientWidth };
 });
-ok(strip.n === 12 && strip.w >= 100, 'twelve picture cards on a phone, big enough to tap', `${strip.n} × ${strip.w}px`);
+ok(strip.n === 13 && strip.w >= 100, 'thirteen picture cards on a phone, big enough to tap', `${strip.n} × ${strip.w}px`);
 await phone.evaluate(() => { const el = document.getElementById('pick'); el.scrollLeft = el.scrollWidth; });
 await wait(600);
 const tail = await phone.evaluate(() => {

@@ -49,7 +49,7 @@ const staged = await page.evaluate(async () => {
   let shore = null;
   for (let i = 0; i < 360 && !shore; i++) {
     const a = (i * 3.7 % 360) * Math.PI / 180;               // golden-ish angle walk
-    for (let r = 60; r <= 104 && !shore; r += 2) {
+    for (let r = 160; r <= 248 && !shore; r += 3) {          // the coastline of the big world
       const x = Math.cos(a) * r, z = Math.sin(a) * r, h = pr.ground(x, z);
       if (!(h > 0.45 && h < 1.35)) continue;
       const nx = Math.cos(a), nz = Math.sin(a);
@@ -68,9 +68,10 @@ const staged = await page.evaluate(async () => {
   const fx = Math.cos(q.yaw), fz = -Math.sin(q.yaw);         // the way the player and camera look
   const rx = -fz, rz = fx;                                   // screen-right
   const pose = (key, fwd, side) => {                        // on the sand or wading, never drowning
-    for (const [f, s] of [[fwd, side], [fwd - 4, side], [fwd, side + 3], [fwd, side - 3], [fwd + 3, side]]) {
+    const deep = key === 'brachiosaurus' || key === 'diplodocus';   // tall long-necks wade deeper
+    for (const [f, s] of [[fwd, side], [fwd - 4, side], [fwd, side + 3], [fwd, side - 3], [fwd + 3, side], [fwd - 8, side]]) {
       const x = q.x + fx * f + rx * s, z = q.z + fz * f + rz * s;
-      if (pr.ground(x, z) < -0.8) continue;
+      if (pr.ground(x, z) < (deep ? -2.4 : -0.8)) continue;
       pr.placeEnemy(key, x, z, Math.atan2(-(q.z - z), x - q.x));  // face the player
       return true;
     }
@@ -97,11 +98,11 @@ const staged = await page.evaluate(async () => {
   let okPosed = rePose();
   await wait(2000);                                          // chase camera settles
   okPosed = rePose();                                        // snap them back before the shutter
-  return { okPosed, cast: pr.state().cast, mos: pr.mosaInfo(), shore,
+  return { okPosed, sp: pr.state().species, cast: pr.state().cast, mos: pr.mosaInfo(), shore,
     enemies: pr.state().enemies.map(e => [e.key, e.x, e.z, e.alive, e.state]) };
 });
-console.log(staged.cast ? staged.cast.join(',') : 'STAGING FAIL', JSON.stringify(staged.mos),
-  JSON.stringify(staged.enemies.map(e => e[0] + '@' + e[1] + ',' + e[2])));
+console.log(staged.sp, staged.cast ? staged.cast.join(',') : 'STAGING FAIL ' + staged.fail, JSON.stringify(staged.mos),
+  JSON.stringify((staged.enemies || []).map(e => e[0] + '@' + e[1] + ',' + e[2])));
 await page.evaluate(() => { window.__probe.setRoar(1); window.__probe.roar(); });  // the photographed spit
 await new Promise(r => setTimeout(r, 450));                      // glob mid-arc, right after the PFFFTT
 await page.screenshot({ path: path.join(ROOT, 'screenshot.png') });
