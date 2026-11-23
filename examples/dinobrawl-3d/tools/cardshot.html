@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>cardshot</title></head>
+<body>
+<script type="importmap">
+{ "imports": { "three": "../vendor/three.module.min.js", "three/addons/": "../vendor/" } }
+</script>
+<script type="module">
+/* One dinosaur card, rendered exactly like the Blender cardrender.py does:
+   flat Lambert triangles with vertex colors, yaw/pitch turntable, 2x supersample. */
+import * as THREE from 'three';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
+
+const key=new URLSearchParams(location.search).get('key')||'trex';
+const yaw=-0.62,pitch=0.16,fit=0.9,w=320,h=180,S=2;
+
+function renderCard(scene){
+  scene.updateMatrixWorld(true);
+  const tris=[];
+  scene.traverse(o=>{
+    if(!o.isMesh)return;
+    const g=o.geometry;
+    const ca=g.getAttribute('COLOR_0');
+    const pos=g.getAttribute('position');
+    const ix=g.index?g.index.array:null;
+    const V=new THREE.Vector3(),A=new THREE.Vector3(),B=new THREE.Vector3(),C=new THREE.Vector3();
+    const n=Math.ceil((ix?ix.length:pos.count)/3);
+    for(let t=0;t<n;t++){
+      let i0,i1,i2;
+      if(ix){i0=ix[t*3];i1=ix[t*3+1];i2=ix[t*3+2];}else{i0=t*3;i1=t*3+1;i2=t*3+2;}
+      A.fromBufferAttribute(pos,i0).applyMatrix4(o.matrixWorld);
+      B.fromBufferAttribute(pos,i1).applyMatrix4(o.matrixWorld);
+      C.fromBufferAttribute(pos,i2).applyMatrix4(o.matrixWorld);
+      const N=B.clone().sub(A).cross(C.clone().sub(A));
+      if(N.lengthSq()<1e-12)continue;N.normalize();
+      const col=[0,0,0];
+      if(ca){
+        for(const [k,i] of [[0,i0],[1,i1],[2,i2]]){
+          col[0]+=ca.getX(i)/3;col[1]+=ca.getY(i)/3;col[2]+=ca.getZ(i)/3;}
+      }else col[0]=col[1]=col[2]=0.7;
+      tris.push([[A.x,A.y,A.z],[B.x,B.y,B.z],[C.x,C.y,C.z],[N.x,N.y,N.z],col]);
+    }
+  });
+  // bounds & turntable scale — the model's longest ground axis fills the frame
+  let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
+  for(const t of tris)for(let k=0;k<3;k++)for(let ax=0;ax<3;ax++){
+    const v=t[k][ax];if(v<lo[ax])lo[ax]=v;if(v>hi[ax])hi[ax]=v;}
+  const mid=[0,1,2].map(k=>(lo[k]+hi[k])/2);
+  const spanX=hi[0]-lo[0],spanY=hi[1]-lo[1],spanZ=hi[2]-lo[2];
+  const sc=Math.min((w-16)*fit/Math.max(spanX,spanZ),(h-16)*fit/spanY)*0.98;
+  const cyy=Math.cos(yaw),syy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+  const proj=p=>{const x=p[0]-mid[0],y=p[1]-mid[1],z=p[2]-mid[2];
+    const x1=x*cyy-z*syy,z1=x*syy+z*cyy;
+    const y1=y*cp-z1*sp;
+    return[x1*sc+w/2,h/2-y1*sc,y*sp+z1*cp];};
+  const ln=Math.sqrt(0.35*0.35+0.8*0.8+0.5*0.5);
+  const L=[-0.35/ln,0.8/ln,-0.5/ln];
+  const W=w*S,H=h*S;
+  const buf=new Uint8ClampedArray(W*H*4),zb=new Float64Array(W*H).fill(-1e9);
+  for(const t of tris){
+    const[,,FN,C3]= [t[0],t[1],t[3],t[4]];
+    const d=FN[0]*L[0]+FN[1]*L[1]+FN[2]*L[2];
+    const sh=0.42+0.58*(d>0?d:0), rim=1+0.10*Math.abs(FN[2]);
+    const cr=Math.min(255,C3[0]*sh*rim*255+0.5)|0,
+          cg=Math.min(255,C3[1]*sh*rim*255+0.5)|0,
+          cb=Math.min(255,C3[2]*sh*rim*255+0.5)|0;
+    const q=[proj(t[0]),proj(t[1]),proj(t[2])];
+    const minx=Math.min(q[0][0],q[1][0],q[2][0]),maxx=Math.max(q[0][0],q[1][0],q[2][0]);
+    const miny=Math.min(q[0][1],q[1][1],q[2][1]),maxy=Math.max(q[0][1],q[1][1],q[2][1]);
+    const x0=minx<0?0:minx|0,x1=maxx>W-1?W-1:(maxx|0)+1;
+    const y0=miny<0?0:miny|0,y1=maxy>H-1?H-1:(maxy|0)+1;
+    const denom=(q[1][1]-q[2][1])*(q[0][0]-q[2][0])+(q[2][0]-q[1][0])*(q[0][1]-q[2][1]);
+    if(Math.abs(denom)<1e-6)continue;
+    for(let yy=y0;yy<=y1;yy++){
+      const py=yy+0.5,base=(yy*W)*4;
+      const za=q[1][1]-q[2][1],zc=q[2][0]-q[1][0];
+      for(let xx=x0;xx<=x1;xx++){
+        const px=xx+0.5;
+        const a=(za*(px-q[2][0])+zc*(py-q[2][1]))/denom;
+        if(a<0)continue;
+        const b=((q[2][1]-q[0][1])*(px-q[0][0])+(q[0][0]-q[2][0])*(py-q[0][1]))/denom;
+        if(b<0)continue;
+        const g=1-a-b;if(g<0)continue;
+        const zz=a*q[0][2]+b*q[1][2]+g*q[2][2];
+        const o=base+xx*4;
+        if(zz<=zb[o>>2])continue;
+        zb[o>>2]=zz;buf[o]=cr;buf[o+1]=cg;buf[o+2]=cb;buf[o+3]=255;
+      }
+    }
+  }
+  const out=new ImageData(w,h);
+  const n4=S*S;
+  for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++){
+    let rs=0,gs=0,bs=0,al=0;
+    for(let dy=0;dy<S;dy++){const b0=((yy*S+dy)*W+xx*S)*4;
+      for(let dx=0;dx<S;dx++){const o=b0+dx*4;
+        rs+=buf[o];gs+=buf[o+1];bs+=buf[o+2];al+=buf[o+3];}}
+    const o2=(yy*w+xx)*4;
+    out.data[o2]=rs/n4;out.data[o2+1]=gs/n4;out.data[o2+2]=bs/n4;out.data[o2+3]=al/n4;
+  }
+  return out;
+}
+
+const loader=new GLTFLoader();
+try{
+  const g=await loader.loadAsync(`../assets/${key}.glb`);
+  const img=renderCard(g.scene);
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  c.getContext('2d').putImageData(img,0,0);
+  window.__card=c.toDataURL('image/png');
+}catch(e){window.__card='ERR '+e.message;}
+</script>
+</body></html>

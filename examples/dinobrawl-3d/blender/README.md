@@ -16,6 +16,12 @@ future model (or rebuild) can reuse it.
 | `build_<species>.py` | One declarative recipe per species (Tyrannosaurus-era twelve + Mosasaurus): joints, tubes/blobs, plates, teeth, eyes, colours. Same content as the Text blocks in the .blend. |
 | `cardrender.py` | Script that renders the in-game select-screen cards (`../assets/select/*.png`) with `dt.render_card2`. |
 
+> **No Blender running?** `../tools/cardshot.mjs` renders the same 320×180
+> Lambert cards headlessly from each `assets/<species>.glb` using the game's
+> own three.js + GLTFLoader (no Blender needed): `node tools/cardshot.mjs
+> mosasaurus` writes `assets/select/mosasaurus.png`. It mirrors `cardrender.py`'s
+> turntable (yaw −0.62, pitch 0.16, fit 0.9) and flat shading.
+
 ## Coordinate system
 
 x = forward, y = lateral, z = up, metres. Model units are metres; the game
