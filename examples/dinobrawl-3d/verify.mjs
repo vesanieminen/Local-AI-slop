@@ -148,11 +148,14 @@ const goo = await page.evaluate(async () => {
     }
   }
   const p2 = pr.state().player;
+  pr.clearBaits();   // a beach snack would lure the victim away mid-spit
   pr.placeEnemy(victim, p2.x + 6, p2.z, Math.PI);
   pr.setRoar(1); pr.roar();
   let poisoned = 0, who = null;
   for (let i = 0; i < 30 && !poisoned; i++) {
     await sleep(150);
+    const now = pr.state().player, vic = pr.state().enemies.find(e => e.key === victim && e.alive);
+    if (vic && Math.hypot(vic.x - now.x, vic.z - now.z) > 14) pr.placeEnemy(victim, now.x + 6, now.z, Math.PI);
     pr.setRoar(1); pr.roar();   // keep spitting: the victim closes in, and the lead gets easier
     for (const e of pr.state().enemies) { const t = pr.poisonOf(e.key).t; if (t > 0) { poisoned = t; who = e.key; } }
   }
@@ -468,6 +471,66 @@ ok(four.n === 4 && four.panes === 4 && four.corners === 4 && four.w <= 640 && fo
   'all four heroes get their own corner of the island',
   `${four.n} heroes, ${four.corners} corners, ${four.kinds} species`);
 await mp4.close();
+
+// ---------- bait: the Mosasaurus lures the whole island to the beach ----------
+const baitp = await open({ viewport: { width: 1280, height: 800 } });
+await wait(1800);
+await baitp.evaluate(() => { window.__probe.setPick('raptor'); });
+await baitp.click('#playB');
+await baitp.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
+await baitp.evaluate(() => window.__probe.newExpedition('beach', 31337));
+await wait(1500);
+const drop = await baitp.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  const s = pr.mosaShore();
+  for (let i = 0; i < 20 && !pr.baits().length; i++) await sleep(500);
+  return { s, b: pr.baits()[0] || null };
+});
+ok(drop.s.ok && drop.b && drop.b.hp === 7 &&
+  Math.hypot(drop.b.x - drop.s.shore[0], drop.b.z - drop.s.shore[1]) < 3,
+  'the Mosasaurus hauls a fat fish up onto the beach as a gift for everyone', JSON.stringify(drop));
+const lure = await baitp.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  await sleep(400);                                 // let last run's fish settle
+  const b = pr.baits()[0];
+  if (!b) return { fail: 'bait vanished' };
+  // pick a challenger kind that exists exactly once, plant it 50–80 m off across dry land
+  const cnt = {};
+  for (const e of pr.state().enemies)
+    if (e.alive && !e.counted && e.key !== 'mosasaurus') cnt[e.key] = (cnt[e.key] || 0) + 1;
+  const key = Object.keys(cnt).find(k => cnt[k] === 1);
+  if (!key) return { fail: 'no lone challenger' };
+  // scan all directions for one with unbroken dry land between animal and fish
+  let px = null, pz = null;
+  for (let k = 0; k < 16 && px === null; k++) {
+    const ang = k * Math.PI / 8;
+    for (let d = 80; d >= 50 && px === null; d -= 5) {
+      let land = true;
+      for (let m = 20; m <= d; m += 10) {
+        const tx = b.x + Math.cos(ang) * m, tz = b.z + Math.sin(ang) * m;
+        if (pr.ground(tx, tz) < 0.4) { land = false; break; }
+      }
+      if (land) { px = b.x + Math.cos(ang) * d; pz = b.z + Math.sin(ang) * d; }
+    }
+  }
+  if (px === null) return { fail: 'no land that far out' };
+  pr.placeEnemy(key, px, pz, 0);
+  const d0 = Math.hypot(px - b.x, pz - b.z);
+  let dmin = d0, eaten = false;
+  for (let i = 0; i < 32 && !eaten; i++) {
+    await sleep(1000);
+    const e = pr.state().enemies.find(x => x.key === key && x.alive);
+    if (!pr.baits().some(bb => Math.hypot(bb.x - b.x, bb.z - b.z) < 1)) eaten = true;
+    if (e) dmin = Math.min(dmin, Math.hypot(e.x - b.x, e.z - b.z));
+  }
+  return { key, d0: +d0.toFixed(0), dmin: +dmin.toFixed(1), eaten };
+});
+ok(!lure.fail && (lure.eaten || lure.dmin < lure.d0 * 0.5),
+  'a dinosaur smells that fish from a huge way off and trots the whole way in', JSON.stringify(lure));
+ok(lure.eaten, 'and when it gets there, it eats the Mosasaurus\'s bait', JSON.stringify(lure));
+await baitp.close();
 
 // ---------- phone: the twelve-card strip fits and the game plays ----------
 const phone = await open({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });

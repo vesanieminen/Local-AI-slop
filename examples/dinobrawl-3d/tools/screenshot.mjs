@@ -1,7 +1,8 @@
 /* Dino Brawl 3D — hub screenshot.   node tools/screenshot.mjs
    Opens the game like a player (pick a Dilophosaurus, press PLAY), stages a
-   venom spit with the big newcomers posed on a flat beach and the Mosasaurus
-   lurking offshore, and saves the 1280x800 shot used as the hub thumbnail
+   venom spit with the big newcomers posed on a flat beach, the Mosasaurus
+   lurking offshore and one of its bait fish washed up at the tide line, and
+   saves the 1280x800 shot used as the hub thumbnail
    (examples/dinobrawl-3d/screenshot.png).                                        */
 import { chromium } from 'playwright';
 import http from 'http';
@@ -92,16 +93,27 @@ const staged = await page.evaluate(async () => {
     const ok = [pose('trike', 8, -7), pose('stego', 12, 6), pose('diplodocus', 15, 12),
       pose('brachiosaurus', 19, -1), parkRaptor()];
     if (mx !== null) pr.setEnemy('mosasaurus', { x: mx, z: mz, cool: 99, fear: 0, state: 'idle',
+      baitT: 9e9,                                  // no sudden urge to waddle ashore mid-photo
       yaw: Math.atan2(-(q.z - mz), mx - q.x) });            // jaws pointed at the beach
     return ok;
   };
   let okPosed = rePose();
   await wait(2000);                                          // chase camera settles
   okPosed = rePose();                                        // snap them back before the shutter
-  return { okPosed, sp: pr.state().species, cast: pr.state().cast, mos: pr.mosaInfo(), shore,
+  // the Mosasaurus's bait: a fat fish washed up at the tide line, straight ahead.
+  // dropped last so the posed dinos are still mid-turn toward the camera, not the snack
+  let bait = null;
+  outer: for (const s of [-2.5, 0, 2.5, -4.5, 4.5]) {
+    for (let d = shore.sea + 2; d >= 4; d -= 0.8) {        // find the tide line wherever it runs
+      const x = q.x + fx * d - rx * s, z = q.z + fz * d - rz * s, h = pr.ground(x, z);
+      if (h > -0.4 && h < 0.8 && pr.dropBait(x, z).ok) { bait = [+x.toFixed(0), +z.toFixed(0), +h.toFixed(2)]; break outer; }
+    }
+  }
+  return { okPosed, sp: pr.state().species, cast: pr.state().cast, mos: pr.mosaInfo(), shore, bait,
     enemies: pr.state().enemies.map(e => [e.key, e.x, e.z, e.alive, e.state]) };
 });
 console.log(staged.sp, staged.cast ? staged.cast.join(',') : 'STAGING FAIL ' + staged.fail, JSON.stringify(staged.mos),
+  'bait:' + JSON.stringify(staged.bait),
   JSON.stringify((staged.enemies || []).map(e => e[0] + '@' + e[1] + ',' + e[2])));
 await page.evaluate(() => { window.__probe.setRoar(1); window.__probe.roar(); });  // the photographed spit
 await new Promise(r => setTimeout(r, 450));                      // glob mid-arc, right after the PFFFTT
