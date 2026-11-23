@@ -13,7 +13,8 @@ future model (or rebuild) can reuse it.
 |---|---|
 | `new_dinos.blend` | The working scene + Text blocks (`dt`, `build_*`, `cardrender`). Provenance for every GLB in `../assets/`. |
 | `dt.py` | The `dt` helper toolkit: jointed-rig builders (`joint`, `tube`, `blob`, `plate`, `spike_line`, `eye_pair`), vertex-colour painting (`paint`), GLB export (`export_glb`) and select-card renderers. Reconstructed from the live session and **verified instruction-for-instruction against the live module that built the shipped models** — running it reproduces the exact toolkit. Ends by registering itself as `sys.modules["dt"]`. |
-| `build_<species>.py` | One declarative recipe per species (Tyrannosaurus-era twelve + Mosasaurus): joints, tubes/blobs, plates, teeth, eyes, colours. Same content as the Text blocks in the .blend. |
+| `build_<species>.py` | One declarative recipe per species (Tyrannosaurus-era twelve + Mosasaurus): joints, tubes/blobs, plates, teeth, eyes, colours. Same content as the Text blocks in the .blend. Every tail (and the sauropod necks) end with `dt.flare(...)` loops — sleeves that slide each segment over the one ahead so the chain reads as one continuous limb (see the "patch FIX @tail-continuity" block in `dt.py`). |
+| `fix_tails.py` | The tail-continuity repair for the six models that predate build scripts (`trex, allo, spino, ankylo, dr, im`): slopes the flat rear wall into the tail root, telescopes the segments together and adds a body-parented hip collar, run live on the imported GLBs and re-exported. |
 | `cardrender.py` | Script that renders the in-game select-screen cards (`../assets/select/*.png`) with `dt.render_card2`. |
 
 > **No Blender running?** `../tools/cardshot.mjs` renders the same 320×180

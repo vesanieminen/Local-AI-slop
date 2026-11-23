@@ -24,6 +24,9 @@ for i in range(5):
         "tail"+str(i+1), subsurf=1, tuck=0.55, prev_pt=(tp[i-1] if i else (-0.8,0,1.0)))
     dt.paint(tl, *P)
     prev = "tail"+str(i+1)
+# continuous tail: sleeve each segment over the one ahead of it
+for i in range(1, 6):
+    dt.flare("tailm" + str(i), 0.5)
 
 # fluke: vertical fan fin with a notch (hypocercal)
 fl = dt.plate("flukem",[(-3.7,1.55),(-5.05,2.0),(-4.82,1.05),(-4.98,0.45),(-3.85,0.55)], 0.09, "tail5", y_off=0.0)

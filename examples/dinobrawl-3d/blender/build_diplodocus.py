@@ -37,6 +37,9 @@ for i in range(3):
                  "neck"+str(i+1), subsurf=1, tuck=0.55, prev_pt=(joints_pts[i-1] if i else (0.9,0,3.05)))
     dt.paint(nk, *P)
     prev = "neck"+str(i+1)
+# continuous neck: sleeve each segment over the one ahead of it
+for i in range(1, 4):
+    dt.flare("neckm" + str(i), 0.45)
 dt.joint("head", (5.9-5.5,0,3.72-3.78), "neck3")
 hd = dt.blob("headm", [(5.75,0,3.71,0.2,0.17,0.18),(6.0,0,3.67,0.18,0.14,0.14),(6.25,0,3.57,0.12,0.10,0.09)], "head", 90)
 dt.eye_pair("eyesm", "head", (5.91,0,3.82), 0.045, 0.145)
@@ -58,6 +61,9 @@ for i in range(6):
                  "tail"+str(i+1), subsurf=1, tuck=0.55, prev_pt=(tp[i-1] if i else (-2.6,0,2.55)))
     dt.paint(tl, *P)
     prev = "tail"+str(i+1)
+# continuous tail: sleeve each segment over the one ahead of it
+for i in range(1, 7):
+    dt.flare("tailm" + str(i), 0.5)
 
 for o in (body, hd, jw): dt.paint(o, *P)
 dt.assign_vcol("root")
