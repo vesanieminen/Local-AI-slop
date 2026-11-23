@@ -915,18 +915,18 @@ function buildWorld(key,seed){
 
 /* ============================== species ============================== */
 const SPECIES={
-  trex:  {name:'T-Rex',hp:22,dmg:1,speed:7.4,run:9.6,aggro:34,atk:0.30,scale:1.00,reach:3.4,kind:'thero',col:'#4a9e3f'},
+  trex:  {name:'T-Rex',hp:22,dmg:1,speed:7.4,run:9.6,aggro:34,atk:0.30,scale:1.00,reach:3.4,kind:'thero',col:'#4a9e3f',giant:true,saddle:2.35},
   raptor:{name:'Velociraptor',hp:7,dmg:1,speed:7.8,run:10.4,aggro:24,atk:0.32,scale:0.72,reach:2.4,kind:'thero',col:'#9a7c46',pack:true,coward:0.45,hab:'cover',drown:1.9,rider:true},
   dilopho:{name:'Dilophosaurus',hp:11,dmg:1,speed:5.8,run:8.6,aggro:26,atk:0.46,scale:0.92,reach:2.9,kind:'thero',col:'#3a3940',venom:true,coward:0.5,hab:'grove',drown:2.6},
   allo:  {name:'Allosaur',hp:8,dmg:1,speed:6.8,run:9.0,aggro:30,atk:0.45,scale:0.88,reach:3.0,kind:'thero',col:'#cf6f2b',pack:true,coward:0.4},
-  spino: {name:'Spinosaurus',hp:11,dmg:1,speed:5.6,run:8.0,aggro:32,atk:0.50,scale:0.98,reach:3.3,kind:'thero',col:'#2f8ea6',tailswish:true,coward:0.35,fisher:true},
-  trike: {name:'Triceratops',hp:16,dmg:2,speed:5.0,run:9.4,aggro:22,atk:0.50,scale:1.05,reach:3.8,kind:'quad',col:'#8a7a58',charge:true,armor:true,herb:true,turn:1.8,hab:'flat',drown:1.7,giant:true},
-  stego: {name:'Stegosaurus',hp:15,dmg:2,speed:3.4,run:6.0,aggro:18,atk:0.50,scale:1.10,reach:4.6,kind:'quad',col:'#6f7f4a',tailswish:true,armor:true,herb:true,turn:1.4,hab:'grove',drown:1.6,giant:true},
-  ankylo:{name:'Ankylosaurus',hp:10,dmg:1,speed:3.6,run:6.4,aggro:20,atk:0.42,scale:0.9,reach:2.6,kind:'quad',col:'#7d8e44',armor:true,herb:true,turn:1.5},
-  diplodocus:{name:'Diplodocus',hp:20,dmg:2,speed:3.4,run:6.2,aggro:16,atk:0.58,scale:1.15,reach:5.6,kind:'quad',col:'#6c86a0',tailwhip:true,herb:true,turn:1.2,hab:'flat',drown:3.6,giant:true},
-  brachiosaurus:{name:'Brachiosaurus',hp:28,dmg:3,speed:2.6,run:4.6,aggro:14,atk:0.66,scale:1.25,reach:6.4,kind:'quad',col:'#8d8f6a',stomp:true,tailspin:true,herb:true,turn:1.0,hab:'high',drown:5.5,huge:true,giant:true},
+  spino: {name:'Spinosaurus',hp:11,dmg:1,speed:5.6,run:8.0,aggro:32,atk:0.50,scale:0.98,reach:3.3,kind:'thero',col:'#2f8ea6',tailswish:true,coward:0.35,fisher:true,giant:true,saddle:1.95},
+  trike: {name:'Triceratops',hp:16,dmg:2,speed:5.0,run:9.4,aggro:22,atk:0.50,scale:1.05,reach:3.8,kind:'quad',col:'#8a7a58',charge:true,armor:true,herb:true,turn:1.8,hab:'flat',drown:1.7,giant:true,saddle:1.9},
+  stego: {name:'Stegosaurus',hp:15,dmg:2,speed:3.4,run:6.0,aggro:18,atk:0.50,scale:1.10,reach:4.6,kind:'quad',col:'#6f7f4a',tailswish:true,armor:true,herb:true,turn:1.4,hab:'grove',drown:1.6,giant:true,saddle:2.2},
+  ankylo:{name:'Ankylosaurus',hp:10,dmg:1,speed:3.6,run:6.4,aggro:20,atk:0.42,scale:0.9,reach:2.6,kind:'quad',col:'#7d8e44',armor:true,herb:true,turn:1.5,giant:true,saddle:0.95},
+  diplodocus:{name:'Diplodocus',hp:20,dmg:2,speed:3.4,run:6.2,aggro:16,atk:0.58,scale:1.15,reach:5.6,kind:'quad',col:'#6c86a0',tailwhip:true,herb:true,turn:1.2,hab:'flat',drown:3.6,giant:true,saddle:3.4},
+  brachiosaurus:{name:'Brachiosaurus',hp:28,dmg:3,speed:2.6,run:4.6,aggro:14,atk:0.66,scale:1.25,reach:6.4,kind:'quad',col:'#8d8f6a',stomp:true,tailspin:true,herb:true,turn:1.0,hab:'high',drown:5.5,huge:true,giant:true,saddle:5.2},
   im:    {name:'Indominus rex',hp:13,dmg:2,speed:7.0,run:10.0,aggro:38,atk:0.50,scale:1.02,reach:3.5,kind:'thero',col:'#aeb4c6',camo:true,sneak:true},
-  dr:    {name:'Distortus rex',hp:16,dmg:2,speed:6.4,run:9.2,aggro:36,atk:0.65,scale:1.12,reach:3.8,kind:'thero',col:'#6c6f8a',stomp:true,brute:true,giant:true},
+  dr:    {name:'Distortus rex',hp:16,dmg:2,speed:6.4,run:9.2,aggro:36,atk:0.65,scale:1.12,reach:3.8,kind:'thero',col:'#6c6f8a',stomp:true,brute:true,giant:true,saddle:3.1},
   mosasaurus:{name:'Mosasaurus',hp:20,dmg:2,speed:5.2,run:8.6,aggro:30,atk:0.42,scale:1.15,reach:3.6,kind:'marine',col:'#2f6478',sea:true,turn:2.2,drown:99},
 };
 /* every island gets its own five challengers, rolled from that island's seed,
@@ -1815,6 +1815,7 @@ function nearestGiant(ch,range){
 function mountHost(host,rider){
   if(!host||!host.alive||!rider||!rider.alive||!host.sp.giant||rider.riding||rider.sp.sea||host===rider)return false;
   host.riders.push(rider);rider.riding=host;
+  rider.yaw=host.yaw;rider.lastYaw=host.yaw;rider.yawLag=0;
   rider.state='ride';rider.windup=0;rider.cool=0;rider.fear=0;rider.peckCd=0.6;rider.rideHop=0.55;
   if(grabTarget===rider)releaseGrab(null);
   host.shakeT=Math.max(host.shakeT||0,rand(4.5,8));host.angry=true;host.prevAgg=1;host.state='shake';
@@ -1848,14 +1849,20 @@ function unmountRider(rider,flung){
     hurt(rider,1,host.x,host.z);
   }
 }
-function stepRider(r,dt){                                    // glued to the giant's back, pecking
+function stepRider(r,dt){                                    // hard-saddled to the giant's back
   const h=r.riding;
   if(!h||!h.alive){unmountRider(r,false);return;}
-  const k=Math.min(1,dt*14);
-  r.x+=(h.x-r.x)*k;r.z+=(h.z-r.z)*k;
-  r.y=h.y+Math.max(1.2,h.tall*h.sp.scale*0.72);
-  r.speed=Math.abs(h.speed);r.yaw=h.yaw;
-  if(r.rideHop>0)r.rideHop-=dt;
+  // Model centre ≈ mid-back: pin the raptor on the spine just behind the
+  // shoulders. Hard-attach — a position lerp always trails the host's turns
+  // and reads as sliding around off the back. tall/len are world units already.
+  const back=h.len*0.07;
+  r.x=h.x-Math.cos(h.yaw)*back;
+  r.z=h.z+Math.sin(h.yaw)*back;
+  r.y=h.y+(h.sp.saddle||Math.max(1.05,h.tall*0.62));           // the back line, hand-fitted per species
+  if(r.rideHop>0){r.rideHop-=dt;                              // the pop up into the saddle
+    r.y+=Math.sin((0.55-r.rideHop)/0.55*Math.PI)*Math.max(0.25,h.tall*0.07);}
+  r.speed=0;                                                  // seated: no galloping legs in midair
+  r.yaw+=angDiff(h.yaw,r.yaw)*Math.min(1,dt*12);              // follow the host's bucking, smoothly
   r.peckCd-=dt;
   if(!r.isPlayer&&r.peckCd<=0){
     r.peckCd=1.15;SFX.bite();r.strikeT=0.2;
@@ -2826,8 +2833,8 @@ function separate(){
         a.x-=ux*push;a.z-=uz*push;b.x+=ux*push;b.z+=uz*push;}
       else if(d<=1e-4){a.x+=0.3;a.z+=0.3;}
     }
-    for(const pl of players){                     // heroes keep a nose's distance too
-      if(!pl.alive)continue;
+    for(const pl of players){                     // heroes keep a nose's distance too —
+      if(!pl.alive||pl.riding===a||a.riding===pl)continue;   // but a hero saddled on this one IS on its back
       const dx=a.x-pl.x,dz=a.z-pl.z,r=bodyR(a)+bodyR(pl);
       const d=Math.hypot(dx,dz);
       if(d<r&&d>1e-4){const push=(r-d)*0.85,ux=dx/d,uz=dz/d;
@@ -3351,7 +3358,13 @@ window.__probe={
   pcount(){return players.length;},
   playersInfo(){return players.map((p,i)=>({i,key:p.key,hearts:p.pm.hearts,ko:!!p.pm.knockedOut,
     x:+p.x.toFixed(1),z:+p.z.toFixed(1),vp:vpRect(i)}));},
-  rideInfo(){const h=enemies.find(e=>e.riders&&e.riders.length);    return{riding:player.riding?player.riding.key:null,hostRiders:player.riders.length,
+  rideGeom(){                                 // live host+rider transforms (saddle-plant test)
+    const r=player.riding?player:enemies.find(e=>e.riding);const h=r&&r.riding;
+    return h?{host:{key:h.key,x:+h.x.toFixed(2),z:+h.z.toFixed(2),y:+h.y.toFixed(2),
+        yaw:+h.yaw.toFixed(3),len:+h.len.toFixed(2),tall:+h.tall.toFixed(2),
+        sad:+(h.sp.saddle||Math.max(1.05,h.tall*0.62)).toFixed(2),spd:+(h.speed||0).toFixed(1)},
+      rider:{x:+r.x.toFixed(2),z:+r.z.toFixed(2),y:+r.y.toFixed(2),yaw:+r.yaw.toFixed(2)}}:null;},
+  rideInfo(){const h=player.riding||enemies.find(e=>e.riders&&e.riders.length);    return{riding:player.riding?player.riding.key:null,hostRiders:player.riders.length,
       any:enemies.filter(e=>e.riding).map(e=>e.key+'@'+e.riding.key),
       host:h?{key:h.key,hp:h.hp,shake:+h.shakeT.toFixed(1),riders:h.riders.map(r=>r.isPlayer?'you':r.key),
         state:h.state}:null};},
