@@ -62,6 +62,8 @@ ok(roster.flags.dilopho.venom && roster.flags.brachiosaurus.huge && roster.flags
   'the newcomers keep their tricks', 'venom + huge + charge');
 ok(roster.flags.mosasaurus.sea && roster.flags.trike.herb && roster.flags.stego.herb,
   'the Mosasaurus owns the sea, the plant-eaters are peaceful by default', 'sea + herb');
+ok(roster.flags.ankylo.giant && roster.flags.trex.giant && roster.flags.spino.giant && !roster.flags.raptor.giant,
+  'every heavyweight — the armoured Ankylosaurus included — can carry a raptor', 'ankylo+trex+spino giant');
 
 // ---------- the Mosasaurus: a real animal in a real sea ----------
 const mosa = await page.evaluate(async () => {
@@ -333,6 +335,25 @@ ok(ride.flags.trike.giant && ride.flags.raptor.rider, 'raptors can ride and gian
   JSON.stringify([ride.flags.trike.giant, ride.flags.raptor.rider]));
 ok(ride.m.ok && ride.after.riding === ride.m.host, 'a raptor can leap onto a giant\'s back',
   JSON.stringify(ride.m) + ' → riding:' + ride.after.riding);
+// saddle check: while the giant bucks, the raptor stays planted on the back —
+// no rubber-banding off the tail, no hovering above the spine
+const saddle = await ridePage.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let latMax = 0, fwdMax = 0, dUpMax = 0, sad = 0, samples = 0;
+  for (let i = 0; i < 26; i++) {
+    await sleep(120);
+    const g = window.__probe.rideGeom();
+    if (!g) break;
+    const dx = g.rider.x - g.host.x, dz = g.rider.z - g.host.z, y = g.host.yaw;
+    const fwd = Math.abs(dx * Math.cos(y) - dz * Math.sin(y)), lat = Math.abs(dx * Math.sin(y) + dz * Math.cos(y));
+    sad = g.host.sad;
+    dUpMax = Math.max(dUpMax, Math.abs(g.rider.y - g.host.y - g.host.sad));
+    latMax = Math.max(latMax, lat); fwdMax = Math.max(fwdMax, fwd); samples++;
+  }
+  return { latMax: +latMax.toFixed(2), fwdMax: +fwdMax.toFixed(2), dUpMax: +dUpMax.toFixed(2), sad, samples };
+});
+ok(saddle.samples > 15 && saddle.latMax < 0.8 && saddle.fwdMax < 1.5 && saddle.dUpMax < 0.9,
+  'the rider stays saddled while the giant bucks', JSON.stringify(saddle));
 ok(ride.after.host && ride.after.host.state === 'shake' && ride.after.host.riders.includes('you'),
   'the bucking giant thunders around trying to shake you off', JSON.stringify(ride.after.host));
 const ride2 = await ridePage.evaluate(() => {
@@ -349,6 +370,19 @@ await wait(300);
 await ridePage.evaluate(() => window.__probe.setGrab(false));
 const off = await ridePage.evaluate(() => window.__probe.rideInfo().riding);
 ok(off === null, 'GRAB again hops you down off the giant', String(off));
+// the armoured tank is saddleable too — nearest giant logic + armour must not block it
+const anky = await ridePage.evaluate(() => {
+  const pr = window.__probe;
+  const a = pr.spawnDino('ankylo');
+  pr.teleport(a.x + 2, a.z);                       // stand right beside it
+  return { m: pr.mount(), hp: pr.rideInfo().host && pr.rideInfo().host.hp };
+});
+ok(anky.m.ok && anky.m.host === 'ankylo', 'a raptor can even saddle an Ankylosaurus', JSON.stringify(anky.m));
+await wait(420);   // let the bite cooldown from the last peck expire, or this bite is a no-op
+await ridePage.evaluate(() => window.__probe.bite());
+const anky2 = await ridePage.evaluate(() => window.__probe.rideInfo());
+ok(anky2.host && anky2.host.hp < anky.hp && anky2.host.riders.includes('you'),
+  'and pecks land despite all that armour', `${anky.hp} → ${anky2.host && anky2.host.hp}`);
 
 // ---------- the Mosasaurus: selectable, and gloriously at home in the deep ----------
 await ridePage.evaluate(() => window.__probe.newExpedition('beach', 999));
