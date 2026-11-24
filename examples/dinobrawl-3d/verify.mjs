@@ -471,6 +471,101 @@ const wonNow = await page.evaluate(() => window.__probe.state().won);
 ok(wKill.n >= 5 && wKill.left === 0, `the whole raptor pack falls (${wKill.n} down)`, `${wKill.left} to go`);
 ok(wonNow, 'beat every raptor and the frozen world is yours');
 await page.evaluate(() => window.__probe.closeWin && window.__probe.closeWin());
+
+// ---------- the raptor stays a shadow: small is quietly survivable ----------
+const stealth = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  pr.setCast(null);
+  pr.newExpedition('forest', 4242, false, 'raptor');
+  for (let i = 0; i < 40 && !pr.ready; i++) await sleep(150);
+  await sleep(1200);
+  const spot = pr.spawnDino('allo');
+  pr.teleport(spot.x + 20, spot.z);                 // 20 m: deep inside an Allosaur's 30 m temper
+  await sleep(1600);
+  const s = pr.state();
+  const px = s.player.x, pz = s.player.z;
+  const st = s.enemies.filter(e => e.key === 'allo' && e.alive)
+    .sort((a, b) => Math.hypot(a.x - px, a.z - pz) - Math.hypot(b.x - px, b.z - pz))[0];
+  return { sight: s.preySight, sp: s.species, d: +Math.hypot(st.x - px, st.z - pz).toFixed(1),
+    state: st.state, alive: st.alive };
+});
+ok(stealth.sp === 'raptor' && stealth.sight === 0.34,
+  'a Velociraptor registers at a third of the distance', JSON.stringify(stealth));
+ok(stealth.alive && stealth.state !== 'chase' && stealth.state !== 'attack' && stealth.d > 16,
+  `an Allosaur looks straight past a raptor at ${stealth.d} m`, `state=${stealth.state}`);
+
+// ---------- THE MO SATRENCH: one drowned world, one family of monsters ----------
+await page.evaluate(() => { window.__probe.setCast(null); window.__probe.newExpedition('mosatrench', 717); });
+await wait(2400);
+const trench = await page.evaluate(() => {
+  const pr = window.__probe, s = pr.state();
+  const beasts = s.enemies.filter(e => e.alive && !e.human);
+  let deepest = 99;
+  for (let a = 0; a < 6.29; a += 0.3) for (let r = 20; r < 320; r += 15)
+    deepest = Math.min(deepest, pr.ground(Math.cos(a) * r, Math.sin(a) * r));
+  const mos = beasts.filter(e => e.key === 'mosasaurus');
+  return { m: pr.map(), keys: [...new Set(beasts.map(e => e.key))], mos: mos.length,
+    swimming: mos.length > 0 && mos.every(e => pr.ground(e.x, e.z) < -6),
+    deepest: +deepest.toFixed(1), goal: s.goalLeft };
+});
+ok(trench.m.seaWorld && trench.m.noSea, 'the Mo Satrench loads: a drowned caldera, closed to people', JSON.stringify(trench.m));
+ok(trench.deepest < -24, 'its floor drops deeper than any sea in the game', `${trench.deepest} m`);
+ok(trench.keys.length === 1 && trench.keys[0] === 'mosasaurus' && trench.mos >= 5 && trench.goal === 1,
+  'the whole drowned world belongs to the Mosasaurus', `${trench.mos} challengers in the deep`);
+ok(trench.swimming, 'every one of them waits in the deep water where it belongs');
+const tKill = await page.evaluate(() => {
+  const pr = window.__probe; let n = 0;
+  while (pr.kill('mosasaurus') && n < 10) n++;
+  return { n, left: pr.state().goalLeft };
+});
+await wait(2800);
+const tWon = await page.evaluate(() => window.__probe.state().won);
+ok(tKill.n >= 5 && tKill.left === 0 && tWon, `the whole brood falls (${tKill.n} down) — the trench is yours`, JSON.stringify(tKill));
+await page.evaluate(() => window.__probe.closeWin && window.__probe.closeWin());
+
+// ---------- GREAT VALLEY: villages, giants, and a house you can walk into ----------
+await page.evaluate(() => { window.__probe.setCast(null); window.__probe.newExpedition('valley', 99); });
+await wait(2600);
+const val = await page.evaluate(() => {
+  const pr = window.__probe, s = pr.state(), h = pr.houseInfo();
+  const beasts = s.enemies.filter(e => e.alive && !e.human);
+  return { m: pr.map(), hum: pr.humans().total, h,
+    keys: [...new Set(beasts.map(e => e.key))],
+    hall: +pr.ground(h.x, h.z).toFixed(1), loft: +pr.ground(h.x, h.z + 11).toFixed(1),
+    ramp: +pr.ground(h.x - 12, h.z - 2).toFixed(1), goal: s.goalLeft };
+});
+ok(val.m.roster === 'sauropod' && val.m.noSea, 'the Great Valley loads: green meadows, no deep water', JSON.stringify(val.m));
+ok(val.keys.includes('brachiosaurus') && val.keys.includes('diplodocus') && !val.keys.includes('mosasaurus')
+  && val.keys.every(k => ['brachiosaurus', 'diplodocus', 'trike', 'stego', 'ankylo'].includes(k)),
+  'the valley is given to the long-necks and the armoured browsers', val.keys.join(','));
+ok(val.hum >= 6, 'three villages smoke in the meadows — people everywhere here', String(val.hum));
+ok(val.h && Math.abs(val.hall - 7.5) < 0.6 && val.loft > 12 && val.ramp > 7.6 && val.ramp < 12.6,
+  'the great house has two walkable floors joined by a real ramp', `hall ${val.hall} / ramp ${val.ramp} / solar ${val.loft}`);
+const door = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe, h = pr.houseInfo();
+  pr.teleport(h.door[0] + 2.5, h.door[1]);
+  await sleep(500);
+  const far = pr.houseInfo();
+  pr.doorBite(); await sleep(300);
+  const open = pr.houseInfo();
+  pr.teleport(h.x, h.z + 2);
+  await sleep(1100);
+  const inHall = pr.houseInfo();
+  return { far: far.open, open: open.open, inside: inHall.inside, roof: inHall.roof };
+});
+ok(door.far === false && door.open === true, 'BITE at the threshold swings the great doors open', JSON.stringify(door));
+ok(door.inside && door.roof < 0.5, 'step inside and the roof gets out of the way', JSON.stringify(door));
+const vKill = await page.evaluate(() => {
+  const pr = window.__probe; let n = 0;
+  while ((pr.kill('brachiosaurus') || pr.kill('diplodocus')) && n < 12) n++;
+  return { n, left: pr.state().goalLeft };
+});
+await wait(2800);
+const vWon = await page.evaluate(() => window.__probe.state().won);
+ok(vKill.n >= 4 && vKill.left === 0 && vWon, `both giant families fall (${vKill.n} down) — the valley is yours`, JSON.stringify(vKill));
+await page.evaluate(() => window.__probe.closeWin && window.__probe.closeWin());
 await page.close();
 
 // ---------- raptors ride the giants: leap on, peck, and get shaken off ----------
