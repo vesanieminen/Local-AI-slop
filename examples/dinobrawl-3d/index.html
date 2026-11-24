@@ -411,6 +411,133 @@ function villageDecor(height,cx,cz){
     putIM(stI,k,cx+Math.cos(a)*1.2,fh+0.1,cz+Math.sin(a)*1.2,0,a,0,1,0.7,1);}
   worldGroup.add(stI);
 }
+/* the Great Valley's centrepiece, built by the valley's own decor pass: a
+   timber hall with real walkable floors (the ground under it was sculpted to
+   match), feasting fire downstairs, solar upstairs, and biting doors.        */
+function buildGreatHouse(height){
+  const H=window.__house=window.__house||{};
+  const [hx,hz]=curMap.housePos,PY=7.5,LY=12.7;
+  H.x=hx;H.z=hz;H.padY=PY;H.loftY=LY;H.hintT=0;H.doors=[];H.fade=[];
+  const W=(c,em)=>new THREE.MeshLambertMaterial(em?{color:c,emissive:em}:{color:c});
+  const wood=W(0x9c7245),dark=W(0x5c4128),stone=W(0x8b8b86);
+  const roofMat=W(0x53606d),gableMat=W(0x6d5236);
+  roofMat.transparent=gableMat.transparent=true;
+  H.fade.push(roofMat,gableMat);
+  // walls: four rings of chunky timber segments, with the door gap in the east face
+  const segs=[];
+  for(let i=0;i<7;i++){const x=-12+i*4;
+    segs.push({x:hx+x,z:hz-14,ry:0},{x:hx+x,z:hz+14,ry:0});}
+  for(let i=0;i<7;i++){const z=-12+i*4;
+    segs.push({x:hx-15,z:hz+z,ry:Math.PI/2});
+    if(Math.abs(z)>3.4)segs.push({x:hx+15,z:hz+z,ry:Math.PI/2});}
+  const wallI=new THREE.InstancedMesh(new THREE.BoxGeometry(4.2,12,1.1),wood,segs.length);
+  segs.forEach((s,k)=>{putIM(wallI,k,s.x,PY+6,s.z,0,s.ry,0,1,1,1);
+    solids.push({x:s.x,z:s.z,r:1.0});});
+  worldGroup.add(wallI);
+  // corner posts
+  const postI=new THREE.InstancedMesh(new THREE.BoxGeometry(1.5,12.6,1.5),dark,4);
+  [[-15,-14],[15,-14],[-15,14],[15,14]].forEach((c,k)=>
+    putIM(postI,k,hx+c[0],PY+6.3,hz+c[1],0,0,0,1,1,1));
+  worldGroup.add(postI);
+  // floor planks over the sculpted ground: hall, ramp, solar
+  const plankM=W(0xb08550),plankS=W(0x8f6838);
+  const hallF=new THREE.Mesh(new THREE.BoxGeometry(29.5,0.14,27.5),plankM);
+  hallF.position.set(hx,PY+0.08,hz);worldGroup.add(hallF);
+  const loftF=new THREE.Mesh(new THREE.BoxGeometry(29.5,0.14,10.4),plankS);
+  loftF.position.set(hx,LY+0.08,hz+9.2);worldGroup.add(loftF);
+  // the door frame + two iron-banded panels
+  const jambI=new THREE.InstancedMesh(new THREE.BoxGeometry(1,4.9,1),dark,2);
+  putIM(jambI,0,hx+15.2,PY+2.45,hz-3.8,0,0,0,1,1,1);
+  putIM(jambI,1,hx+15.2,PY+2.45,hz+3.8,0,0,0,1,1,1);
+  worldGroup.add(jambI);
+  const lintel=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.9,8.2),dark);
+  lintel.position.set(hx+15.2,PY+4.85,hz);worldGroup.add(lintel);
+  const doorM=W(0x6f4d2c),iron=W(0x3f4750);
+  for(const dir of[1,-1]){
+    const g=new THREE.Group();g.position.set(hx+15.3,PY,hz+dir*3.4);
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.34,4.6,3.4),doorM);
+    panel.position.set(0,2.3,-dir*1.7);g.add(panel);
+    for(const yy of[1.1,3.4]){
+      const band=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.28,3.42),iron);
+      band.position.set(0,yy,-dir*1.7);g.add(band);}
+    worldGroup.add(g);
+    H.doors.push({g,a:0,open:false,dir:-dir});}
+  H.doorX=hx+15.3;H.doorZ=hz;
+  // gable roof: two slate sheets and stacked-timber gable ends (faded indoors)
+  const sheet=new THREE.BoxGeometry(33,0.4,15.6);
+  for(const s of[1,-1]){
+    const r=new THREE.Mesh(sheet,roofMat);
+    r.position.set(hx,PY+10+2.25,hz+s*7.3);r.rotation.x=-s*0.30;worldGroup.add(r);}
+  const ridge=new THREE.Mesh(new THREE.BoxGeometry(33.6,0.5,1.2),dark);
+  ridge.position.set(hx,PY+10+4.6,hz);worldGroup.add(ridge);
+  const gableEnd=new THREE.BoxGeometry(0.95,3.3,15.4);
+  for(const ex of[hx-15,hx+15])for(const s of[1,-1]){
+    const g=new THREE.Mesh(gableEnd,gableMat);
+    g.position.set(ex,PY+10.95,hz+s*7.3);g.rotation.x=-s*0.30;worldGroup.add(g);}
+  // windows: glowing panes with frames, on every face
+  const pane=W(0x2c2417,0xffb84f),frameM=W(0x4a361f);
+  const winI=new THREE.InstancedMesh(new THREE.BoxGeometry(0.3,1.7,2.2),pane,10);
+  const winF=new THREE.InstancedMesh(new THREE.BoxGeometry(0.36,2.1,2.6),frameM,10);
+  const wins=[[hx-15,hz-7,'x'],[hx-15,hz+7,'x'],[hx-7,hz-14,'z'],[hx+7,hz-14,'z'],
+    [hx-8,hz+14,'z'],[hx+8,hz+14,'z'],[hx+15,hz-8.5,'x'],[hx+15,hz+8.5,'x'],
+    [hx+15,hz+10,'u'],[hx-15,hz+10,'u']];
+  wins.forEach((w,k)=>{
+    const ry=w[2]==='z'?Math.PI/2:0, yy=w[2]==='u'?LY+2.1:PY+3.4;
+    putIM(winI,k,w[0],yy,w[1],0,ry,0,1,1,1);putIM(winF,k,w[0],yy,w[1],0,ry,0,1,1,1);});
+  worldGroup.add(winI,winF);
+  // downstairs: the feasting fire, the long table, barrels under the solar
+  const hearth=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.5,2.6),stone);
+  hearth.position.set(hx+12.4,PY+0.3,hz-9);worldGroup.add(hearth);solids.push({x:hx+12.4,z:hz-9,r:1.8});
+  const fire=new THREE.Mesh(new THREE.SphereGeometry(0.7,8,6),W(0xff8a3c,0xe04a10));
+  fire.scale.set(1.2,0.8,0.9);fire.position.set(hx+12.4,PY+0.9,hz-9);worldGroup.add(fire);
+  const chimI=new THREE.InstancedMesh(new THREE.BoxGeometry(2.2,13,2.2),stone,1);
+  putIM(chimI,0,hx+15.8,PY+7,hz-9,0,0,0,1,1,1);worldGroup.add(chimI);
+  solids.push({x:hx+15.8,z:hz-9,r:1.6});
+  const table=new THREE.Mesh(new THREE.BoxGeometry(9,0.5,2.6),wood);
+  table.position.set(hx+1.5,PY+1.5,hz-5.5);worldGroup.add(table);solids.push({x:hx+1.5,z:hz-5.5,r:2.6});
+  const legI=new THREE.InstancedMesh(new THREE.BoxGeometry(0.5,1.5,0.5),dark,4);
+  [[-3,-0.9],[3,-0.9],[-3,0.9],[3,0.9]].forEach((c,k)=>
+    putIM(legI,k,hx+1.5+c[0],PY+0.75,hz-5.5+c[1],0,0,0,1,1,1));
+  worldGroup.add(legI);
+  const benchI=new THREE.InstancedMesh(new THREE.BoxGeometry(7,0.35,0.9),wood,2);
+  putIM(benchI,0,hx+1.5,PY+0.8,hz-7.2,0,0,0,1,1,1);
+  putIM(benchI,1,hx+1.5,PY+0.8,hz-3.8,0,0,0,1,1,1);
+  worldGroup.add(benchI);
+  const rug=new THREE.Mesh(new THREE.BoxGeometry(7,0.08,4.6),W(0x8e3a3a));
+  rug.position.set(hx-3,PY+0.12,hz+0.5);worldGroup.add(rug);
+  const barI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.85,0.75,1.7,8),dark,6);
+  const corners=[[hx-12,hz+8],[hx-10.2,hz+9],[hx-11,hz+6.2],[hx+12,hz+8.6],[hx+10,hz+10.6],[hx-6,hz+10.5]];
+  corners.forEach((c,k)=>{putIM(barI,k,c[0],PY+0.85,c[1],rand(-0.1,0.1),rand(0,6),rand(-0.1,0.1),1,1,1);
+    solids.push({x:c[0],z:c[1],r:1.0});});
+  worldGroup.add(barI);
+  // upstairs: the solar — bed, chest, rug, and a rail over the hall
+  const bed=new THREE.Mesh(new THREE.BoxGeometry(3.2,0.7,5),dark);
+  bed.position.set(hx+10,PY+5.6,hz+9);worldGroup.add(bed);solids.push({x:hx+10,z:hz+9,r:1.9});
+  const mattress=new THREE.Mesh(new THREE.BoxGeometry(2.9,0.5,4.6),W(0xcbb28a));
+  mattress.position.set(hx+10,PY+6.1,hz+9);worldGroup.add(mattress);
+  const pillow=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.4,1.1),W(0xf0e6d2));
+  pillow.position.set(hx+10,PY+6.5,hz+10.8);worldGroup.add(pillow);
+  const chest=new THREE.Mesh(new THREE.BoxGeometry(2.4,1.4,1.4),W(0x7a5a34));
+  chest.position.set(hx+4,PY+6.1,hz+12.4);worldGroup.add(chest);solids.push({x:hx+4,z:hz+12.4,r:1.3});
+  const rug2=new THREE.Mesh(new THREE.BoxGeometry(6,0.08,5),W(0x3f6a52));
+  rug2.position.set(hx-2,PY+5.08,hz+9.5);worldGroup.add(rug2);
+  const balc=new THREE.Mesh(new THREE.BoxGeometry(23,5.2,0.55),wood);
+  balc.position.set(hx+3.25,PY+2.6,hz+4);worldGroup.add(balc);
+  for(let k=0;k<8;k++)solids.push({x:hx-7.6+k*3.2,z:hz+4,r:1.0});
+  const railI=new THREE.InstancedMesh(new THREE.BoxGeometry(0.22,1.3,0.22),dark,11);
+  for(let k=0;k<11;k++)putIM(railI,k,hx-8+k*2.3,PY+6.55,hz+4,0,0,0,1,1,1);
+  worldGroup.add(railI);
+  const railTop=new THREE.Mesh(new THREE.BoxGeometry(25.5,0.22,0.3),dark);
+  railTop.position.set(hx+3.75,PY+7.2,hz+4);worldGroup.add(railTop);
+  // front porch lanterns so the door calls to you across the meadow
+  for(const s of[1,-1]){
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.35,3.2,0.35),dark);
+    post.position.set(hx+17.5,PY+1.6,hz+s*6.5);worldGroup.add(post);
+    const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.4,7,6),W(0xffd79a,0xff9d3c));
+    lamp.position.set(hx+17.5,PY+3.3,hz+s*6.5);worldGroup.add(lamp);
+    solids.push({x:hx+17.5,z:hz+s*6.5,r:0.6});}
+  H.floorMats=[plankM,plankS];
+}
 function islandFall(h,r){
   h+=islandBump(r);                                   // a mild swell, not a mountain
   if(r>ISLE-45){                                      // the inland keeps its shape; only the
@@ -454,7 +581,7 @@ function findSpot(h,ok,fb,rad){
 function shade(c,x,z,amt=0.05){
   return c.multiplyScalar(clamp(1+Math.sin(x*0.7)*Math.sin(z*0.63)*amt,0.9,1.1));}
 
-const MAPKEYS=['forest','canyon','beach','winter'];
+const MAPKEYS=['forest','canyon','beach','winter','mosatrench','valley'];
 const MAPS={
 /* ------------------------------------------------------ PINE FOREST -- */
 forest(){
@@ -586,6 +713,217 @@ forest(){
     pix,terr,camp,decor,
     env:{sky:0x9fd8e8,fogCol:0x9fd8e8,far:880,sunCol:0xfff2cf,sunInt:1.7,sunPos:[60,90,30],
       hemiSky:0xffffff,hemiGnd:0x54703f,waterCol:0x3d8fb0,waterOp:0.72}};
+},
+/* ---------------------------------------------------- THE MO SATRENCH -- */
+/* A drowned caldera: the reef ring survived the collapse, but the middle
+   fell thirty metres below the waterline. Four channels cut the reef, four
+   little atolls sit in the basin like teeth left in a jaw, and something
+   enormous circles beneath every one of them. No humans, no herds: the
+   whole drowned world belongs to the Mosasaurus, and its challengers
+   answer to none of the usual rules.                                             */
+mosatrench(){
+  const p=[...Array(6)].map(()=>rand(0,6.283));
+  const f=[.008,.007,.016,.014,.034,.03].map(v=>v*rand(0.85,1.15));
+  const peaks=ridgedPeaks(2).map(m=>({...m,H:m.H*0.6}));
+  const isles=[];
+  for(let k=0;k<7;k++){
+    const a=k/7*6.283+rand(-0.35,0.35),d=rand(175,245);
+    isles.push({x:Math.cos(a)*d,z:Math.sin(a)*d,R:rand(34,58),H:rand(7,13)});}
+  const atols=[{x:0,z:0,R:20,H:5.5}];              // the last rocks above the deep
+  for(let k=0;k<3;k++){
+    for(let g=0;g<12;g++){
+      const a=rand(0,6.283),d=rand(58,140);
+      const x=Math.cos(a)*d,z=Math.sin(a)*d;
+      if(atols.every(o=>Math.hypot(o.x-x,o.z-z)>74)){atols.push({x,z,R:rand(15,24),H:rand(3.5,6)});break;}}}
+  const chans=[0.6,2.3,4.0,5.6].map(a=>({a:a+rand(-0.2,0.2),w:rand(0.045,0.07)}));
+  const height=(x,z)=>{const r=Math.hypot(x,z);
+    let h=2.6*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
+        +1.7*Math.sin(x*f[2]+p[2])*Math.sin(z*f[3]+p[3])
+        +1.1*Math.sin(x*f[4]+p[4])*Math.cos(z*f[5]+p[5]);
+    for(const m of peaks){const d=Math.hypot(x-m.x,z-m.z);h+=m.H*Math.exp(-d*d/(m.R*m.R*0.5));}
+    for(const is of isles){const d=Math.hypot(x-is.x,z-is.z);h+=is.H*Math.exp(-d*d/(is.R*is.R*0.4));}
+    h+=islandBump(r);
+    if(r>ISLE-45){const s=clamp((r-(ISLE-45))/75,0,1);h-=(h+0.7)*s;}
+    if(r>ISLE+25)h-=(r-ISLE-25)*0.12;              // the drowned shelf, falling further
+    if(r>SHELF)h-=(r-SHELF)*0.34;                  // than anywhere else in the game
+    for(const c of chans){                         // four cuts through the reef ring
+      if(r<ISLE-75||r>SHELF+12)continue;
+      let da=Math.atan2(z,x)-c.a;da=((da+Math.PI)%6.283+6.283)%6.283-Math.PI;
+      if(Math.abs(da)<c.w)
+        h-=9*(1-Math.abs(da)/c.w)*clamp((ISLE+5-r)/25,0,1)*clamp((r-(ISLE-75))/30,0,1);}
+    if(r<165){                                     // the collapsed caldera
+      const t=clamp((165-r)/55,0,1);
+      h=h*(1-t*t)-31*Math.pow(t,1.3)+0.9*Math.sin(x*0.05)*Math.cos(z*0.052)*t;}
+    for(const is of atols){                        // and the atolls that outlasted it
+      const d=Math.hypot(x-is.x,z-is.z);
+      if(d<is.R*1.7)h=Math.max(h,is.H*(1-d/(is.R*1.7)));}
+    return Math.max(-38,h);};
+  const zones=[{name:pickFrom(['THE MO SATRENCH','THE DROWNED CALDERA','THE BOTTOMLESS LAGOON']),tag:'trench',x:0,z:0,r:150},
+    {name:pickFrom(['THE LAST ROCK','SKULL CAY','THE BONE ISLET']),x:0,z:0,r:34},
+    {name:pickFrom(['THE BROKEN REEF','CORAL GATE','THE CHANNELS']),tag:'channels',
+      x:Math.cos(chans[0].a)*305,z:Math.sin(chans[0].a)*305,r:60}];
+  const flat=pickFrom(['THE ENDLESS BLUE','THE DEEP','THE DROWNED WORLD']);
+  const sandC=new THREE.Color(0xd8cfae),grassC=new THREE.Color(0x5d8a3c),
+    scrubC=new THREE.Color(0x7c9a4e),deepC=new THREE.Color(0x0b2830),
+    shalC=new THREE.Color(0x2f8fa5),rockC=new THREE.Color(0x6b7280);
+  const pix=(x,z,h)=>{let c;
+    if(h<-8)c=deepC.clone().lerp(shalC,clamp((h+30)/20,0,1)*0.55);
+    else if(h<-0.2)c=shalC.clone().lerp(sandC,clamp((h+9)/9,0,1)*0.85);
+    else if(h<1.4)c=sandC.clone();
+    else c=grassC.clone().lerp(scrubC,Math.abs(Math.sin(x*0.06)*Math.cos(z*0.055))*0.55)
+          .lerp(rockC,clamp((h-9)/8,0,1)*0.7);
+    shade(c,x,z,0.06);return[c.r*255,c.g*255,c.b*255];};
+  const humans=[0,0];
+  const terr={mosasaurus:[0,0]};
+  const camp=findSpot(height,(x,z,h)=>h>1&&h<8,[0,0],16);
+  function decor(){
+    // palms on every scrap of dry ground
+    const tn=tier==='low'?120:320;
+    const trI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16,0.3,3.4,5),
+      new THREE.MeshLambertMaterial({color:0x7a5a38}),tn),
+      frI=new THREE.InstancedMesh(new THREE.ConeGeometry(1.9,1.5,6),
+      new THREE.MeshLambertMaterial({color:0x3f8f46}),tn);
+    let placed=0,guard=0;
+    while(placed<tn&&guard++<20000){
+      const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
+      if(h<0.9||h>9)continue;
+      const s=rand(0.8,1.5);
+      putIM(trI,placed,x,h+1.7*s,z,0,rand(0,6),0.08*s,s,s,s);
+      putIM(frI,placed,x,h+3.6*s,z,rand(-0.25,0.25),rand(0,6),0,s,s*0.7,s);
+      solids.push({x,z,r:0.5*s});placed++;}
+    trI.count=frI.count=placed;worldGroup.add(trI,frI);
+    // reef boulders
+    const rn=tier==='low'?60:160;
+    const rbI=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1,0),
+      new THREE.MeshLambertMaterial({color:0x8d9088}),rn);
+    let rp=0,rg=0;
+    while(rp<rn&&rg++<9000){
+      const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
+      if(h<-1||h>7)continue;
+      const s=rand(0.5,1.6);
+      putIM(rbI,rp,x,h+0.3*s,z,0,rand(0,6),0,s,s*0.7,s);rp++;}
+    rbI.count=rp;worldGroup.add(rbI);
+    // the wreck of the Satanhammer, run aground on the last rock
+    const wy=height(0,0);
+    const wreck=new THREE.Group();wreck.position.set(4.6,wy-0.25,2.2);wreck.rotation.y=0.62;
+    const wrM=new THREE.MeshLambertMaterial({color:0x6b4a2c}),wrD=new THREE.MeshLambertMaterial({color:0x55381f});
+    const hull=new THREE.Mesh(new THREE.BoxGeometry(2.6,1.5,8),wrM);
+    hull.position.set(0,0.85,0);hull.rotation.z=0.42;wreck.add(hull);
+    const bow=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.2,2.6),wrD);
+    bow.position.set(0.5,1.6,4.6);bow.rotation.set(-0.5,0,0.42);wreck.add(bow);
+    const stern=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.7,1.9),wrD);
+    stern.position.set(-0.2,1.7,-4.4);stern.rotation.z=0.42;wreck.add(stern);
+    const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.22,6.5,6),wrD);
+    mast.position.set(0.3,3.6,0.4);mast.rotation.z=0.24;wreck.add(mast);
+    const yard=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,3.4,5),wrD);
+    yard.position.set(0.6,5.4,0.4);yard.rotation.z=Math.PI/2-0.2;wreck.add(yard);
+    worldGroup.add(wreck);
+    solids.push({x:4.6,z:2.2,r:2.2});
+    // a scatter of old bones — the caldera has been hungry for a long time
+    const bn=tier==='low'?40:90;
+    const ribI=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.13,0.13,3,4),
+      new THREE.MeshLambertMaterial({color:0xd9d2bb}),bn);
+    let bp=0,bg=0;
+    while(bp<bn&&bg++<9000){
+      const a=rand(0,6.283),r2=rand(24,150);
+      const x=Math.cos(a)*r2,z=Math.sin(a)*r2,h=height(x,z);
+      if(h>0.4)continue;                            // bones half-resting on the shelves
+      putIM(ribI,bp,x,h+0.2,z,Math.PI/2,rand(0,6),rand(-0.4,0.4),1,1,rand(0.7,1.3));bp++;}
+    ribI.count=bp;worldGroup.add(ribI);
+    for(const is of atols.concat(isles.slice(0,3))){
+      const sk=new THREE.Mesh(new THREE.SphereGeometry(1.1,7,6),
+        new THREE.MeshLambertMaterial({color:0xe3dcc4}));
+      const hy=height(is.x+is.R*0.6,is.z);
+      if(hy<0.5)continue;
+      sk.scale.set(1,0.85,1.35);sk.position.set(is.x+is.R*0.6,hy+0.7,is.z);worldGroup.add(sk);
+    }
+  }
+  return{name:'THE MO SATRENCH',height,zones,flat,flatAt:(x,z,h)=>h<-0.4?'THE BLACK DEEP':null,
+    pix,terr,camp,decor,winter:false,noSea:true,seaWorld:true,
+    env:{sky:0x8fbdd0,fogCol:0x9fc6d4,far:900,sunCol:0xffe6bd,sunInt:1.5,sunPos:[50,80,-40],
+      hemiSky:0xe4f2f8,hemiGnd:0x5d7480,waterCol:0x11607a,waterOp:0.9}};
+},
+/* ------------------------------------------------------- GREAT VALLEY -- */
+/* Rolling meadows under four low hills, three human villages smoking away
+   in the grass, herds of armoured browsers — and carved into the flank of
+   the western knoll, THE GREAT HOUSE: a timber hall with a feasting fire
+   downstairs, a solar at the back of a ramp upstairs, and double doors a
+   dinosaur can actually bite open. Brachiosaurus and Diplodocus wander
+   here; nothing swims, because nothing is welcome in the shallows.            */
+valley(){
+  const p=[...Array(6)].map(()=>rand(0,6.283));
+  const f=[.006,.005,.014,.012,.03,.026].map(v=>v*rand(0.85,1.15));
+  const hills=[{x:168,z:-158,R:110,H:26},{x:-118,z:215,R:100,H:24},{x:225,z:120,R:95,H:22}];
+  const knoll={x:-196,z:-122,R:150,H:13};           // the hill the great house is cut into
+  const HB={x:-196,z:-116},PY=7.5,LY=12.7;          // house centre, hall floor, solar floor
+  const floorAt=(x,z)=>{                            // walkable floors, encoded in the ground itself
+    const dx=x-HB.x,dz=z-HB.z;
+    if(dx>-15&&dx<15&&dz>-14&&dz<14){
+      if(dz>4)return LY;                            // the solar: whole north half, upstairs
+      if(dx<-9)return PY+5.2*clamp((dz+13.5)/17.5,0,1);   // the ramp up the west wall
+      return PY;}
+    return null;};
+  const height=(x,z)=>{const r=Math.hypot(x,z);
+    let h=2.9*Math.sin(x*f[0]+p[0])*Math.cos(z*f[1]+p[1])
+        +1.6*Math.sin(x*f[2]+p[2])*Math.sin(z*f[3]+p[3])
+        +1.0*Math.sin(x*f[4]+p[4])*Math.cos(z*f[5]+p[5]);
+    for(const m of hills){const d=Math.hypot(x-m.x,z-m.z);h+=m.H*Math.exp(-d*d/(m.R*m.R*0.45));}
+    {const d=Math.hypot(x-knoll.x,z-knoll.z);h+=knoll.H*Math.exp(-d*d/(knoll.R*knoll.R*0.5));}
+    h=islandFall(h,r);
+    const fl=floorAt(x,z);if(fl!==null)return fl;    // the house carves its own ground
+    const dm=Math.max(Math.abs(x-HB.x)-15,Math.abs(z-HB.z)-14);
+    if(dm<14){const t=1-dm/14;return h+(PY-h)*t*t*(3-2*t);}   // a smooth terrace skirt
+    return h;};
+  const vspot=(ax,az)=>findSpot(height,(x,z,h)=>h>0.9&&h<5.5,[ax,az],34);
+  const villages=[vspot(-60,90),vspot(72,148),vspot(150,-40)];
+  const zones=[{name:pickFrom(['THE GREAT HOUSE','THE LONG HOUSE','THE HALL OF GIANTS']),tag:'house',x:HB.x,z:HB.z,r:44},
+    {name:pickFrom(['WHEATMILL','THE WHEAT VILLAGES','OLD MILL']),tag:'village',x:villages[0][0],z:villages[0][1],r:26},
+    {name:pickFrom(['REEDTOWN','THE REED VILLAGE','FISHER ROW']),tag:'village',x:villages[1][0],z:villages[1][1],r:26},
+    {name:pickFrom(['OAKHAVEN','THE OAK VILLAGE','DAIRY HOLLOW']),tag:'village',x:villages[2][0],z:villages[2][1],r:26},
+    {name:pickFrom(['THE GREY MEADOW','THE LONG GRASS','Grazier\u2019s Vale']),x:0,z:0,r:150}];
+  const flat=pickFrom(['THE GREY MEADOW','THE CATTLE PLAIN','THE LONG GRASS']);
+  const grassA=new THREE.Color(0x6fa03e),grassB=new THREE.Color(0x87b055),
+    mudC=new THREE.Color(0x8a6c46),rockC=new THREE.Color(0x7d8288),
+    plankA=new THREE.Color(0xa87c4a),plankB=new THREE.Color(0x8f6838),plankD=new THREE.Color(0x7a5730);
+  const pix=(x,z,h)=>{let c;
+    const dx=x-HB.x,dz=z-HB.z,inH=Math.abs(dx)<15&&Math.abs(dz)<14;
+    if(inH&&h>12.2)c=plankB.clone();                          // the solar floor
+    else if(inH&&h>6.9)c=(dx<-9&&dz<=4)?plankD.clone():plankA.clone();   // ramp, then hall
+    else if(h<-0.4)c=mudC.clone().lerp(new THREE.Color(0x3d8fb0),clamp((h+6)/6,0,1)*0.6);
+    else if(h<9)c=grassA.clone().lerp(grassB,Math.abs(Math.sin(x*0.045)*Math.cos(z*0.05))*0.75)
+          .lerp(mudC,villages.some(v=>Math.hypot(x-v[0],z-v[1])<16)?0.5:0);
+    else c=grassB.clone().lerp(rockC,clamp((h-14)/10,0,1)*0.55);
+    shade(c,x,z,0.05);return[c.r*255,c.g*255,c.b*255];};
+  const grassOk=(x,z,h)=>h>1&&h<7;
+  const terr={brachiosaurus:findSpot(height,grassOk,[-40,-30],110),
+    diplodocus:findSpot(height,grassOk,[60,60],110),
+    humans:villages[0],mosasaurus:[940,940]};
+  const camp=findSpot(height,(x,z,h)=>h>1&&h<4&&Math.hypot(x,z)<ISLE-60,[0,150],120);
+  function decor(){
+    for(const v of villages)villageDecor(height,v[0],v[1]);
+    // tall grass and flowers across the meadows
+    const gn=tier==='low'?500:1300;
+    const gI=new THREE.InstancedMesh(new THREE.ConeGeometry(0.35,1.5,4),
+      new THREE.MeshLambertMaterial({color:0x7fa84e}),gn),
+      flI=new THREE.InstancedMesh(new THREE.SphereGeometry(0.16,5,4),
+      new THREE.MeshLambertMaterial({color:0xffd85e}),gn);
+    let gp=0,fg=0;
+    while(gp<gn&&fg++<30000){
+      const x=rand(-EDGE,EDGE),z=rand(-EDGE,EDGE),h=height(x,z);
+      if(!grassOk(x,z,h))continue;
+      if(Math.abs(x-HB.x)<20&&Math.abs(z-HB.z)<19)continue;
+      const s=rand(0.7,1.6);
+      putIM(gI,gp,x,h+0.75*s,z,0,rand(0,6),0,s,s,s);
+      if(gp%4===0){putIM(flI,gp/4|0,x,h+0.35,z,0,0,0,1,1,1);}
+      gp++;}
+    gI.count=gp;flI.count=gp/4|0;worldGroup.add(gI,flI);
+    buildGreatHouse(height);
+  }
+  return{name:'GREAT VALLEY',height,zones,flat,flatAt:(x,z,h)=>h<-0.4?'THE SHALLOWS':null,
+    pix,terr,camp,decor,noSea:true,noHumans:true,roster:'sauropod',
+    ambient:['trike','stego','ankylo'],villages,housePos:[HB.x,HB.z],
+    env:{sky:0xade0ef,fogCol:0xbde2ea,far:900,sunCol:0xfff0c8,sunInt:1.75,sunPos:[70,95,20],
+      hemiSky:0xf2fbff,hemiGnd:0x5f7a44,waterCol:0x3d9ab5,waterOp:0.7}};
 },
 /* ---------------------------------------------------- CRYSTAL CANYON -- */
 canyon(){
@@ -939,7 +1277,7 @@ function disposeWorld(){
   worldGroup.traverse(o=>{if(o===water)return;
     if(o.geometry)o.geometry.dispose();
     if(o.material&&o.material.dispose)o.material.dispose();});
-  worldGroup.clear();solids.length=0;
+  worldGroup.clear();solids.length=0;window.__house=null;
 }
 /* build one whole island: terrain + palette + sky + decor + zones + camp */
 function buildWorld(key,seed){
@@ -1006,6 +1344,8 @@ const ASSET={hunter:'human'};
 const ROSTER=['allo','spino','ankylo','im','dr','raptor','dilopho','trike','stego','diplodocus','brachiosaurus'];
 function rollCast(seed,skip,mapKey){                          // an island never rolls your own kind
   if(mapKey==='winter')return['raptor'];
+  if(mapKey==='mosatrench')return['mosasaurus'];             // the trench has one answer to everything
+  if(mapKey==='valley')return['brachiosaurus','diplodocus']; // and the valley has two
   const r=mulberry32(((seed>>>0)^0x9e3779b9)>>>0),pool=ROSTER.filter(k=>k!==skip),out=[];
   let giant=false;
   while(out.length<5&&pool.length){
@@ -1624,6 +1964,33 @@ function spawnEnemies(){
     spawnHumanPacks();                  // the fur-village stands even here
     return;
   }
+  if(curMap&&curMap.seaWorld){                 // the Mo Satrench: a brood of Mosasaurus owns the deep
+    const spots=[];
+    for(const a0 of[0.9,2.1,3.3,4.5,5.6,1.55]){
+      let sp=null;
+      for(let r=124;r>24&&!sp;r-=7)for(let k=-1;k<=1&&!sp;k++){   // real deep, not the rim
+        const x=Math.cos(a0+k*0.25)*r,z=Math.sin(a0+k*0.25)*r;
+        if(terrainH(x,z)<-14)sp=[x,z];}
+      if(sp)spots.push(sp);
+    }
+    for(let i=0;i<spots.length;i++)spawnWild('mosasaurus',i,spots[i]);
+    return;
+  }
+  if(curMap&&curMap.roster==='sauropod'){      // the Great Valley: giants, herds, and three villages
+    for(const[vx,vz]of(curMap.villages||[])){
+      const n=2+(RNG()*2|0);
+      for(let i=0;i<n;i++){
+        const a=rand(0,6.283),d=rand(20,42);
+        const h=findSpot(terrainH,(x,z,hh)=>hh>0.8,[vx+Math.cos(a)*d,vz+Math.sin(a)*d],14);
+        spawnAmbientOne('human',i,h);}
+    }
+    for(let i=0;i<2;i++)spawnWild('brachiosaurus',i);       // the two challengers, a pair each
+    for(let i=0;i<2;i++)spawnWild('diplodocus',i);
+    for(const key of(curMap.ambient||[]))for(let i=0;i<2;i++){
+      const a=rand(0,6.283),r=Math.sqrt(rand(0,1))*(ISLE-40);
+      spawnAmbientOne(key,i,findSpot(terrainH,(x,z,hh)=>hh>1.4&&hh<9,[Math.cos(a)*r,Math.sin(a)*r],70));}
+    return;
+  }
   for(const key of CAST){
     if(players.some(p=>p.key===key))continue;  // that species is a hero already
     const n=SPECIES[key].pack?2:1;             // raptors and allos travel in pairs
@@ -1680,7 +2047,10 @@ const PICKTAG={trex:'the balanced hero',allo:'fast but squishy',spino:'big tail 
   hunter:'tiny — but GRAB tames and RIDES anything!'};
 // your own kind never counts against you: goal = challengers that aren't any hero.
 // (In the winter world the raptors are hungry — they'll even eat their own.)
-const goalKeys=()=>curMap&&curMap.winter?CAST.slice():CAST.filter(k=>!players.some(p=>p.key===k));
+const goalKeys=()=>curMap&&curMap.winter?CAST.slice()
+  :curMap&&curMap.seaWorld?['mosasaurus']                 // drain the trench: that is the whole job
+  :curMap&&curMap.roster==='sauropod'?['brachiosaurus','diplodocus']
+  :CAST.filter(k=>!players.some(p=>p.key===k));
 // a species is beaten once none of its challengers are still standing — counted
 // animals (ambient herds, your old wild selves) never count for or against it
 const goalLeft=()=>goalKeys().filter(k=>enemies.some(e=>e.key===k&&!e.counted&&e.alive)).length;
@@ -1859,7 +2229,7 @@ function switchSpecies(key){
   if(!started||!player||!player.alive||key===player.key)return;
   if(player.riding)unmountRider(player,false);          // hop off before you change shape
   const old=player.key;
-  if(!(curMap&&curMap.winter))                          // winter raptors are hungry: they eat their own
+  if(!(curMap&&(curMap.winter||curMap.seaWorld||curMap.roster==='sauropod')))   // winter raptors are hungry: they eat their own
   for(const e of[...enemies]){                          // wild members of your new kind join you
     if(e.key!==key)continue;
     e.counted=true;                            // never counts as a defeat
@@ -1898,8 +2268,10 @@ function padUI(){ // d-pad / stick scrolls the menu cards (same layout as kbdUI)
 const CAM={d:12.5,h:5.2};
 /* ---- start-screen map picker: thumbnails from the same map formulas ---- */
 let mapPick='forest',previewMap='forest';
-const MAPNAME={forest:'PINE FOREST',canyon:'CRYSTAL CANYON',beach:'SUNSET BEACH',winter:'RAPTOR WINTER'};
-const MAPTAG={forest:'hills & pines',canyon:'mesas & caves',beach:'islands & lagoon',winter:'snow & raptors'};
+const MAPNAME={forest:'PINE FOREST',canyon:'CRYSTAL CANYON',beach:'SUNSET BEACH',winter:'RAPTOR WINTER',
+  mosatrench:'THE MO SATRENCH',valley:'GREAT VALLEY'};
+const MAPTAG={forest:'hills & pines',canyon:'mesas & caves',beach:'islands & lagoon',winter:'snow & raptors',
+  mosatrench:'the drowned trench',valley:'villages & giants'};
 function mapThumb(k){
   const c=document.createElement('canvas');c.width=96;c.height=54;
   const sv=RNG;RNG=mulberry32(9973+k.length*613);   // fixed showcase seed
@@ -2021,7 +2393,7 @@ function joinP(ctl){
   const slot=players.length;
   ch.pm=makePm(ch,slot);ch.pm.ctl=ctl;
   placePlayerStart(ch,slot);
-  if(!curMap.winter)                             // your own kind on the island joins your party
+  if(!curMap.winter&&!curMap.seaWorld&&curMap.roster!=='sauropod')   // your own kind on the island joins your party
     for(const e of[...enemies]){
       if(e.key!==key||e.counted)continue;
       e.counted=true;
@@ -2138,6 +2510,10 @@ function goreHit(e){                                        // Triceratops ends 
    thunder around trying to shake the little terror off.            */
 const isGiant=ch=>!!ch.sp.giant;
 const giantBlind=e=>e.sp.giant&&player&&player.sp.rider;    // giants never clock a raptor
+/* and even the mid-sized hunters barely register one: a raptor moving low
+   through the ferns is a shadow, a snack-sized rumour — see it at a third
+   of the distance you would see anything else.                               */
+const preySight=()=>player&&player.sp.rider?0.34:1;
 function nearestGiant(ch,range){
   let best=null,bd=range;
   for(const e of enemies){
@@ -2360,10 +2736,11 @@ function kill(ch){
         if(left===0&&!won){won=true;setTimeout(winGame,1400);}
         else toast(`${ch.sp.name} down! ${left} challenger${left===1?'':'s'} to go!`);
       } else if(ch.sp.sea)
-        toast('THE MOSASAURUS IS DOWN! The sea feels safer... but another will come.',2600);
+        toast(curMap.seaWorld?'THE MOSASAURUS IS DOWN! One less shadow under the bridges.':   // the trench keeps its dead
+          'THE MOSASAURUS IS DOWN! The sea feels safer... but another will come.',2600);
       else toast(`${ch.sp.name} down!`);
     }
-    if(ch.sp.sea){ch.respawnAt=performance.now()+45000;ch.remove=()=>{};}  // the sea always refills
+    if(ch.sp.sea&&!curMap.seaWorld){ch.respawnAt=performance.now()+45000;ch.remove=()=>{};}  // the wild sea always refills
     else if(ch.sp.kind==='human'){ch.respawnAt=performance.now()+45000;ch.remove=()=>{};}
     else ch.respawnAt=0;                         // the village regrows; a body waits by the fire
   }
@@ -2519,8 +2896,39 @@ function newExpedition(k,seed,keepPlayer,newKey){
     :`${curMap.name} — a brand-new island! ${goalLeft()} challengers to find!`);
 }
 
+/* the great house doors: BITE while you stand at the threshold and the whole
+   pair swings — and while a hero is inside, the roof politely fades out so
+   the camera can watch them poke about upstairs.                              */
+function tryDoor(ch){
+  const H=window.__house;
+  if(!H||!ch||!ch.alive||ch.sp.sea)return false;
+  if(Math.hypot(ch.x-H.doorX,ch.z-H.doorZ)>7)return false;
+  for(const d of H.doors)d.open=!d.open;
+  if(ch.isPlayer){SFX.clang(ch);
+    toast(H.doors[0].open?'You shoulder the great doors open — they weigh a ton.':
+      'You haul the great doors shut. The hall glows behind you.',2200);}
+  H.hintT=14;return true;
+}
+function stepHouse(dt){
+  const H=window.__house;let inside=false,nearDoor=false;
+  for(const pl of players){
+    if(!pl.alive||pl.sp.sea)continue;
+    if(Math.abs(pl.x-H.x)<17&&Math.abs(pl.z-H.z)<16)inside=true;
+    else if(Math.hypot(pl.x-H.doorX,pl.z-H.doorZ)<10)nearDoor=true;}
+  if(nearDoor&&H.hintT<=0){toast('BITE at the great doors to open them.',2200);H.hintT=14;}
+  H.hintT-=dt;
+  for(const d of H.doors){
+    const t=d.open?d.dir*2.1:0;
+    d.a+=(t-d.a)*Math.min(1,dt*3.2);d.g.rotation.y=d.a;}
+  for(const m of H.fade){
+    const want=inside?0.1:1;
+    m.opacity+=(want-m.opacity)*Math.min(1,dt*5);}
+  H.inside=inside;
+}
 function playerBite(){
-  if(!player.alive||player.atkT>0||player.windup>0)return;
+  if(!player.alive)return;
+  if(tryDoor(player))return;
+  if(player.atkT>0||player.windup>0)return;
   if(player.riding){
     const h=player.riding;
     if(h.tamed){                                  // your mount bites where you point it
@@ -2933,7 +3341,7 @@ function stepEnemyAI(e,dt){
       else SFX.bite(e);
       e.cool=e.sp.stomp?2.6:(e.sp.armor?1.8:1.2);e.state='chase';
     }
-  } else if(player.alive&&!giantBlind(e)&&dp<aggroR(e)){
+  } else if(player.alive&&!giantBlind(e)&&dp<aggroR(e)*preySight()){
     e.state='chase';
     if(!e.prevAgg){e.prevAgg=1;                            // fresh spotting: announce it
       if(e.key!=='ankylo'&&Math.random()<0.7){SFX.roar(e.key,e);startRoar(e,0.7);}
@@ -2987,7 +3395,7 @@ function stepEnemyAI(e,dt){
     e.yaw+=clamp(angDiff(toG,e.yaw),-(e.sp.turn||4)*dt,(e.sp.turn||4)*dt);
     if(dg>e.sp.reach)walkToward(e,e.sp.run,g.x,g.z,dt);
     if(dg<e.sp.reach+2.6&&e.cool<=0&&Math.abs(angDiff(toG,e.yaw))<0.9)mountHost(g,e);
-  } else if(!giantBlind(e)&&dp<e.sp.aggro*1.8&&Math.abs(player.speed)<0.6&&e.key!=='dr'&&e.key!=='im'
+  } else if(!giantBlind(e)&&dp<e.sp.aggro*1.8*preySight()&&Math.abs(player.speed)<0.6&&e.key!=='dr'&&e.key!=='im'
             &&!baitNear(e.x,e.z,BAIT_PULL)){   // …but not while there's a fish to get to
     e.state='watch';                                     // you stopped: it stops and stares
     e.yaw+=clamp(angDiff(Math.atan2(-(player.z-e.z),player.x-e.x),e.yaw),-1.5*dt,1.5*dt);
@@ -3272,6 +3680,7 @@ function stepMosasaur(e,dt){
   let tg=null,bd=1e9;
   for(const t of [player,...enemies]){
     if(t===e||!t.alive||t.swallowed||t.riding||!wetAt(t.x,t.z))continue;
+    if(t.sp.sea&&t!==player)continue;            // the brood does not eat itself
     if(baitNear(t.x,t.z,30))continue;             // nobody near my fish gets eaten — that's the point of it
     let d=Math.hypot(t.x-e.x,t.z-e.z);
     if(t.sp.huge)d*=1.8;
@@ -3696,7 +4105,7 @@ function updateHUD(){
 }
 function nextGoal(){
   let b=null,bd=1e9;
-  for(const e of enemies){if(!e.alive||e.counted||e.sp.sea)continue;   // the sea is never "the goal"
+  for(const e of enemies){if(!e.alive||e.counted||(e.sp.sea&&!(curMap&&curMap.seaWorld)))continue;   // in the trench, the sea IS the goal
     const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<bd){bd=d;b=e;}}
   return b;
 }
@@ -3775,6 +4184,7 @@ function frame(now){
   requestAnimationFrame(loop);
   const dt=Math.min(0.05,(now-last)/1000);last=now;
   fpsAcc+=dt;fpsN++;if(fpsAcc>2){fps=fpsN/fpsAcc;fpsAcc=0;fpsN=0;}
+  if(window.__house)stepHouse(dt);
   // buttons, probes and win timers poke the globals between frames — bank
   // them into P1's pm before any hero takes the stage again
   if(started&&players.length)exitP(players[0]);
@@ -3970,7 +4380,7 @@ function updateVpHud(pl){                        // a full little HUD inside thi
     h.zlbl.textContent=zn||'';h.zlbl.style.opacity=zn?1:0;
     clearTimeout(h.zlbl.h);h.zlbl.h=setTimeout(()=>h.zlbl.style.opacity=0,3200);}
   let g=null,bd=1e9;
-  for(const e of enemies){if(!e.alive||e.counted||e.sp.sea)continue;
+  for(const e of enemies){if(!e.alive||e.counted||(e.sp.sea&&!(curMap&&curMap.seaWorld)))continue;
     const d=Math.hypot(e.x-pl.x,e.z-pl.z);if(d<bd){bd=d;g=e;}}
   const v=pm.vp||vpRect(pm.slot);
   if(!g||anyMenu()||won||pm.knockedOut||bd<10){h.compass.style.opacity=0;}
@@ -4001,6 +4411,7 @@ window.__probe={
   state(){return{hearts,roar:+roarGauge.toFixed(2),kills:defeated.size,defeated:[...defeated],won,
     muted,
     species:player.key,goalLeft:goalLeft(),menu:anyMenu(),pick:pickKey,down:knockedOut,
+    preySight:+preySight().toFixed(2),
     cast:CAST.slice(),
     enemies:enemies.map(e=>({key:e.key,alive:e.alive,hp:e.hp,x:+e.x.toFixed(1),z:+e.z.toFixed(1),
       g:+terrainH(e.x,e.z).toFixed(2),
@@ -4152,6 +4563,11 @@ window.__probe={
   killEnemy(key){const e=this.pk(key);if(e){e.hp=1;this.goToEnemy(enemies.indexOf(e));
     playerBite();return true;}return false;},
   kill(key){const e=this.pk(key);if(e){kill(e);return true;}return false;},
+  houseInfo(){const H=window.__house;if(!H)return null;
+    return{x:H.x,z:H.z,padY:H.padY,loftY:H.loftY,door:[+H.doorX.toFixed(1),+H.doorZ.toFixed(1)],
+      open:!!(H.doors[0]&&H.doors[0].open),inside:!!H.inside,
+      roof:+(H.fade[0]?H.fade[0].opacity.toFixed(2):1)};},
+  doorBite(){return tryDoor(player);},
   hurtEnemy(key,dmg=1){const e=this.pk(key);
     if(!e)return null;invulnT=0;hurt(e,dmg,e.x+1,e.z);return e.hp;},
   canBite(){return !!(player&&player.alive&&player.atkT<=0&&player.windup<=0);},
@@ -4240,7 +4656,7 @@ window.__probe={
   openMenu(){const p0=players[0];if(p0&&!p0.pm.menu)openMenuP(p0);return !!(p0&&p0.pm.menu);},
   closeMenu(){const p0=players[0];if(p0)closeMenuP(p0);return !!(p0&&p0.pm.menu);},
   map(){return{key:previewMap,seed:WORLDSEED,name:curMap.name,flat:FLATNAME,world:WORLD,
-    winter:!!curMap.winter,noSea:!!curMap.noSea,
+    winter:!!curMap.winter,noSea:!!curMap.noSea,seaWorld:!!curMap.seaWorld,roster:curMap.roster||'',
     zones:ZONES.map(z=>({name:z.name,tag:z.tag||'',x:z.x,z:z.z,r:z.r})),
     terr:Object.fromEntries(Object.entries(TERRITORY).map(([k,v])=>[k,[Math.round(v[0]),Math.round(v[1])]])),
     camp:CAMP.map(Math.round)};},
