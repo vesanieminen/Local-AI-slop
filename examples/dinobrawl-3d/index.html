@@ -91,43 +91,46 @@
   .mcard small{display:block;font-size:11px;opacity:.85}
   .mcard.sel{border-color:#ffd23f;background:rgba(255,210,63,.20);transform:scale(1.05)}
   .pcard.sel{border-color:#ffd23f;background:rgba(255,210,63,.20);transform:scale(1.07)}
-  #swap{position:fixed;inset:0;z-index:11;background:rgba(8,22,32,.62);
-    display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto}
-  #swap .panel{background:linear-gradient(180deg,#2a6d84,#1b4f63);border:3px solid rgba(255,255,255,.25);
-    border-radius:20px;padding:18px;width:min(94vw,540px);max-height:94vh;overflow:auto}
-  #swap h2{margin:0 0 10px;text-align:center;letter-spacing:1px}
-  #closeSwapB{margin-top:12px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
-    border:3px solid #fff;border-radius:14px;padding:10px 22px;font-size:16px;cursor:pointer}
-  #swap .note{text-align:center;font-size:12px;opacity:.8;margin:10px 0 0}
-  #swap .pick{gap:7px}
-  #swap .pcard{flex-basis:clamp(96px,21vw,118px);height:126px}
-  #swap .pcard img{height:58px}
-  #swap .pcard small{display:none}
-  /* the world section must not push NEW MAP off a phone screen */
+  /* every hero gets their own menu, floating over their own pane */
+  #menulayer{position:fixed;inset:0;z-index:11;pointer-events:none}
+  .pmenu{position:absolute;display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;
+    background:rgba(8,22,32,.62);overflow:auto;pointer-events:auto}
+  .pmenu .panel{background:linear-gradient(180deg,#2a6d84,#1b4f63);border:3px solid rgba(255,255,255,.25);
+    border-radius:20px;padding:16px;width:min(96%,540px);max-width:100%;max-height:96%;overflow:auto;box-sizing:border-box}
+  .pmenu h2{margin:0 0 10px;text-align:center;letter-spacing:1px;font-size:min(5vw,22px)}
+  .pmenu .note{text-align:center;font-size:12px;opacity:.8;margin:10px 0 0}
+  .pmenu .pick{gap:7px}
+  .pmenu .pcard{flex-basis:clamp(84px,17vw,118px);height:120px}
+  .pmenu .pcard img{height:54px}
+  .pmenu .pcard small{display:none}
+  /* the world section must not push NEW MAP off a small pane */
   @media (max-height:560px){
-    #swap .mwtip,#swap .note{display:none}
-    #miniMap{width:104px;height:58px}
-    #swap .pcard img{height:42px}
-    #swap .pcard{height:108px}
-    #menuMap .mcard canvas,#menuMap .mcard .dice{width:62px;height:35px}
-    #menuB{margin-top:5px;padding:7px 16px;font-size:15px}
+    .pmenu .mwtip,.pmenu .note{display:none}
+    .pmenu .pcard img{height:42px}
+    .pmenu .pcard{height:104px}
+    .growB{margin-top:5px;padding:7px 16px;font-size:15px}
   }
   /* the menu carries the world too: the island you're standing on, and a new one to grow */
   .menuworld{border-top:2px dashed rgba(255,255,255,.4);margin-top:12px;padding-top:10px}
   .menuworld h3{margin:0 0 6px;text-align:center;font-size:15px;letter-spacing:1px}
   .mwrow{display:flex;gap:10px;align-items:center;justify-content:center;text-align:left}
-  #miniMap{width:132px;height:74px;flex:none;border:3px solid rgba(255,255,255,.7);border-radius:10px;
+  .minimap{width:132px;height:74px;flex:none;border:3px solid rgba(255,255,255,.7);border-radius:10px;
     background:#0b1226;box-shadow:0 3px 10px rgba(0,0,0,.35);image-rendering:pixelated}
   .mwrow b{display:block;font-size:14px}
   .mwrow small{display:block;font-size:11px;opacity:.85;margin-top:2px}
-  #menuMap{margin:6px auto 0;gap:6px}
-  #menuMap .mcard{padding:4px}
-  #menuMap .mcard canvas,#menuMap .mcard .dice{width:76px;height:43px}
-  #menuMap .mcard b{font-size:11px;margin-top:2px}
-  #menuMap .mcard small{display:none}
-  #menuB{display:block;margin:8px auto 0;font-family:inherit;font-weight:800;font-size:16px;color:#234;
+  .mapcyc{display:flex;gap:8px;align-items:center;justify-content:center;margin:8px 0 0}
+  .mapcyc button{font-family:inherit;font-weight:800;font-size:16px;color:#fff;background:rgba(255,255,255,.12);
+    border:3px solid rgba(255,255,255,.4);border-radius:12px;padding:3px 14px;cursor:pointer}
+  .mapcyc b{min-width:150px;text-align:center;font-size:14px}
+  .growB{display:block;margin:8px auto 0;font-family:inherit;font-weight:800;font-size:16px;color:#234;
     background:#ffd23f;border:3px solid #fff;border-radius:14px;padding:9px 20px;cursor:pointer}
-  #swap .mwtip{text-align:center;font-size:11.5px;opacity:.85;margin:6px 0 0}
+  .pmenu .mwtip{text-align:center;font-size:11.5px;opacity:.85;margin:6px 0 0}
+  .pmbtns{display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+  .pmbtns button{font-family:inherit;font-weight:800;color:#fff;border:3px solid #fff;border-radius:14px;
+    padding:10px 18px;font-size:15px;cursor:pointer}
+  .leaveB{background:#b1234a}
+  .backB{background:#e8632f}
+  .pmkeys{text-align:center;font-size:11px;opacity:.75;margin:10px 0 0;line-height:1.5}
   #playB{margin-top:18px;font-size:22px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
     border:3px solid #fff;border-radius:14px;padding:14px 40px;cursor:pointer}
   .keys{font-size:13px!important;opacity:.8}
@@ -141,15 +144,11 @@
     .pcard img{height:58px}
     #playB{margin-top:12px;font-size:20px;padding:12px 32px}
   }
-  /* PLAYERS row: how many heroes share the screen? */
-  .prow{display:flex;gap:8px;align-items:center;justify-content:center;margin:10px auto 0}
-  .prow span{font-size:13px;opacity:.8;letter-spacing:2px}
-  .prow button{font-family:inherit;font-weight:800;font-size:15px;color:#fff;background:rgba(255,255,255,.10);
-    border:3px solid rgba(255,255,255,.28);border-radius:12px;padding:8px 15px;cursor:pointer}
-  .prow button.sel{border-color:#ffd23f;background:rgba(255,210,63,.2)}
-  @media (pointer:coarse){.prow{display:none}}
-  /* split-screen: a pane per hero, each with its own little HUD */
+  /* a pane per hero, each with its own little HUD and menu button */
   #vphost{position:fixed;inset:0;z-index:4;pointer-events:none}
+  .vpmenu{position:absolute;top:6px;right:6px;z-index:2;font-family:inherit;font-weight:800;font-size:11px;
+    letter-spacing:1px;color:#fff;background:rgba(20,28,44,.72);border:2px solid rgba(255,255,255,.5);
+    border-radius:9px;padding:4px 9px;cursor:pointer;pointer-events:auto}
   .vp{position:absolute;overflow:hidden}
   .vp::after{content:'';position:absolute;inset:0;border:2px solid rgba(255,255,255,.5);pointer-events:none}
   .vptag{position:absolute;left:9px;top:58px;font-size:13px;font-weight:800;letter-spacing:1px;
@@ -193,24 +192,6 @@
 <button class="btn" id="roarB">ROAR</button>
 <button class="btn" id="muteB">♪</button>
 <button class="btn" id="swapB">SWAP</button>
-<div id="swap" class="hidden"><div class="panel">
-  <h2>SWAP DINOSAUR</h2>
-  <div class="pick" id="pick2"></div>
-  <p class="note">Tap a dinosaur to become it — same hearts, same spot.<br>
-     Pick an island too and one press changes <b>both</b>.</p>
-  <div class="menuworld">
-    <h3>YOUR WORLD</h3>
-    <div class="mwrow"><canvas id="miniMap" width="132" height="74"></canvas>
-      <div><b id="menuMapLabel">SUNSET BEACH</b><small id="miniMapNote">the island you are standing on</small>
-        <small id="miniMapSeed">island number 12345</small></div></div>
-    <div class="maprow" id="menuMap"></div>
-    <button id="menuB">NEW MAP!</button>
-    <p class="mwtip" id="menuWorldTip">Tap another island, then press the big button: it grows a brand-new island
-      and makes you the highlighted dinosaur at the same time, with the same hearts. Want only one of
-      them? Tap just that card. Up/Down (and the gamepad D-pad up/down) picks the island too.</p>
-  </div>
-  <div style="text-align:center"><button id="closeSwapB">BACK TO THE FIGHT</button></div>
-</div></div>
 <div id="winOv" class="hidden"><div class="panel">
   <h2>ISLAND CHAMPION!</h2>
   <p>You beat every challenger on this island — it's all yours! ROAAAR!<br>
@@ -249,19 +230,20 @@
      Run out of hearts and your dinosaur takes a nap — press a button and it wakes
      up safe at camp.
      Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs, or move to a
-     whole new island, anytime with the SWAP button.
-     <b>Up to four heroes</b> can share one screen: pick 2P–4P below and each player gets their own
-     pane, hearts and minimap.</p>
+     whole new island, anytime with your own menu (SWAP button or ESCAPE).
+     <b>Friends join any time — no setup:</b> the first gamepad belongs to P1; press any button on
+     <i>another</i> controller (or start walking on the second keyboard's IJKL) and a brand-new hero
+     appears at camp while the screen splits. Up to four heroes, one world — everyone's menu commands
+     the same island, and every menu has a LEAVE GAME button too.</p>
   <div class="maprow" id="mrow"></div>
-  <div class="prow" id="prow"><span>PLAYERS</span></div>
   <div class="pick" id="pick"></div>
   <p class="keys">WASD / arrows — move &nbsp;•&nbsp; drag mouse or J/L — turn camera &nbsp;•&nbsp;
-     SPACE / click — bite &nbsp;•&nbsp; hold G — grab &amp; drag (a raptor: JUMP on giants!) &nbsp;•&nbsp; R — roar (a Dilophosaurus spits instead!) &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; SWAP — change dino or world<br>
-     <b>2–4 players:</b> P2 uses IJKL — move, comma/period — camera, O — bite, hold U — grab, P — roar.
-     P3 and P4 each need a gamepad: stick — move, A/X — bite, hold RT — grab, Y/RB — roar<br>
-     In the menus: swipe the dinosaur strip, arrows/WASD choose the island and dinosaur, Enter plays — the
-     gamepad D-pad does the same<br>
-     Gamepad: stick move, A/X bite, hold RT — grab &amp; drag, Y/RB roar, <b>Select/Back — menu</b>, B — back, LB — mute,
+     SPACE / click — bite &nbsp;•&nbsp; hold G — grab &amp; drag (a raptor: JUMP on giants!) &nbsp;•&nbsp; R — roar (a Dilophosaurus spits instead!) &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; ESCAPE / SWAP — your menu<br>
+     <b>Second keyboard (P2):</b> IJKL — move, comma/period — camera, O — bite, hold U — grab, P — roar, Y — menu.
+     <b>Gamepads (P2+):</b> stick — move, A/X — bite, hold RT — grab, Y/RB — roar, Select — menu, B — back<br>
+     In the menu: left/right (or d-pad) picks the dinosaur, up/down the island, A/ENTER applies —
+     <b>X / Start in the menu = LEAVE GAME</b>; NEW MAP grows a brand-new island for <b>everyone</b><br>
+     Gamepad: stick move, A/X bite, hold RT — grab &amp; drag, Y/RB roar, <b>Select/Back — menu</>, LB — mute,
      Start play, D-pad pick dino (up/down picks the island)</p>
   <button id="playB">PLAY</button>
 </div>
@@ -299,7 +281,7 @@ let tier=(()=>{
 function fit(){renderer.setSize(innerWidth,innerHeight,tier!=='low');}
 if(tier==='low')renderer.setPixelRatio(0.72);
 fit();addEventListener('resize',()=>{fit();camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
-  if(players.length>1)layoutVps();});
+  layoutVps();});
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x9fd8e8);
@@ -1404,15 +1386,18 @@ let camYaw=0,camDrag=null;
    every per-hero slice lives in ch.pm, and enterP()/exitP() bring it on
    stage for one phase and take it back off. One hero per viewport, each
    with its own camera, minimap and little HUD.                          */
-let nWant=1;
+const PIN0=IN;                             // P1's pin keeps this identity through every enterP
+let p1Pad=null;                            // pad id bound to P1 (whichever touched the title)
 const players=[];                      // players[0] is always the original `player`
 let spearVic=null,chompVic=null;       // victims pinned for the probe's spearTest / chompTest
+const anyMenu=()=>players.some(p=>p.pm&&p.pm.menu);
 function makePm(ch,slot){
-  return{slot,hearts:5,maxHearts:5,invulnT:0,roarGauge:1,roarCd:0,
+  return{slot,ctl:'kbd1',menu:false,mPick:null,mMap:null,
+    hearts:5,maxHearts:5,invulnT:0,roarGauge:1,roarCd:0,
     knockedOut:false,downT:0,ovWake:false,grabTarget:null,grabT:0,grabCd:0,
     atkCool:0,rideGrabPrev:false,zn:null,
     camYaw:slot===0?0:ch.yaw,camManual:false,camZ:1,camB:0,napBias:0,napC:null,napCT:0,napPix:0,
-    pin:slot===0?IN:newPin(),cam:slot===0?camera:new THREE.PerspectiveCamera(62,1,0.1,1600),
+    pin:slot===0?PIN0:newPin(),cam:slot===0?camera:new THREE.PerspectiveCamera(62,1,0.1,1600),
     hud:null,vp:null};
 }
 function enterP(ch){                   // this hero now speaks through the globals
@@ -1450,7 +1435,7 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(!e.repeat)pressed.push(e.code);
   if(e.code==='Space'||e.code.startsWith('Arrow'))e.preventDefault();
-  if((e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')&&(!started||menuOpen||knockedOut)){
+  if((e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')&&(!started||anyMenu()||knockedOut)){
     e.preventDefault();              // a focused card must not double-fire and steal the pick
     if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();}
 });
@@ -1480,39 +1465,42 @@ muteB.addEventListener('pointerdown',e=>{e.preventDefault();toggleMute();});
 function toggleMute(){muted=!muted;if(AU.mg)AU.mg.gain.value=muted?0:0.5;muteB.textContent=muted?'♪×':'♪';}
 if(muted)muteB.textContent='♪×';
 /* gamepad buttons are level-read, so a tap between two frames can vanish —
-   sample on a light timer and queue the presses (stick flicks count as
-   d-pad presses); the loop spends the queue. */
-const padTaps=[],padTaps2=[];let padSnap=null,padDirs=null,padSnap2=null,padDirs2=null;
+   sample on a light timer, one press queue per controller (keyed by pad id,
+   so it survives unplugs and re-joins); the loop spends the queues. */
+const padState=new Map();                      // pad id -> {pad,taps:[],prev,prevD}
 function samplePad(){
-  const pads=(navigator.getGamepads?navigator.getGamepads():[]).filter(p=>p);
-  for(let pi=0;pi<2&&pi<pads.length;pi++){const p=pads[pi];
-    const q=pi===0?padTaps:padTaps2;
-    const prev=pi===0?padSnap:padSnap2,prevD=pi===0?padDirs:padDirs2;
+  const pads=navigator.getGamepads?navigator.getGamepads():[];
+  for(const p of pads){if(!p)continue;
+    let st=padState.get(p.id);
+    if(!st){st={pad:p,taps:[],prev:null,prevD:null};padState.set(p.id,st);}
+    st.pad=p;
     const now=p.buttons.map(b=>!!(b&&b.pressed));
-    for(let i=0;i<now.length;i++)if(now[i]&&!(prev&&prev[i]))q.push(i);
-    if(pi===0)padSnap=now;else padSnap2=now;
+    for(let i=0;i<now.length;i++)if(now[i]&&!(st.prev&&st.prev[i]))st.taps.push(i);
+    st.prev=now;
     const ax=i=>p.axes[i]||0;
     const dirs={12:ax(1)>0.5,13:ax(1)<-0.5,14:ax(0)<-0.5,15:ax(0)>0.5};   // stick -> d-pad codes
-    for(const bd of [12,13,14,15])if(dirs[bd]&&!(prevD&&prevD[bd]))q.push(100+bd);
-    if(pi===0)padDirs=dirs;else padDirs2=dirs;}
+    for(const bd of [12,13,14,15])if(dirs[bd]&&!(st.prevD&&st.prevD[bd]))st.taps.push(100+bd);
+    st.prevD=dirs;}
 }
 setInterval(samplePad,15);   // faster than any human button hold, so no press is skipped
-const ptap=i=>{const k=padTaps.indexOf(i);if(k>=0){padTaps.splice(k,1);return true;}return false;};
-function pollPad(){                                  // one-shot flags are cleared at the end of the
-  IN.grabPad=false;                                  // frame, not here
-  for(const p of navigator.getGamepads?navigator.getGamepads():[]){if(!p)continue;
-    const ax=i=>p.axes[i]||0,dz=0.18;
-    const mx=ax(0),my=ax(1);
-    if(Math.abs(mx)>dz||Math.abs(my)>dz){IN.move.x=clamp(mx,-1,1);IN.move.y=clamp(-my,-1,1);}
-    if(Math.abs(ax(2))>dz)IN.turn+=clamp(ax(2),-1,1)*0.05;
-    if(ptap(0)||ptap(2))IN.bite=true;   // A / X
-    if(ptap(3)||ptap(5))IN.roar=true;   // Y / RB
-    IN.grabPad=!!(p.buttons[7]&&p.buttons[7].pressed);   // RT: hold to grab
-    if(ptap(9))IN.start=true;
-    if(ptap(8))IN.menu=true;            // Select/Back — open the SWAP menu
-    if(ptap(1))IN.back=true;            // B — back out of menus
-    if(ptap(4))IN.mute=true;            // LB — mute
-    break;}
+const firstPad=()=>{for(const st of padState.values())return st;return null;};
+const padTap=st=>i=>{if(!st)return false;const k=st.taps.indexOf(i);
+  if(k>=0){st.taps.splice(k,1);return true;}return false;};
+let titlePadHot=null;        // whichever pad touched the title screen becomes P1's own pad
+/* title screen only: the first connected pad drives the menu there */
+function pollPad(){
+  IN.grabPad=false;
+  const st=firstPad();if(!st)return;
+  const p=st.pad,ax=i=>p.axes[i]||0,dz=0.18;
+  const mx=ax(0),my=ax(1);
+  if(Math.abs(mx)>dz||Math.abs(my)>dz){IN.move.x=clamp(mx,-1,1);IN.move.y=clamp(-my,-1,1);}
+  if(Math.abs(ax(2))>dz)IN.turn+=clamp(ax(2),-1,1)*0.05;
+  const hot=st.taps.length>0,tq=padTap(st);
+  if(tq(0)||tq(2))IN.bite=true;   // A / X
+  if(tq(3)||tq(5))IN.roar=true;   // Y / RB
+  if(tq(9))IN.start=true;          // Start — play!
+  IN.grabPad=!!(p.buttons[7]&&p.buttons[7].pressed);   // RT: hold to grab
+  if(hot||IN.grabPad)titlePadHot=p.id;
 }
 function edge(){const e={bite:IN.bite&&!IN.prev.bite,roar:IN.roar&&!IN.prev.roar,
   start:IN.start&&!IN.prev.start,mute:IN.mute&&!IN.prev.mute,
@@ -1520,27 +1508,44 @@ function edge(){const e={bite:IN.bite&&!IN.prev.bite,roar:IN.roar&&!IN.prev.roar
   IN.prev.bite=IN.bite;IN.prev.roar=IN.roar;IN.prev.start=IN.start;IN.prev.mute=IN.mute;
   IN.prev.menu=IN.menu;IN.prev.back=IN.back;return e;}
 function consume(){IN.bite=IN.move.x=IN.move.y=0;}
-/* 3+ heroes: the first two gamepads become P3 and P4. Solo and 2P keep the
-   old single-pad-on-P1 behaviour, because that's what everybody expects. */
-function pollPads(){
-  if(players.length<3){pollPad();return;}
-  IN.grabPad=false;
-  const pads=(navigator.getGamepads?navigator.getGamepads():[]).filter(p=>p);
-  for(let i=0;i<2&&i<pads.length;i++){
-    const pl=players[2+i];if(!pl)continue;
-    const p=pads[i],pin=pl.pm.pin,ax=j=>p.axes[j]||0,dz=0.18;
-    const mx=ax(0),my=ax(1);
-    if(Math.abs(mx)>dz||Math.abs(my)>dz){pin.move.x=clamp(mx,-1,1);pin.move.y=clamp(-my,-1,1);}
-    if(Math.abs(ax(2))>dz)pin.turn+=clamp(ax(2),-1,1)*0.05;
-    const q=i===0?padTaps:padTaps2;
-    const tq=c=>{const k=q.indexOf(c);if(k>=0){q.splice(k,1);return true;}return false;};
-    if(tq(0)||tq(2))pin.bite=true;   // A / X
-    if(tq(3)||tq(5))pin.roar=true;   // Y / RB
-    pin.grabPad=!!(p.buttons[7]&&p.buttons[7].pressed);   // RT: hold to grab
+/* a claimed controller speaks through its hero's pin; a press on a controller
+   nobody claimed yet joins the brawl as a brand-new hero */
+function feedPad(pl,st){
+  const pin=pl.pm.pin,p=st.pad,ax=i=>p.axes[i]||0,dz=0.18;
+  const mx=ax(0),my=ax(1);
+  if(Math.abs(mx)>dz||Math.abs(my)>dz){pin.move.x=clamp(mx,-1,1);pin.move.y=clamp(-my,-1,1);}
+  if(Math.abs(ax(2))>dz)pin.turn+=clamp(ax(2),-1,1)*0.05;
+  const tq=padTap(st);
+  if(tq(0)||tq(2))pin.bite=true;   // A / X
+  if(tq(3)||tq(5))pin.roar=true;   // Y / RB
+  if(tq(9))pin.start=true;         // Start — LEAVE GAME while your menu is open
+  if(tq(8))pin.menu=true;          // Select/Back — this hero's own menu
+  if(tq(1))pin.back=true;          // B — back
+  if(tq(4))pin.mute=true;          // LB — mute
+  if(tq(15)||tq(115))pin.dR=true;  if(tq(14)||tq(114))pin.dL=true;   // d-pad / stick in menus
+  if(tq(12)||tq(112))pin.dU=true;  if(tq(13)||tq(113))pin.dD=true;
+  pin.grabPad=!!(p.buttons[7]&&p.buttons[7].pressed);   // RT: hold to grab
+}
+function routePads(){
+  for(const pl of players)pl.pm.pin.grabPad=false;
+  for(const [id,st] of padState){
+    const own=players.find((p,i)=>p.pm&&(p.pm.ctl===id||(i===0&&id===p1Pad)));
+    if(own){feedPad(own,st);continue;}
+    if(st.taps.length){st.taps.length=0;               // the knock is spent, join or not
+      if(players.length<4&&!winOpen)joinP(id);}
   }
 }
+/* the IJKL crowd is one walk away from the brawl: with no keyboard hero yet,
+   pressing one of the P2 controls joins one */
+function kbdJoin(){
+  if(players.length>=4||winOpen)return;
+  if(players.some(p=>p.pm&&p.pm.ctl==='kbd2'))return;
+  if(['KeyI','KeyJ','KeyK','KeyL','KeyO','KeyU','KeyP','Comma','Period']
+    .some(k=>tap(k))&&started)joinP('kbd2');
+}
 function consumeAll(){
-  for(const pl of players){const p=pl.pm.pin;p.bite=0;p.move.x=p.move.y=0;}
+  for(const pl of players){const p=pl.pm.pin;
+    p.bite=0;p.move.x=p.move.y=0;p.dL=p.dR=p.dU=p.dD=false;}
   consume();
 }
 
@@ -1665,7 +1670,7 @@ function scatterSnacks(n){const H=ISLE-30;
 
 /* ============================== game state =========================== */
 let player=null, started=false, launching=false, roarGauge=1, hearts=5, maxHearts=5, roarCd=0, won=false;
-let menuOpen=false, pickKey='trex';
+let pickKey='trex';
 const PICKABLE=['trex','raptor','dilopho','allo','spino','trike','stego','ankylo','diplodocus','brachiosaurus','im','dr','mosasaurus','hunter'];
 const PICKTAG={trex:'the balanced hero',allo:'fast but squishy',spino:'big tail swish!',
   ankylo:'armored tank',im:'nearly invisible',dr:'strongest of all',
@@ -1680,12 +1685,13 @@ const goalKeys=()=>curMap&&curMap.winter?CAST.slice():CAST.filter(k=>!players.so
 // animals (ambient herds, your old wild selves) never count for or against it
 const goalLeft=()=>goalKeys().filter(k=>enemies.some(e=>e.key===k&&!e.counted&&e.alive)).length;
 function setPick(k){pickKey=k;
-  document.querySelectorAll('.pcard').forEach(b=>{
+  document.querySelectorAll('#pick .pcard').forEach(b=>{
     const on=b.dataset.k===k;
     b.classList.toggle('sel',on);
     if(on&&b.scrollIntoView)b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
   });
-  if(menuOpen)refreshMenuMap();       // the big button keeps telling the truth about your pick
+  if(players.length&&players[0].pm&&players[0].pm.menu)
+    refreshPanel(players[0]);          // the big button keeps telling the truth about your pick
 }
 function buildPicker(el,mode){
   el.innerHTML='';
@@ -1693,19 +1699,150 @@ function buildPicker(el,mode){
     const b=document.createElement('button');
     b.className='pcard'+(k===pickKey?' sel':'');b.dataset.k=k;
     b.innerHTML=`<img src="assets/select/${ASSET[k]||k}.png" alt="${sp.name}" draggable="false"><b>${sp.name}</b><small>${PICKTAG[k]}</small>`;
-    b.addEventListener('click',()=>{
-      if(mode==='start'){setPick(k);SFX.roar(k);}
-      else{if(k!==player.key)switchSpecies(k);closeMenu();}});
+    b.addEventListener('click',()=>{setPick(k);SFX.roar(k);});
     el.appendChild(b);}
 }
 buildPicker(document.getElementById('pick'),'start');
-buildPicker(document.getElementById('pick2'),'swap');
-function openMenu(){if(!started||!player||knockedOut)return;menuOpen=true;
-  setPick(player.key);mapPick=previewMap;                 // always opens on the island you're standing on
-  document.getElementById('swap').classList.remove('hidden');refreshMenuMap();consume();}
-function closeMenu(){menuOpen=false;
-  if(started)setMapPickSel(previewMap);                   // an island you didn't grow goes back unchosen
-  document.getElementById('swap').classList.add('hidden');consume();}
+/* ---- every hero carries their own menu: a panel floating over their own
+   pane. The dinosaur is yours; the island is everyone's — one press of
+   NEW MAP carries the whole party to a brand-new world. LEAVE GAME, and
+   the screen simply makes room for whoever is left.                   ---- */
+function menuLayer(){let l=document.getElementById('menulayer');
+  if(!l){l=document.createElement('div');l.id='menulayer';document.body.appendChild(l);}return l;}
+const stageSpOf=pl=>pl===players[0]?pickKey:(pl.pm.mPick||pl.key);
+const stageMapOf=pl=>pl===players[0]?mapPick:(pl.pm.mMap||previewMap);
+function panelOf(pl){return menuLayer().querySelector(`.pmenu[data-o="${players.indexOf(pl)}"]`);}
+function killPanel(pl){const el=panelOf(pl);if(el)el.remove();}
+function openMenuP(pl){
+  const pm=pl.pm;
+  if(!started||!pm||pm.menu||winOpen||pm.knockedOut)return;
+  pm.menu=true;
+  if(pl===players[0]){mapPick=previewMap;setMapPickSel(previewMap);}// opens on the island you're on
+  else{pm.mPick=pl.key;pm.mMap=previewMap;}
+  buildPanel(pl);
+}
+function closeMenuP(pl){const pm=pl.pm;if(!pm||!pm.menu)return;pm.menu=false;
+  if(pl===players[0])setMapPickSel(previewMap);   // an island you didn't grow goes back unchosen
+  killPanel(pl);}
+const panelKeys=pl=>pl.pm.ctl==='kbd1'?'←/→ dinosaur • ↑/↓ island • ENTER applies • X leaves • ESC closes'
+  :pl.pm.ctl==='kbd2'?'J/L dinosaur • I/K island • O applies • X leaves • Y closes'
+  :'d-pad L/R dinosaur • U/D island • A applies • Start leaves • B closes';
+function panelHTML(pl){
+  const i=players.indexOf(pl);
+  return `<div class="panel">
+    <h2>${i?`P${i+1} — `:''}SWAP DINOSAUR</h2>
+    <div class="pick pstrip"></div>
+    <p class="note">Tap a dinosaur to become it — same hearts, same spot.</p>
+    <div class="menuworld"><h3>YOUR WORLD</h3>
+      <div class="mwrow"><canvas class="minimap" width="132" height="74"></canvas>
+        <div><b class="mwname"></b><small class="mwnote"></small><small class="mwseed"></small></div></div>
+      <div class="mapcyc"><button class="cycL">◀</button><b class="cycName"></b><button class="cycR">▶</button></div>
+      <button class="growB"${i?'':' id="menuB"'}>NEW MAP!</button>
+      <p class="mwtip">One island for all: growing a new one carries every hero there.</p>
+    </div>
+    <div class="pmbtns"><button class="leaveB">LEAVE GAME</button><button class="backB">BACK TO THE FIGHT</button></div>
+    <p class="pmkeys">${panelKeys(pl)}</p></div>`;
+}
+function buildPanel(pl){
+  killPanel(pl);
+  const el=document.createElement('div');el.className='pmenu';el.dataset.o=players.indexOf(pl);
+  el.innerHTML=panelHTML(pl);
+  const strip=el.querySelector('.pstrip');
+  for(const k of PICKABLE){const sp=SPECIES[k];
+    const b=document.createElement('button');b.className='pcard';b.dataset.k=k;
+    b.innerHTML=`<img src="assets/select/${ASSET[k]||k}.png" alt="${sp.name}" draggable="false"><b>${sp.name}</b>`;
+    b.addEventListener('click',()=>{enterP(pl);if(k!==pl.key)switchSpecies(k);exitP(pl);
+      if(started&&players.length)enterP(players[0]);   // between frames, P1 owns the globals again
+      closeMenuP(pl);});
+    strip.appendChild(b);}
+  el.querySelector('.cycL').addEventListener('click',()=>stageMapStep(pl,-1));
+  el.querySelector('.cycR').addEventListener('click',()=>stageMapStep(pl,1));
+  el.querySelector('.growB').addEventListener('click',()=>menuConfirm(pl,true));
+  el.querySelector('.leaveB').addEventListener('click',()=>leaveP(pl));
+  el.querySelector('.backB').addEventListener('click',()=>closeMenuP(pl));
+  menuLayer().appendChild(el);
+  positionPanel(pl,el);
+  refreshPanel(pl);
+}
+function positionPanel(pl,el){el=el||panelOf(pl);if(!el||players.indexOf(pl)<0)return;
+  const v=vpRect(players.indexOf(pl));
+  Object.assign(el.style,{left:v.x+'px',top:v.y+'px',width:v.w+'px',height:v.h+'px'});}
+function refreshPanel(pl){
+  const el=panelOf(pl);if(!el)return;
+  const grow=stageMapOf(pl)!==previewMap,wantDino=stageSpOf(pl)!==pl.key;
+  el.querySelector('.mwname').textContent=curMap.name;
+  el.querySelector('.mwnote').textContent=grow?
+    `you are on ${MAPNAME[previewMap]} — ${mapLabel(stageMapOf(pl))} is picked`
+    :'the island you are standing on';
+  el.querySelector('.mwseed').textContent='island number '+WORLDSEED;
+  el.querySelector('.cycName').textContent=mapLabel(stageMapOf(pl));
+  // the button says exactly what one press will do: island, dinosaur, or both
+  const growBtn=grow?'GROW '+mapLabel(stageMapOf(pl))+'!':
+    (wantDino?'BE A '+SPECIES[stageSpOf(pl)].name.toUpperCase()+'!':'NEW MAP!');
+  el.querySelector('.growB').textContent=grow&&wantDino?
+    growBtn+' AS A '+SPECIES[stageSpOf(pl)].name.toUpperCase()+'!':growBtn;
+  el.querySelectorAll('.pstrip .pcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===stageSpOf(pl)));
+  buildMiniMap(el.querySelector('.minimap'),pl);
+}
+function refreshPanels(){for(const pl of players)if(pl.pm&&pl.pm.menu)refreshPanel(pl);}
+const stageSpStep=(pl,d)=>{const cur=stageSpOf(pl);
+  const k=PICKABLE[(PICKABLE.indexOf(cur)+d+PICKABLE.length)%PICKABLE.length];
+  if(pl===players[0])setPick(k);else pl.pm.mPick=k;
+  SFX.pickup();refreshPanel(pl);};
+const stageMapStep=(pl,d)=>{const k=nextMap(stageMapOf(pl),d);
+  if(pl===players[0])stageMap(k);
+  else{pl.pm.mMap=k;SFX.pickup();refreshPanel(pl);
+    toast(k===previewMap?`${curMap.name} — that's the island you are on right now`
+      :`${mapLabel(k)} picked! Press NEW MAP and a brand-new island grows there.`);}};
+/* One press does the island AND the dinosaur, like PLAY does — and the
+   island half of that press moves everyone, because it is one shared world.
+   (Only the big NEW MAP! button grows an island when nothing is staged:
+   the A-key shortcut on a freshly opened menu must never reset the world
+   by accident — with nothing staged it just closes.)                    */
+function menuConfirm(pl,force=false){
+  if(!pl||!pl.pm.menu)return;
+  enterP(pl);
+  const grow=stageMapOf(pl)!==previewMap,want=stageSpOf(pl)!==player.key?stageSpOf(pl):null;
+  if(grow)newExpedition(stageMapOf(pl),null,true,want);   // swapped before the cast rolls
+  else if(want)switchSpecies(want);
+  else if(force)newExpedition(stageMapOf(pl),null,true,null);
+  exitP(pl);
+  closeMenuP(pl);
+  if(started&&players.length)enterP(players[0]);
+}
+/* every hero steers their own menu with their own controls */
+function menuInput(pl){
+  const pm=pl.pm,pin=pm.pin,ctl=pm.ctl;
+  if(pin.mute)toggleMute();
+  if(pin.menu){pm.menu?closeMenuP(pl):openMenuP(pl);}
+  if(ctl==='kbd2'&&!pm.menu&&tap('KeyY'))openMenuP(pl);
+  if(!pm.menu)return;
+  if(winOpen||pm.knockedOut){closeMenuP(pl);return;}
+  if(pin.back)closeMenuP(pl);
+  if(pin.start||(ctl==='kbd1'||ctl==='kbd2')&&tap('KeyX'))
+    {pm.wantLeave=true;return;}                 // the roster shifts — leave after the frame's loop
+  if(ctl==='kbd1'){
+    if(tap('ArrowRight')||tap('KeyD'))stageSpStep(pl,1);
+    if(tap('ArrowLeft')||tap('KeyA'))stageSpStep(pl,-1);
+    if(tap('ArrowUp')||tap('KeyW'))stageMapStep(pl,-1);
+    if(tap('ArrowDown')||tap('KeyS'))stageMapStep(pl,1);
+    if(tap('Escape'))closeMenuP(pl);
+    if(pin.bite||tap('Enter')||tap('NumpadEnter'))menuConfirm(pl);
+  }else if(ctl==='kbd2'){
+    if(tap('KeyL'))stageSpStep(pl,1);
+    if(tap('KeyJ'))stageSpStep(pl,-1);
+    if(tap('KeyI'))stageMapStep(pl,-1);
+    if(tap('KeyK'))stageMapStep(pl,1);
+    if(tap('KeyY')||tap('Escape'))closeMenuP(pl);
+    if(pin.bite||tap('KeyO')||tap('Enter')||tap('NumpadEnter'))menuConfirm(pl);
+  }else{                                        // pad hero: taps arrived as pin flags
+    if(pin.dR)stageSpStep(pl,1);
+    if(pin.dL)stageSpStep(pl,-1);
+    if(pin.dU)stageMapStep(pl,-1);
+    if(pin.dD)stageMapStep(pl,1);
+    if(pin.bite)menuConfirm(pl);
+  }
+}
 function swapTo(key){                        // become another dinosaur where you stand
   releaseGrab(null);
   if(player.riding)unmountRider(player,false);
@@ -1733,7 +1870,7 @@ function switchSpecies(key){
   if(CAST.includes(old)&&!players.some(p=>p.key!==player.key&&p.key===old))
     spawnWild(old,0);                      // your old dino goes back to the wild (unless a hero owns it)
   SFX.roar(key,player);startRoar(player,0.9);
-  toast(`You are now a ${SPECIES[key].name}!`);
+  toast((player.pm.slot?`P${player.pm.slot+1} is`:'You are')+` now a ${SPECIES[key].name}!`);
   if(goalLeft()===0&&!won){won=true;setTimeout(winGame,900);}
 }
 const cycleSp=d=>{setPick(PICKABLE[(PICKABLE.indexOf(pickKey)+d+PICKABLE.length)%PICKABLE.length]);
@@ -1742,23 +1879,21 @@ const MAPCHOICE=[...MAPKEYS,'surprise'];
 const nextMap=(cur,d)=>MAPCHOICE[(MAPCHOICE.indexOf(cur)+d+MAPCHOICE.length)%MAPCHOICE.length];
 const mapLabel=k=>k==='surprise'?'SURPRISE':(MAPNAME[k]||'AN ISLAND');
 const cycleMap=d=>setMapPick(nextMap(mapPick,d));        // start screen: previews it right away
-const cycleStage=d=>stageMap(nextMap(mapPick,d));        // in the game: only picks it, nothing grows yet
-/* arrows/WASD scroll the menu cards: up/down chooses the island, left/right the
-   dinosaur — in both the start screen and the in-game menu */
-function kbdUI(mode){           // tap-driven, so it works at any frame rate
+/* start screen only: arrows/WASD and the first pad's d-pad scroll the cards */
+function kbdUI(){
   const conf=tap('Enter')||tap('NumpadEnter')||tap('Space');
   if(tap('ArrowRight')||tap('KeyD'))cycleSp(1);
   if(tap('ArrowLeft')||tap('KeyA'))cycleSp(-1);
-  if(tap('ArrowUp')||tap('KeyW')){if(mode==='start')cycleMap(-1);else cycleStage(-1);}
-  if(tap('ArrowDown')||tap('KeyS')){if(mode==='start')cycleMap(1);else cycleStage(1);}
+  if(tap('ArrowUp')||tap('KeyW'))cycleMap(-1);
+  if(tap('ArrowDown')||tap('KeyS'))cycleMap(1);
   return conf;
 }
-function padUI(mode){ // d-pad / stick scrolls the menu cards (same layout as kbdUI)
-  const L=ptap(14)||ptap(114),R=ptap(15)||ptap(115),U=ptap(12)||ptap(112),D=ptap(13)||ptap(113);
-  if(R)cycleSp(1);
-  if(L)cycleSp(-1);
-  if(U){if(mode==='start')cycleMap(-1);else cycleStage(-1);}
-  if(D){if(mode==='start')cycleMap(1);else cycleStage(1);}
+function padUI(){ // d-pad / stick scrolls the menu cards (same layout as kbdUI)
+  const tq=padTap(firstPad());
+  if(tq(15)||tq(115))cycleSp(1);
+  if(tq(14)||tq(114))cycleSp(-1);
+  if(tq(12)||tq(112))cycleMap(-1);
+  if(tq(13)||tq(113))cycleMap(1);
 }
 const CAM={d:12.5,h:5.2};
 /* ---- start-screen map picker: thumbnails from the same map formulas ---- */
@@ -1806,12 +1941,13 @@ function setMapPick(k){
 function stageMap(k){                                     // picks an island; nothing grows yet
   mapPick=k;
   document.querySelectorAll('.mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===k));
-  refreshMenuMap();SFX.pickup();
+  refreshPanels();SFX.pickup();
   toast(k===previewMap?`${curMap.name} — that's the island you are on right now`:
     `${mapLabel(k)} picked! Press NEW MAP and a brand-new island grows there.`);
 }
-function buildMiniMap(){
-  const c=document.getElementById('miniMap');if(!c||!started)return;
+function buildMiniMap(c,pl){
+  if(!c)c=menuLayer().querySelector('.minimap');
+  if(!c||!started)return;
   const g=c.getContext('2d'),W=c.width,H=c.height,img=g.createImageData(W,H);
   for(let j=0;j<H;j++)for(let i=0;i<W;i++){
     const x=(i/(W-1)-0.5)*WORLD,z=(j/(H-1)-0.5)*WORLD,h=terrainH(x,z),o=(j*W+i)*4;
@@ -1826,33 +1962,9 @@ function buildMiniMap(){
   g.putImageData(img,0,0);
   const px2=x=>clamp((x+WORLD/2)/WORLD*W,2,W-2),pz2=z=>clamp((z+WORLD/2)/WORLD*H,2,H-2);
   g.fillStyle='rgba(255,255,255,.45)';g.beginPath();g.arc(px2(CAMP[0]),pz2(CAMP[1]),5,0,7);g.fill();
-  if(player){g.fillStyle='#fff';g.beginPath();g.arc(px2(player.x),pz2(player.z),4,0,7);g.fill();
+  const mp=pl||player;
+  if(mp){g.fillStyle='#fff';g.beginPath();g.arc(px2(mp.x),pz2(mp.z),4,0,7);g.fill();
     g.strokeStyle='#ffd23f';g.lineWidth=2;g.stroke();}
-}
-function refreshMenuMap(){
-  if(!started)return;
-  const staged=mapPick!==previewMap, wantDino=pickKey!==player.key;
-  document.getElementById('menuMapLabel').textContent=curMap.name;
-  document.getElementById('miniMapNote').textContent=staged?
-    `you are on ${MAPNAME[previewMap]} — ${mapLabel(mapPick)} is picked`
-    :'the island you are standing on';
-  document.getElementById('miniMapSeed').textContent='island number '+WORLDSEED;
-  // the button says exactly what one press will do: island, dinosaur, or both
-  const growBtn=staged?'GROW '+mapLabel(mapPick)+'!':(wantDino?'BE A '+SPECIES[pickKey].name.toUpperCase()+'!':'NEW MAP!');
-  document.getElementById('menuB').textContent=staged&&wantDino?
-    growBtn+' AS A '+SPECIES[pickKey].name.toUpperCase()+'!':growBtn;
-  document.querySelectorAll('#menuMap .mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===mapPick));
-  buildMiniMap();
-}
-function menuStart(){
-  if(!started||!player)return false;
-  const grow=mapPick!==previewMap, want=pickKey!==player.key?pickKey:null;
-  // the menu works like the start screen: one press applies the island AND the dinosaur.
-  // With nothing staged it just grows a fresh island of the same kind, as NEW MAP always did.
-  if(grow||!want)newExpedition(mapPick,null,true,want);   // swapped before the cast rolls: the island knows you
-  else switchSpecies(want);
-  closeMenu();
-  return true;
 }
 function placePlayerStart(ch,i){                 // heroes begin at camp — sea kings begin at sea
   if(SPECIES[ch.key].sea){
@@ -1874,26 +1986,92 @@ async function initGame(){
   document.getElementById('overlay').classList.add('hidden');
   try{actx().resume&&actx().resume();ambient();}catch(e){}
   await Promise.all(Object.keys(SPECIES).map(loadSpecies));
-  if(matchMedia('(pointer:coarse)').matches&&innerWidth<820)nWant=1;   // phones: one hero
-  nWant=clamp(nWant|0||1,1,4);
+  clearCreatures();won=false;defeated.clear();
   player=makeChar(pickKey);player.isPlayer=true;
   grabLbl(player);
   placePlayerStart(player,0);
-  players.length=0;player.pm=makePm(player,0);players.push(player);
-  const pool=PICKABLE.filter(k=>k!==pickKey&&!SPECIES[k].sea);
-  for(let i=1;i<nWant;i++){                     // the other heroes: a dinosaur apiece, never the same twice
-    const key=pool.splice(Math.floor(Math.random()*pool.length),1)[0]||'allo';
-    const ch=makeChar(key);ch.isPlayer=true;
-    placePlayerStart(ch,i);ch.pm=makePm(ch,i);players.push(ch);
-  }
-  if(nWant>1)setupMpHud();
+  players.length=0;player.pm=makePm(player,0);player.pm.ctl='kbd1';players.push(player);
+  p1Pad=titlePadHot;                             // the pad that started the show is P1's own
+  setupMpHud();
   applyPix();
   if(CAST.includes(pickKey))CAST=rollCast(WORLDSEED,pickKey,previewMap);   // your kind never lines up against you
   await spawnEnemies();
-  started=true;
-  toast(nWant>1?`P1 ${players.map(p=>p.sp.name).join(' • P ')} — beat the ${goalLeft()} challengers together!`
-    :goalLeft()<5?`Go beat the ${goalLeft()} challengers — your kind is with you!`
-                 :`${curMap.name}! Roam it and find all 5 challengers!`);
+  started=true;launching=false;
+  toast(goalLeft()<5?`Go beat the ${goalLeft()} challengers — your kind is with you!`
+                    :`${curMap.name}! Roam it and find all 5 challengers!`+
+                     ` Press a button on another controller to bring a friend along.`);
+}
+/* drop whatever lives in the world: creatures, venom, bait (the island itself stays) */
+function clearCreatures(){
+  for(const e of[...enemies])scene.remove(e.root);
+  enemies.length=0;
+  for(const v of[...venom])scene.remove(v.m);
+  venom.length=0;
+  for(const b of[...baits])scene.remove(b.m);
+  baits.length=0;
+  spearVic=null;chompVic=null;
+}
+/* ---- join in progress: any button on a new controller, or a first step on
+   the IJKL keyboard, and a fresh hero lands at camp while the screen splits ---- */
+function joinP(ctl){
+  if(!started||players.length>=4)return;
+  const pool=PICKABLE.filter(k=>!SPECIES[k].sea&&!players.some(p=>p.key===k));
+  const key=pool[Math.floor(Math.random()*pool.length)]||'allo';
+  const ch=makeChar(key);ch.isPlayer=true;
+  const slot=players.length;
+  ch.pm=makePm(ch,slot);ch.pm.ctl=ctl;
+  placePlayerStart(ch,slot);
+  if(!curMap.winter)                             // your own kind on the island joins your party
+    for(const e of[...enemies]){
+      if(e.key!==key||e.counted)continue;
+      e.counted=true;
+      if(e.alive)dropSnack(e.x,e.z);
+      scene.remove(e.root);const i=enemies.indexOf(e);if(i>=0)enemies.splice(i,1);}
+  players.push(ch);
+  reopenPanels();setupMpHud();layoutVps();applyPix();
+  toast(`P${slot+1} joined the brawl as a ${SPECIES[key].name}! Their menu is already open.`);
+  SFX.roar(key,ch);startRoar(ch,0.8);confettiBurst(ch.x,ch.y+1,ch.z);
+  openMenuP(ch);                                 // every hero picks their own face
+}
+function leaveP(pl){
+  const i=players.indexOf(pl);if(i<0)return;
+  enterP(pl);
+  if(pl.riding)unmountRider(pl,false);
+  releaseGrab(null);
+  if(winOpen)closeWin();
+  exitP(pl);
+  closeMenuP(pl);
+  scene.remove(pl.root);
+  players.splice(i,1);
+  if(!players.length){quitToTitle();return;}
+  if(i===0){                                     // the first hero's chair is always filled
+    const pm=players[0].pm;pm.slot=0;pm.pin=PIN0;pm.cam=camera;
+    if(pl.pm.ctl===p1Pad)p1Pad=null;
+  }
+  players.forEach((p,j)=>p.pm.slot=j);
+  if(CAST.includes(pl.key)&&!players.some(p=>p.key===pl.key))spawnWild(pl.key,0);
+  reopenPanels();setupMpHud();layoutVps();applyPix();
+  if(players.length)enterP(players[0]);          // between frames, P1 owns the globals again
+  toast(`P${i+1} left the brawl — ${players.length>1?`P${i+1}'s spot ${players.length>2?'is open':'opens up'} for a new controller!`:'a solo reign, till the next friend joins.'}`);
+  SFX.pickup();
+}
+function quitToTitle(){                          // the last hero walked out: back to the map table
+  player=null;started=false;launching=false;won=false;defeated.clear();
+  clearCreatures();
+  titlePadHot=null;p1Pad=null;padState.clear();
+  document.body.classList.remove('mp');
+  const host=document.getElementById('vphost');if(host)host.innerHTML='';
+  menuLayer().innerHTML='';
+  setHearts();
+  document.getElementById('overlay').classList.remove('hidden');
+}
+/* menus float over pane numbers, so a shifting roster means fresh panels */
+function reopenPanels(){
+  for(const pl of players)if(pl.pm&&pl.pm.menu){
+    const el=panelOf(pl),rebuild=!el||+el.dataset.o!==players.indexOf(pl);
+    if(rebuild){killPanel(pl);pl.pm.menu=false;openMenuP(pl);}
+    else positionPanel(pl,el);
+  }
 }
 function toast(msg,ms=2600){const t=document.getElementById('toast');t.textContent=msg;t.style.opacity=1;
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.opacity=0,ms);}
@@ -2324,18 +2502,19 @@ function newExpedition(k,seed,keepPlayer,newKey){
   for(const b of[...baits])scene.remove(b.m);
   baits.length=0;
   spawnEnemies();
-  const dry=terrainH(px,pz)>WATER+0.25;             // the new island may hold sea where you stood
-  if(player)resetPlayerAt(player,keepPlayer&&dry?px:CAMP[0],keepPlayer&&dry?pz:CAMP[1]);
-  for(let i=1;i<players.length;i++){              // the other heroes wake up around camp, on dry land
+  const gp=player;                              // whoever pressed NEW MAP keeps their spot on dry land
+  const dry=terrainH(px,pz)>WATER+0.25;         // the new island may hold sea where you stood
+  if(gp)resetPlayerAt(gp,keepPlayer&&dry?px:CAMP[0],keepPlayer&&dry?pz:CAMP[1]);
+  for(const other of players)if(other!==gp){  // the other heroes wake up around camp, on dry land
     let sx=CAMP[0],cz=CAMP[1];
-    for(let t=0;t<24;t++){const a=t*1.1+i,r=7+t*2,sx2=CAMP[0]+Math.cos(a)*r,cz2=CAMP[1]+Math.sin(a)*r;
-      if(terrainH(sx2,cz2)>(players[i].sp.fisher?0:1)||players[i].sp.sea){sx=sx2;cz=cz2;break;}}
-    resetPlayerAt(players[i],sx,cz);
+    for(let t=0;t<24;t++){const a=t*1.1+players.indexOf(other),r=7+t*2,sx2=CAMP[0]+Math.cos(a)*r,cz2=CAMP[1]+Math.sin(a)*r;
+      if(terrainH(sx2,cz2)>(other.sp.fisher?0:1)||other.sp.sea){sx=sx2;cz=cz2;break;}}
+    resetPlayerAt(other,sx,cz);
   }
-  setPick(player.key);                               // the cards now show who you actually are
+  setPick(players.length?players[0].key:player.key);   // the cards now show who P1 actually is
   downOvEl.classList.add('hidden');
   closeWin();
-  refreshMenuMap();                                      // the menu always describes the island you're on
+  refreshPanels();                                      // menus always describe the island you're on
   toast(keepPlayer?`A brand-new ${curMap.name}! Still a ${player.sp.name}, still ${hearts} hearts — go!`
     :`${curMap.name} — a brand-new island! ${goalLeft()} challengers to find!`);
 }
@@ -3502,7 +3681,7 @@ function updateHUD(){
   // gold compass arrow points to the next challenger — no map-reading needed
   const cEl=document.getElementById('compass');
   const g=nextGoal();
-  if(!g||menuOpen||won||knockedOut||Math.hypot(g.x-player.x,g.z-player.z)<10){cEl.style.opacity=0;return;}
+  if(!g||anyMenu()||won||knockedOut||Math.hypot(g.x-player.x,g.z-player.z)<10){cEl.style.opacity=0;return;}
   // project the target into the camera view plane: f = view dir (camera->player),
   // screen right r = (-fz, fx); screen up = f
   const dx=g.x-player.x,dz=g.z-player.z;
@@ -3529,7 +3708,8 @@ let camZ=1,camB=0,napBias=0,camManual=false,napC=null,napCT=0,napPix=0;   // eas
 function camKeysFor(ch){          // which keys turn this hero's camera
   const pm=ch.pm;
   if(!pm)return{L:['KeyQ','KeyJ'],R:['KeyL','Period']};   // the old solo pair
-  if(pm.slot>0)return{L:['Comma'],R:['Period']};          // P2: comma / period
+  if(pm.ctl==='kbd2')return{L:['Comma'],R:['Period']};    // keyboard P2: comma / period
+  if(pm.ctl!=='kbd1')return{L:[],R:[]};                   // pad heroes: right stick turns
   return players.length>1?{L:['KeyQ'],R:['KeyE']}:{L:['KeyQ','KeyJ'],R:['KeyL','Period']};
 }
 function stepCamera(dt){
@@ -3586,7 +3766,7 @@ let last=performance.now(),fps=60,fpsAcc=0,fpsN=0,previewT=0;
 function loop(now){
   try{frame(now);}
   finally{                                  // taps and one-shot flags are spent once, whatever the fps
-    pressed.length=0;padTaps.length=0;padTaps2.length=0;
+    pressed.length=0;
     for(const pl of players){const p=pl.pm.pin;p.roar=p.start=p.mute=p.menu=p.back=false;}
     IN.roar=IN.start=IN.mute=IN.menu=IN.back=false;
   }
@@ -3599,9 +3779,9 @@ function frame(now){
   // them into P1's pm before any hero takes the stage again
   if(started&&players.length)exitP(players[0]);
   if(!started){
-    pollPad();padUI('start');
+    pollPad();padUI();
     const e0=edge();
-    if(e0.start||e0.bite||kbdUI('start'))initGame();
+    if(e0.start||e0.bite||kbdUI())initGame();
     PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1)))setPick(k);});   // 1-9 pick a dino, 0 the big one
     if(tap('Digit0'))setPick(PICKABLE[9]);
     consume();
@@ -3615,29 +3795,21 @@ function frame(now){
     renderer.setScissorTest(false);
     renderer.render(scene,camera);return;
   }
-  if(tap('Escape'))menuOpen?closeMenu():openMenu();
+  if(tap('Escape')){const p0=players[0];
+    if(p0)p0.pm.menu?closeMenuP(p0):openMenuP(p0);}
   if(!knockedOut){                     // your dino is napping: species keys wait too
-    PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1))&&!menuOpen)switchSpecies(k);});
-    if(tap('Digit0')&&!menuOpen)switchSpecies(PICKABLE[9]);
+    PICKABLE.forEach((k,i)=>{if(tap('Digit'+(i+1))&&!players[0].pm.menu)switchSpecies(k);});
+    if(tap('Digit0')&&!players[0].pm.menu)switchSpecies(PICKABLE[9]);
   }
-  if(menuOpen){                 // the world holds still while you pick a dino or an island
-    pollPad();padUI('menu');
-    const conf=kbdUI('menu');
-    const em=edge();
-    if(em.mute)toggleMute();
-    if(em.back||em.start)closeMenu();
-    else if(em.bite||conf)menuStart();   // one press does the island AND the dinosaur, like PLAY does
-    consume();renderer.setScissorTest(false);renderer.render(scene,camera);return;
-  }
+  routePads();                         // controllers: claimed feed their hero, fresh ones ring the bell
+  kbdJoin();                           // the IJKL crowd walks in with one step
+  for(const pl of players)menuInput(pl);   // every hero steers their own menu, the world keeps turning
+  for(const pl of[...players])if(pl.pm.wantLeave){pl.pm.wantLeave=false;leaveP(pl);}
+  if(!players.length)return;               // the last hero quit to the title mid-frame: that's it for now
   if(tap('KeyM'))toggleMute();
   if(winOpen&&tap('KeyN'))newExpedition();
   if(winOpen&&(tap('Enter')||tap('Space')))closeWin();
-  pollPads();
   if(DEMO){enterP(players[0]);botStep(dt);exitP(players[0]);}   // the bot drives P1, in P1's headspace
-  const e=edge();                        // P1's pad: menu / mute / win-close (bites happen per-hero below)
-  if(e.mute)toggleMute();
-  if(e.menu)openMenu();
-  if(winOpen&&(e.back||e.bite||e.start))closeWin();
   for(const pl of players){              // each hero: buttons, body, camera — all its own
     enterP(pl);
     plActions(dt);
@@ -3660,37 +3832,39 @@ function frame(now){
 }
 /* every hero's buttons, in its own headspace (called inside its enterP) */
 function plActions(dt){
-  const pm=player.pm,slot=pm.slot,pin=pm.pin;
+  const pm=player.pm,ctl=pm.ctl,pin=pm.pin;
   if(pm.knockedOut){                     // this hero naps until ITS button comes back
     downT+=dt;
-    if(DEMO&&slot===0&&downT>1.8)wakeUp(true);
+    if(DEMO&&ctl==='kbd1'&&downT>1.8)wakeUp(true);
     else if(downT>0.6&&(
-      (slot===0&&(tap('Space')||tap('KeyR')))||
-      (slot===1&&(tap('KeyO')||keys.KeyO))||
+      (ctl==='kbd1'&&(tap('Space')||tap('KeyR')))||
+      (ctl==='kbd2'&&(tap('KeyO')||keys.KeyO))||
       tap('Enter')||tap('NumpadEnter')||pin.bite||pin.start||ovWake))wakeUp();
     ovWake=false;
     return;
   }
-  if(winOpen)return;
-  if(slot===0){                          // P1: WASD / arrows, SPACE bite, G grab, R roar
+  if(pm.menu){                           // the menu owns this hero's hands; the world does not stop
+    pin.move.x=pin.move.y=0;pin.bite=false;return;
+  }
+  if(winOpen){if(pin.bite||pin.start||pin.back)closeWin();return;}
+  if(ctl==='kbd1'){                      // P1: WASD / arrows, SPACE bite, G grab, R roar
     const kx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
     const ky=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0);
     if(kx||ky){pin.move.x=kx;pin.move.y=ky;}
     if(keys.Space||tap('Space')||pin.bite||pin.biteHeld)playerBite();   // hold-to-bite (cooldown gates it)
     if(tap('KeyR')||keys.KeyR)pin.roar=true;      // tap or hold, after the pad re-arm
-  } else if(slot===1){                   // P2: IJKL move, O bite, U grab, P roar, ,/. camera
+  } else if(ctl==='kbd2'){               // keyboard P2: IJKL move, O bite, U grab, P roar, ,/. camera
     const kx=(keys.KeyL?1:0)-(keys.KeyJ?1:0);
     const ky=(keys.KeyI?1:0)-(keys.KeyK?1:0);
     if(kx||ky){pin.move.x=kx;pin.move.y=ky;}
     if(keys.KeyO||tap('KeyO'))playerBite();
     if(tap('KeyP')||keys.KeyP)pin.roar=true;
-  } else {                               // P3 / P4: gamepad — taps arrive queued from pollPads
+  } else {                               // pad hero: taps arrive as pin flags from feedPad
     if(pin.bite)playerBite();
   }
   if(pin.roar&&!pin.prev.roar)playerRoar();
   pin.prev.roar=pin.roar;
-  const grabWant=!!(slot===0?(keys.KeyG||pin.grabHeld||pin.grabPad):
-                    slot===1?(keys.KeyU||pin.grabPad):pin.grabPad)&&!winOpen;
+  const grabWant=!!((ctl==='kbd1'?(keys.KeyG||pin.grabHeld):ctl==='kbd2'?keys.KeyU:0)||pin.grabPad);
   if(player.riding){                                  // on a giant: grab again = hop down
     if(grabWant&&!rideGrabPrev){unmountRider(player,false);toast('You hopped down!');SFX.pickup();}
   } else {
@@ -3708,10 +3882,15 @@ function applyPix(){                             // four panes cost four draws: 
   renderer.setSize(innerWidth,innerHeight,tier!=='low');
 }
 function setupMpHud(){
-  document.body.classList.add('mp');
   let host=document.getElementById('vphost');
   if(!host){host=document.createElement('div');host.id='vphost';document.body.appendChild(host);}
   host.innerHTML='';
+  if(players.length<2){                       // one hero: the old full-screen HUD speaks again
+    document.body.classList.remove('mp');
+    for(const pl of players)pl.pm.hud=null;
+    layoutVps();return;
+  }
+  document.body.classList.add('mp');
   const names=['P1','P2','P3','P4'];
   players.forEach((pl,i)=>{
     const vp=document.createElement('div');vp.className='vp';
@@ -3720,6 +3899,10 @@ function setupMpHud(){
       <div class="vpcompass">➤</div><div class="vpinfo"></div><div class="vpzlbl"></div>
       <canvas class="vpmap" width="72" height="72"></canvas>
       <div class="vpdown"></div>`;
+    const btn=document.createElement('button');btn.className='vpmenu';btn.textContent='MENU';
+    btn.addEventListener('pointerdown',e=>{e.preventDefault();
+      pl.pm.menu?closeMenuP(pl):openMenuP(pl);});
+    vp.appendChild(btn);
     host.appendChild(vp);
     const q=s=>vp.querySelector(s);
     pl.pm.hud={root:vp,hearts:q('.vph'),roarfill:q('.vproarfill'),compass:q('.vpcompass'),
@@ -3732,6 +3915,7 @@ function layoutVps(){
     const v=vpRect(i);players[i].pm.vp=v;
     const s=players[i].pm.hud&&players[i].pm.hud.root.style;
     if(s){s.left=v.x+'px';s.top=v.y+'px';s.width=v.w+'px';s.height=v.h+'px';}
+    if(players[i].pm.menu)positionPanel(players[i]);
   }
 }
 function renderWorlds(){
@@ -3789,7 +3973,7 @@ function updateVpHud(pl){                        // a full little HUD inside thi
   for(const e of enemies){if(!e.alive||e.counted||e.sp.sea)continue;
     const d=Math.hypot(e.x-pl.x,e.z-pl.z);if(d<bd){bd=d;g=e;}}
   const v=pm.vp||vpRect(pm.slot);
-  if(!g||menuOpen||won||pm.knockedOut||bd<10){h.compass.style.opacity=0;}
+  if(!g||anyMenu()||won||pm.knockedOut||bd<10){h.compass.style.opacity=0;}
   else{
     const dx=g.x-pl.x,dz=g.z-pl.z;
     const fx=pl.x-pm.cam.position.x,fz=pl.z-pm.cam.position.z;
@@ -3800,26 +3984,13 @@ function updateVpHud(pl){                        // a full little HUD inside thi
     h.compass.style.transform=`translate(-50%,-50%) translate(${sx.toFixed(0)}px,${sy.toFixed(0)}px) rotate(${(Math.atan2(sy,sx)*180/Math.PI).toFixed(0)}deg)`;
     h.compass.style.opacity=1;}
 }
-function buildProw(){                            // how many heroes march on the island?
-  const el=document.getElementById('prow');if(!el)return;
-  for(const n of[1,2,3,4]){
-    const b=document.createElement('button');b.textContent=n+'P';
-    if(n===nWant)b.classList.add('sel');
-    b.addEventListener('click',()=>{nWant=n;
-      [...el.querySelectorAll('button')].forEach((c,i)=>c.classList.toggle('sel',i===n-1));});
-    el.appendChild(b);
-  }
-}
 document.getElementById('playB').addEventListener('click',initGame);
 document.getElementById('newExpB').addEventListener('click',newExpedition);
 document.getElementById('winB').addEventListener('click',closeWin);
-bindBtn('swapB',()=>{menuOpen?closeMenu():openMenu();});
-bindBtn('closeSwapB',closeMenu);
-bindBtn('menuB',menuStart);
-document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • hold G/GRAB to grab and drag • R roar (a Dilophosaurus spits!) • drag mouse to look • SWAP/Select changes dino and world • as a Human, GRAB beside a dinosaur to TAME and RIDE it';
+bindBtn('swapB',()=>{const p0=players[0];
+  if(p0)p0.pm.menu?closeMenuP(p0):openMenuP(p0);});
+document.getElementById('hint').textContent='WASD/arrows move • SPACE/click bite • hold G/GRAB to grab and drag • R roar (a Dilophosaurus spits!) • drag mouse to look • SWAP/ESC opens your menu • a button on another controller joins a new hero • as a Human, GRAB beside a dinosaur to TAME and RIDE it';
 buildMapRow(document.getElementById('mrow'),setMapPick);
-buildMapRow(document.getElementById('menuMap'),stageMap);
-buildProw();
 buildWorld(previewMap,(Math.random()*1e9)>>>0);   // live island spinning behind the menu
 if(DEMO)initGame();
 requestAnimationFrame(loop);
@@ -3829,7 +4000,7 @@ window.__probe={
   get ready(){return started&&player&&enemies.length>0;},
   state(){return{hearts,roar:+roarGauge.toFixed(2),kills:defeated.size,defeated:[...defeated],won,
     muted,
-    species:player.key,goalLeft:goalLeft(),menu:menuOpen,pick:pickKey,down:knockedOut,
+    species:player.key,goalLeft:goalLeft(),menu:anyMenu(),pick:pickKey,down:knockedOut,
     cast:CAST.slice(),
     enemies:enemies.map(e=>({key:e.key,alive:e.alive,hp:e.hp,x:+e.x.toFixed(1),z:+e.z.toFixed(1),
       g:+terrainH(e.x,e.z).toFixed(2),
@@ -4025,10 +4196,13 @@ window.__probe={
   windupEnemy(key,w=0.01){const e=this.pk(key);if(!e)return null;
     e.windup=w;e.windupMax=0.3;return true;},
   setGrab(v=true){IN.grabHeld=!!v;return !!IN.grabHeld;},
-  /* ---- split-screen / multi-hero ---- */
-  setPlayers(n){nWant=clamp(n|0,1,4);return nWant;},
+  /* ---- join & split-screen probes: joinP mirrors what a controller press does ---- */
+  join(kind='kbd2'){if(kind!=='kbd2')return joinP(kind),players.length;
+    if(players.some(p=>p.pm.ctl==='kbd2'))return players.length;
+    joinP('kbd2');return players.length;},
   pcount(){return players.length;},
   playersInfo(){return players.map((p,i)=>({i,key:p.key,hearts:p.pm.hearts,ko:!!p.pm.knockedOut,
+    ctl:p.pm.ctl==='kbd1'||p.pm.ctl==='kbd2'?p.pm.ctl:'pad',menu:!!p.pm.menu,slot:p.pm.slot,
     x:+p.x.toFixed(1),z:+p.z.toFixed(1),vp:vpRect(i)}));},
   rideGeom(){                                 // live host+rider transforms (saddle-plant test)
     const r=player.riding?player:enemies.find(e=>e.riding);const h=r&&r.riding;
@@ -4063,8 +4237,8 @@ window.__probe={
   jointRot(which,part){const ch=which==='player'?player:enemies.find(e=>e.key===which);
     if(!ch)return null;const o=ch.model.getObjectByName(part);if(!o)return null;
     return [o.rotation.x,o.rotation.y,o.rotation.z].map(v=>+v.toFixed(2));},
-  openMenu(){openMenu();return menuOpen;},
-  closeMenu(){closeMenu();return menuOpen;},
+  openMenu(){const p0=players[0];if(p0&&!p0.pm.menu)openMenuP(p0);return !!(p0&&p0.pm.menu);},
+  closeMenu(){const p0=players[0];if(p0)closeMenuP(p0);return !!(p0&&p0.pm.menu);},
   map(){return{key:previewMap,seed:WORLDSEED,name:curMap.name,flat:FLATNAME,world:WORLD,
     winter:!!curMap.winter,noSea:!!curMap.noSea,
     zones:ZONES.map(z=>({name:z.name,tag:z.tag||'',x:z.x,z:z.z,r:z.r})),
@@ -4158,14 +4332,15 @@ window.__probe={
     for(let i=1;i<=3;i++){const j=ch.joints['neck'+i];
       if(j)o.neck['neck'+i]=[+j.rotation.z.toFixed(4),+j.rotation.y.toFixed(4)];}
     return o;},
-  menuWorld(){return{pick:mapPick,live:previewMap,staged:mapPick!==previewMap,seed:WORLDSEED,
-    label:document.getElementById('menuMapLabel').textContent,
-    note:document.getElementById('miniMapNote').textContent,
-    btn:document.getElementById('menuB').textContent,
-    sel:[...document.querySelectorAll('#menuMap .mcard.sel')].map(b=>b.dataset.k),
-    mini:document.getElementById('miniMap').width,
+  menuWorld(){const el=players[0]&&panelOf(players[0]);return{pick:mapPick,live:previewMap,staged:mapPick!==previewMap,seed:WORLDSEED,
+    label:el?el.querySelector('.mwname').textContent:'',
+    note:el?el.querySelector('.mwnote').textContent:'',
+    btn:el?el.querySelector('.growB').textContent:'',
+    sel:[mapPick],
+    mini:el?el.querySelector('.minimap').width:0,
     world:curMap.name};},
-  menuStart(k){if(k)stageMap(k);return menuStart();},
+  menuStart(k){if(k)stageMap(k);const p0=players[0];
+    if(p0){if(!p0.pm.menu)openMenuP(p0);menuConfirm(p0,true);}return true;},
   pick(k){setPick(k);return pickKey;},
   get pickNow(){return pickKey;},
   get mapNow(){return mapPick;},
@@ -4174,13 +4349,17 @@ window.__probe={
     return{opacity:el.style.opacity,transform:el.style.transform};},
   winShown(){return winOpen;},
   closeWin(){closeWin();return winOpen;},
-  fakePad(on){ // minimal gamepad simulation for testing
-    if(!on){delete window.__fakePad;return true;}
-    const btns=Array.from({length:17},()=>({pressed:false,value:0}));
-    window.__fakePad={connected:true,mapping:'standard',index:0,id:'fake',axes:[0,0,0,0],buttons:btns,timestamp:performance.now()};
-    return true;},
-  padBtn(i,on){if(!window.__fakePad)return false;
-    window.__fakePad.buttons[i].pressed=!!on;window.__fakePad.buttons[i].value=on?1:0;return true;},
+  fakePad(n=1){ // gamepad simulation for testing: n pads, real join paths included
+    window.__fakePads=Array.from({length:Math.max(0,n|0)},(_,i)=>({connected:true,mapping:'standard',
+      index:i,id:'fakepad'+i,axes:[0,0,0,0],
+      buttons:Array.from({length:17},()=>({pressed:false,value:0})),timestamp:performance.now()}));
+    window.__fakePad=window.__fakePads[0];
+    try{Object.defineProperty(navigator,'getGamepads',{value:()=>window.__fakePads.slice(),configurable:true});}
+    catch(e){navigator.getGamepads=()=>window.__fakePads.slice();}
+    return window.__fakePads.length;},
+  padBtn(i,on,pi=0){const p=(window.__fakePads||[])[pi];if(!p)return false;
+    p.buttons[i].pressed=!!on;p.buttons[i].value=on?1:0;return true;},
+  padAxis(i,v,pi=0){const p=(window.__fakePads||[])[pi];if(!p)return false;p.axes[i]=v;return true;},
 };
 </script>
 </body>
