@@ -30,10 +30,44 @@
   #roarB{right:calc(116px + env(safe-area-inset-right));bottom:calc(80px + env(safe-area-inset-bottom));width:66px;height:66px;font-size:14px}
   #muteB{left:calc(10px + env(safe-area-inset-left));bottom:calc(8px + env(safe-area-inset-bottom));width:44px;height:44px;font-size:18px;
     border-width:2px;background:rgba(0,0,0,.25)}
-  #overlay{position:fixed;inset:0;z-index:10;background:radial-gradient(ellipse at 50% 30%,rgba(43,102,124,.80),rgba(14,44,58,.87) 75%);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px;overflow:auto}
-  #overlay h1{font-size:min(9vw,58px);margin:0;letter-spacing:2px;text-shadow:0 4px 0 #0a2b38}
-  #overlay p{max-width:560px;font-size:15px;line-height:1.55;opacity:.92}
+  #overlay{position:fixed;inset:0;z-index:10;color:#fff;text-align:center;
+    background:radial-gradient(ellipse at 50% 24%,rgba(43,102,124,.82),rgba(14,44,58,.9) 72%);
+    display:flex;flex-direction:column}
+  #ovScroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 14px 14px;display:flex;flex-direction:column;
+    align-items:center;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.4) transparent}
+  #overlay h1{font-size:min(8.5vw,52px);margin:2px 0 4px;letter-spacing:3px;text-shadow:0 4px 0 #0a2b38}
+  #tagline{max-width:540px;font-size:14px;line-height:1.5;opacity:.9;margin:0 0 6px}
+  .ovsec{width:min(660px,100%);margin:10px 0 2px}
+  .ovsec h2{margin:0 0 6px;font-size:12.5px;letter-spacing:3px;opacity:.8;text-align:center}
+  .ovhint{font-size:11.5px;opacity:.7;margin:2px 0 0;text-align:center;max-width:560px}
+  #ovhow{width:min(660px,100%);margin:14px 0 8px;background:rgba(255,255,255,.07);
+    border:2px solid rgba(255,255,255,.16);border-radius:14px;text-align:left;box-sizing:border-box}
+  #ovhow summary{cursor:pointer;font-weight:800;letter-spacing:2px;font-size:12.5px;padding:11px 14px;
+    list-style:none;display:flex;align-items:center;gap:8px}
+  #ovhow summary::-webkit-details-marker{display:none}
+  #ovhow summary::before{content:'\25B8';color:#ffd23f;transition:transform .15s}
+  #ovhow[open] summary::before{transform:rotate(90deg)}
+  .ovcols{padding:0 14px 12px;display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+  #ovhow h3{font-size:11.5px;letter-spacing:2px;margin:10px 0 2px;color:#ffd23f}
+  #ovhow p{margin:0 0 4px;font-size:12.5px;line-height:1.5;opacity:.9}
+  #ovhow p b{color:#ffe28a}
+  #ovFoot{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 16px
+    calc(12px + env(safe-area-inset-bottom));
+    background:linear-gradient(180deg,rgba(10,32,44,0),rgba(10,32,44,.8) 46%)}
+  #ovPick{font-size:12px;font-weight:800;letter-spacing:2px;opacity:.95;text-shadow:0 2px 0 rgba(0,0,0,.4)}
+  #playB{font-family:inherit;font-weight:800;font-size:clamp(19px,4.4vw,23px);color:#fff;background:#e8632f;
+    border:3px solid #fff;border-radius:16px;padding:13px 56px;cursor:pointer;
+    box-shadow:0 5px 0 rgba(0,0,0,.32);transition:transform .08s,box-shadow .08s}
+  #playB:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(0,0,0,.32)}
+  /* the title owns the screen: no floating HUD while the menu is up */
+  body:not(.ingame) .hud,body:not(.ingame) .btn{display:none}
+  /* the surprise card gets a drawn die — emoji fonts are not a given */
+  .mcard .dice{position:relative;display:block;width:130px;height:73px;border-radius:9px;
+    background:linear-gradient(160deg,#3f8ea6,#1b4f63)}
+  .mcard .dice i{position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;left:50%;top:50%}
+  .mcard .dice i:nth-child(1){transform:translate(-30px,-20px)}
+  .mcard .dice i:nth-child(2){transform:translate(-6.5px,-6.5px)}
+  .mcard .dice i:nth-child(3){transform:translate(17px,7px)}
   #swapB{right:calc(12px + env(safe-area-inset-right));top:calc(10px + env(safe-area-inset-top));
     width:auto;height:auto;border-radius:14px;padding:10px 14px;font-size:14px}
   .pick{display:flex;gap:9px;width:min(620px,100%);margin:4px auto 2px;flex:0 0 auto;
@@ -111,38 +145,45 @@
     .growB{margin-top:5px;padding:7px 16px;font-size:15px}
   }
   /* the menu carries the world too: the island you're standing on, and a new one to grow */
-  .menuworld{border-top:2px dashed rgba(255,255,255,.4);margin-top:12px;padding-top:10px}
-  .menuworld h3{margin:0 0 6px;text-align:center;font-size:15px;letter-spacing:1px}
-  .mwrow{display:flex;gap:10px;align-items:center;justify-content:center;text-align:left}
-  .minimap{width:132px;height:74px;flex:none;border:3px solid rgba(255,255,255,.7);border-radius:10px;
-    background:#0b1226;box-shadow:0 3px 10px rgba(0,0,0,.35);image-rendering:pixelated}
-  .mwrow b{display:block;font-size:14px}
-  .mwrow small{display:block;font-size:11px;opacity:.85;margin-top:2px}
-  .mapcyc{display:flex;gap:8px;align-items:center;justify-content:center;margin:8px 0 0}
-  .mapcyc button{font-family:inherit;font-weight:800;font-size:16px;color:#fff;background:rgba(255,255,255,.12);
-    border:3px solid rgba(255,255,255,.4);border-radius:12px;padding:3px 14px;cursor:pointer}
-  .mapcyc b{min-width:150px;text-align:center;font-size:14px}
-  .growB{display:block;margin:8px auto 0;font-family:inherit;font-weight:800;font-size:16px;color:#234;
-    background:#ffd23f;border:3px solid #fff;border-radius:14px;padding:9px 20px;cursor:pointer}
-  .pmenu .mwtip{text-align:center;font-size:11.5px;opacity:.85;margin:6px 0 0}
-  .pmbtns{display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+  .menuworld{border-top:2px solid rgba(255,255,255,.22);margin-top:12px;padding-top:10px;text-align:center}
+  .menuworld h3{margin:0;font-size:12px;letter-spacing:3px;opacity:.8}
+  .mwrow{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}
+  .mwrow button{font-family:inherit;font-weight:800;font-size:16px;color:#fff;background:rgba(255,255,255,.13);
+    border:3px solid rgba(255,255,255,.45);border-radius:13px;width:46px;height:46px;padding:0;flex:none;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1}
+  .mwrow button:active{background:rgba(255,255,255,.3)}
+  .mwcard{padding:5px;background:rgba(255,255,255,.10);border:3px solid rgba(255,255,255,.5);
+    border-radius:15px;box-shadow:0 3px 10px rgba(0,0,0,.3)}
+  .minimap{display:block;width:150px;height:84px;border-radius:9px;background:#0b1226;image-rendering:pixelated}
+  .mwtxt{text-align:center;margin-top:7px}
+  .mwtxt b{display:block;font-size:15px;letter-spacing:1.5px}
+  .mwtxt small{display:block;font-size:11.5px;opacity:.82;margin-top:2px}
+  .mwtxt .mwseed{opacity:.5;font-size:10.5px}
+  .growB{display:inline-block;margin:10px 0 0;font-family:inherit;font-weight:800;font-size:16px;color:#234;
+    background:#ffd23f;border:3px solid #fff;border-radius:14px;padding:10px 24px;cursor:pointer;
+    box-shadow:0 4px 0 rgba(0,0,0,.25);transition:transform .08s}
+  .growB:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.25)}
+  .pmenu .mwtip{text-align:center;font-size:11px;opacity:.7;margin:6px 0 0}
+  .spcap{text-align:center;font-size:12px;margin:5px 0 0;min-height:15px;line-height:1.35}
+  .spcap b{color:#ffd23f;letter-spacing:1px;margin-right:6px}
+  .pmenu .pick{margin:2px auto;mask-image:linear-gradient(90deg,transparent 0,#000 5%,#000 95%,transparent 100%);
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 5%,#000 95%,transparent 100%)}
+  .pmbtns{display:flex;gap:9px;justify-content:center;margin-top:13px;flex-wrap:wrap}
   .pmbtns button{font-family:inherit;font-weight:800;color:#fff;border:3px solid #fff;border-radius:14px;
-    padding:10px 18px;font-size:15px;cursor:pointer}
+    padding:11px 18px;font-size:15px;cursor:pointer;flex:1 1 150px;max-width:230px}
   .leaveB{background:#b1234a}
   .backB{background:#e8632f}
-  .pmkeys{text-align:center;font-size:11px;opacity:.75;margin:10px 0 0;line-height:1.5}
-  #playB{margin-top:18px;font-size:22px;font-family:inherit;font-weight:800;color:#fff;background:#e8632f;
-    border:3px solid #fff;border-radius:14px;padding:14px 40px;cursor:pointer}
-  .keys{font-size:13px!important;opacity:.8}
+  .pmkeys{text-align:center;font-size:10.5px;opacity:.65;margin:10px 0 0;line-height:1.5}
+  @media (max-width:440px){.pmbtns{flex-direction:column;align-items:stretch}.pmbtns button{flex:0 0 auto;max-width:none}}
   /* phones: keep the twelve-card strip and the PLAY button within thumb's reach */
   @media (max-width:560px){
-    #overlay{padding:14px}
-    #overlay h1{font-size:min(8.4vw,40px);margin-bottom:4px}
-    #overlay p{font-size:12.5px;line-height:1.42}
-    .keys{font-size:10.5px!important}
+    #ovScroll{padding:12px 10px 12px}
+    #overlay h1{font-size:min(8vw,38px);letter-spacing:2px}
+    #tagline{font-size:12px;line-height:1.45}
+    .ovcols{grid-template-columns:1fr;gap:0}
     .pcard{height:164px}
     .pcard img{height:58px}
-    #playB{margin-top:12px;font-size:20px;padding:12px 32px}
+    #playB{width:min(420px,100%);padding:13px 20px}
   }
   /* a pane per hero, each with its own little HUD and menu button */
   #vphost{position:fixed;inset:0;z-index:4;pointer-events:none}
@@ -209,43 +250,66 @@
   <button id="wakeB">WAKE UP!</button>
 </div></div>
 <div id="overlay">
-  <h1>DINO BRAWL 3D</h1>
-  <p>Pick an island, then choose your dinosaur and beat the challengers! There are thirteen to
-     be: stompers, biters, horned chargers, one that spits gooey venom, a Brachiosaurus so
-     tall it blocks the sun — and the <b>Mosasaurus</b> itself, if you fancy ruling the sea.
-     Every expedition rolls a huge brand-new island with five challengers of its own: pine hills,
-     crystal mesas, sunset lagoons or the raptor-only <b>Raptor Winter</b> — with mountains,
-     shallow bays and proper deep ocean, and herds of animals roaming all of it.
-     The plant-eaters just graze — they only ever fight back if you bite them first.
-     The giants can't even see a raptor: play one, <b>JUMP</b> onto a giant's back with GRAB and
-     peck it while it bucks and thunders trying to shake you off!
-      Every island has a <b>human village</b> — and you can play as one of them: pick the
-      <b>Human</b>, hold <b>GRAB</b> beside any dinosaur to <b>tame and ride</b> it, and its spears
-      will even defend the village from hungry dinosaurs… who happily <b>swallow the villagers
-      whole</b> — one chomp from any meat-eater and an islander is gone down the hatch (play a
-      carnivore yourself and your own bite does it too).
-     Dinosaurs wade into water — but too deep drowns them, for you and for them (unless you ARE
-     the Mosasaurus — the sea is your dinner plate).
-     Hold <b>GRAB</b> next to a smaller dinosaur to clamp onto it and drag it around.
-     Run out of hearts and your dinosaur takes a nap — press a button and it wakes
-     up safe at camp.
-     Dinosaurs of your own kind stay out of the fight — and you can switch dinosaurs, or move to a
-     whole new island, anytime with your own menu (SWAP button or ESCAPE).
-     <b>Friends join any time — no setup:</b> the first gamepad belongs to P1; press any button on
-     <i>another</i> controller (or start walking on the second keyboard's IJKL) and a brand-new hero
-     appears at camp while the screen splits. Up to four heroes, one world — everyone's menu commands
-     the same island, and every menu has a LEAVE GAME button too.</p>
-  <div class="maprow" id="mrow"></div>
-  <div class="pick" id="pick"></div>
-  <p class="keys">WASD / arrows — move &nbsp;•&nbsp; drag mouse or J/L — turn camera &nbsp;•&nbsp;
-     SPACE / click — bite &nbsp;•&nbsp; hold G — grab &amp; drag (a raptor: JUMP on giants!) &nbsp;•&nbsp; R — roar (a Dilophosaurus spits instead!) &nbsp;•&nbsp; M — mute &nbsp;•&nbsp; ESCAPE / SWAP — your menu<br>
-     <b>Second keyboard (P2):</b> IJKL — move, comma/period — camera, O — bite, hold U — grab, P — roar, Y — menu.
-     <b>Gamepads (P2+):</b> stick — move, A/X — bite, hold RT — grab, Y/RB — roar, Select — menu, B — back<br>
-     In the menu: left/right (or d-pad) picks the dinosaur, up/down the island, A/ENTER applies —
-     <b>X / Start in the menu = LEAVE GAME</b>; NEW MAP grows a brand-new island for <b>everyone</b><br>
-     Gamepad: stick move, A/X bite, hold RT — grab &amp; drag, Y/RB roar, <b>Select/Back — menu</>, LB — mute,
-     Start play, D-pad pick dino (up/down picks the island)</p>
-  <button id="playB">PLAY</button>
+  <div id="ovScroll">
+    <h1>DINO BRAWL 3D</h1>
+    <p id="tagline">Pick an island, pick a dinosaur, and beat the five challengers your island
+      raises — then roam a huge living world that grows anew from a seed every expedition.</p>
+    <section class="ovsec">
+      <h2>CHOOSE YOUR ISLAND</h2>
+      <div class="maprow" id="mrow"></div>
+    </section>
+    <section class="ovsec">
+      <h2>CHOOSE YOUR DINOSAUR</h2>
+      <div class="pick" id="pick"></div>
+      <p class="ovhint">scroll the strip — fourteen fighters, from a six-armed Distortus rex to the
+        Mosasaurus itself and a Human who tames and rides them</p>
+    </section>
+    <details id="ovhow">
+      <summary>HOW TO BRAWL — the world, the moves, the crew</summary>
+      <div class="ovcols">
+        <div>
+          <h3>THE ISLANDS</h3>
+          <p>Pine hills, crystal mesas, sunset lagoons, a raptor-only <b>winter</b>, the drowned
+             <b>Mo Satrench</b> where Mosasaurus is the only law, and the <b>Great Valley</b> of
+             villages, giants and one very big house. Every expedition grows a brand-new one —
+             mountains, bays, territories and challenger crews all reroll.</p>
+          <h3>FIGHTING</h3>
+          <p>A gold arrow points at your next challenger. Hearts, snack berries, and plant-eaters
+             that only fight back once bitten. Run out of hearts and your dinosaur naps — one
+             button wakes it at camp. Each species fights like itself: charges, tail clubs,
+             venom spit, ground-shaking stomps, a stalker that goes invisible.</p>
+          <h3>WATER &amp; VILLAGES</h3>
+          <p>Shallows are for wading; the deep drowns land-dwellers — unless you ARE the
+             Mosasaurus, for whom the whole sea is a dinner plate. Every island has a human
+             village, and any carnivore swallows a villager whole.</p>
+          <h3>THE GIANTS &amp; THE LITTLE ONE</h3>
+          <p>The giants can't see a Velociraptor — play one, <b>JUMP</b> onto a giant's back and
+             peck while it bucks. A tamed mount never bucks: play the Human and hold <b>GRAB</b>
+             beside anything to tame and ride it.</p>
+        </div>
+        <div>
+          <h3>KEYBOARD</h3>
+          <p><b>WASD / arrows</b> move · <b>mouse drag</b> or J / L look · <b>SPACE</b> / click bite ·
+             hold <b>G</b> grab &amp; drag · <b>R</b> roar (a Dilophosaurus spits) · <b>M</b> mute ·
+             <b>1–0</b> pick a dinosaur · <b>ESC / SWAP</b> your menu<br>
+             <b>P2 keyboard:</b> IJKL move, comma / period look, O bite, U grab, P roar, Y menu.</p>
+          <h3>TOUCH</h3>
+          <p>Big BITE / GRAB / ROAR buttons under your thumbs; drag anywhere to look around.</p>
+          <h3>GAMEPAD</h3>
+          <p>Stick move · A / X bite · hold RT grab · Y / RB roar · Select menu · LB mute ·
+             Start play · D-pad picks dinosaur &amp; island. In a menu: <b>X / Start leaves the game</b>.</p>
+          <h3>FRIENDS — NO SETUP</h3>
+          <p>The first gamepad drives P1. Press any button on <i>another</i> controller (or start
+             walking on the second keyboard) and a fresh hero appears at camp while the screen
+             splits — up to four heroes, one shared world, one menu each.</p>
+        </div>
+      </div>
+    </details>
+  </div>
+  <div id="ovFoot">
+    <div id="ovPick">PINE FOREST • T-REX</div>
+    <button id="playB">PLAY!</button>
+  </div>
 </div>
 
 <script type="importmap">
@@ -2060,9 +2124,13 @@ function setPick(k){pickKey=k;
     b.classList.toggle('sel',on);
     if(on&&b.scrollIntoView)b.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
   });
+  ovLabel();                           // the PLAY bar always names your pick
   if(players.length&&players[0].pm&&players[0].pm.menu)
     refreshPanel(players[0]);          // the big button keeps telling the truth about your pick
 }
+const ovLabel=()=>{const el=document.getElementById('ovPick');if(!el)return;
+  el.textContent=(mapPick==='surprise'?'SURPRISE ISLAND':MAPNAME[mapPick]||'AN ISLAND')+
+    '  \u2022  '+SPECIES[pickKey].name.toUpperCase();};
 function buildPicker(el,mode){
   el.innerHTML='';
   for(const k of PICKABLE){const sp=SPECIES[k];
@@ -2102,15 +2170,16 @@ function panelHTML(pl){
   return `<div class="panel">
     <h2>${i?`P${i+1} — `:''}SWAP DINOSAUR</h2>
     <div class="pick pstrip"></div>
-    <p class="note">Tap a dinosaur to become it — same hearts, same spot.</p>
+    <p class="spcap"><b class="spcapN"></b><span class="spcapT"></span></p>
     <div class="menuworld"><h3>YOUR WORLD</h3>
-      <div class="mwrow"><canvas class="minimap" width="132" height="74"></canvas>
-        <div><b class="mwname"></b><small class="mwnote"></small><small class="mwseed"></small></div></div>
-      <div class="mapcyc"><button class="cycL">◀</button><b class="cycName"></b><button class="cycR">▶</button></div>
+      <div class="mwrow"><button class="cycL">◀</button>
+        <div class="mwcard"><canvas class="minimap" width="150" height="84"></canvas></div>
+        <button class="cycR">▶</button></div>
+      <div class="mwtxt"><b class="mwname"></b><small class="mwnote"></small><small class="mwseed"></small></div>
       <button class="growB"${i?'':' id="menuB"'}>NEW MAP!</button>
       <p class="mwtip">One island for all: growing a new one carries every hero there.</p>
     </div>
-    <div class="pmbtns"><button class="leaveB">LEAVE GAME</button><button class="backB">BACK TO THE FIGHT</button></div>
+    <div class="pmbtns"><button class="backB">BACK TO THE FIGHT</button><button class="leaveB">LEAVE GAME</button></div>
     <p class="pmkeys">${panelKeys(pl)}</p></div>`;
 }
 function buildPanel(pl){
@@ -2140,18 +2209,23 @@ function positionPanel(pl,el){el=el||panelOf(pl);if(!el||players.indexOf(pl)<0)r
 function refreshPanel(pl){
   const el=panelOf(pl);if(!el)return;
   const grow=stageMapOf(pl)!==previewMap,wantDino=stageSpOf(pl)!==pl.key;
-  el.querySelector('.mwname').textContent=curMap.name;
+  el.querySelector('.mwname').textContent=mapLabel(stageMapOf(pl));
   el.querySelector('.mwnote').textContent=grow?
-    `you are on ${MAPNAME[previewMap]} — ${mapLabel(stageMapOf(pl))} is picked`
+    `you are on ${MAPNAME[previewMap]} right now`
     :'the island you are standing on';
   el.querySelector('.mwseed').textContent='island number '+WORLDSEED;
-  el.querySelector('.cycName').textContent=mapLabel(stageMapOf(pl));
   // the button says exactly what one press will do: island, dinosaur, or both
   const growBtn=grow?'GROW '+mapLabel(stageMapOf(pl))+'!':
     (wantDino?'BE A '+SPECIES[stageSpOf(pl)].name.toUpperCase()+'!':'NEW MAP!');
   el.querySelector('.growB').textContent=grow&&wantDino?
     growBtn+' AS A '+SPECIES[stageSpOf(pl)].name.toUpperCase()+'!':growBtn;
+  // the strip's caption names the dinosaur this panel is pointing at, trick and all
+  el.querySelector('.spcapN').textContent=SPECIES[stageSpOf(pl)].name.toUpperCase();
+  el.querySelector('.spcapT').textContent='\u2014 '+PICKTAG[stageSpOf(pl)];
   el.querySelectorAll('.pstrip .pcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===stageSpOf(pl)));
+  const cur=el.querySelector('.pstrip .pcard.sel');   // open with your current kind centred
+  if(cur&&!el.dataset.scrolled&&cur.scrollIntoView){cur.scrollIntoView({block:'nearest',inline:'center'});
+    el.dataset.scrolled='1';}
   buildMiniMap(el.querySelector('.minimap'),pl);
 }
 function refreshPanels(){for(const pl of players)if(pl.pm&&pl.pm.menu)refreshPanel(pl);}
@@ -2295,13 +2369,14 @@ function buildMapRow(el,onPick){
   }
   const s=document.createElement('button');
   s.className='mcard'+(mapPick==='surprise'?' sel':'');s.dataset.k='surprise';
-  s.innerHTML='<span class="dice">🎲</span><b>SURPRISE!</b><small>any island, new map</small>';
+  s.innerHTML='<span class="dice" aria-hidden="true"><i></i><i></i><i></i></span><b>SURPRISE!</b><small>any island, new map</small>';
   s.addEventListener('click',()=>onPick('surprise'));
   el.appendChild(s);
 }
 /* picking a card instantly rebuilds the island spinning behind the menu */
 function setMapPickSel(k){mapPick=k;
-  document.querySelectorAll('.mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===k));}
+  document.querySelectorAll('.mcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===k));
+  ovLabel();}
 function setMapPick(k){
   setMapPickSel(k);
   previewMap=k==='surprise'?MAPKEYS[Math.floor(Math.random()*MAPKEYS.length)]:k;
@@ -2356,6 +2431,7 @@ function placePlayerStart(ch,i){                 // heroes begin at camp — sea
 async function initGame(){
   if(launching)return;launching=true;
   document.getElementById('overlay').classList.add('hidden');
+  document.body.classList.add('ingame');
   try{actx().resume&&actx().resume();ambient();}catch(e){}
   await Promise.all(Object.keys(SPECIES).map(loadSpecies));
   clearCreatures();won=false;defeated.clear();
@@ -2435,6 +2511,7 @@ function quitToTitle(){                          // the last hero walked out: ba
   const host=document.getElementById('vphost');if(host)host.innerHTML='';
   menuLayer().innerHTML='';
   setHearts();
+  document.body.classList.remove('ingame');
   document.getElementById('overlay').classList.remove('hidden');
 }
 /* menus float over pane numbers, so a shifting roster means fresh panels */
