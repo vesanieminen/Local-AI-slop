@@ -591,26 +591,48 @@ const gulp2 = await ridePage.evaluate(() => {
 ok(gulp2 && gulp2.swallowed, 'and it swallows small dinosaurs whole, as is its right', JSON.stringify(gulp2));
 await ridePage.close();
 
-// ---------- split-screen: up to four heroes share one island ----------
+// ---------- join in progress: a controller press splits the screen, one world, own menus ----------
 const mp = await open({ viewport: { width: 1280, height: 800 } });
 await wait(1800);
-await mp.evaluate(() => { window.__probe.setPlayers(2); window.__probe.setPick('raptor'); });
+await mp.evaluate(() => { window.__probe.setPick('raptor'); });
 await mp.click('#playB');
 await mp.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
 await wait(1500);
+const solo = await mp.evaluate(() => ({ n: window.__probe.pcount(),
+  panes: document.querySelectorAll('.vp').length }));
+ok(solo.n === 1 && solo.panes === 0, 'it starts with one hero on a full screen', JSON.stringify(solo));
+// a first step on the second keyboard is a knock at the door: P2 joins mid-game
+await mp.keyboard.press('KeyI');
+await wait(900);
 const two = await mp.evaluate(() => {
   const pr = window.__probe;
   return { n: pr.pcount(), pl: pr.playersInfo(), panes: document.querySelectorAll('.vp').length,
     heartsHidden: getComputedStyle(document.getElementById('hearts')).display };
 });
-ok(two.n === 2 && two.panes === 2, 'two players, two panes, one island', `${two.n} heroes × ${two.panes} panes`);
+ok(two.n === 2 && two.panes === 2, 'one button on a new controller joins the brawl — the screen splits itself',
+  `${two.n} heroes × ${two.panes} panes`);
 ok(two.pl[0].vp.w === 640 && two.pl[1].vp.x === 640 && two.pl[0].key !== two.pl[1].key,
   'the screen splits in half and no two heroes share a species',
   JSON.stringify(two.pl.map(p => `${p.key}@x${p.vp.x}`)));
 ok(two.heartsHidden === 'none' && two.pl.every(p => p.hearts === 5),
   'each hero keeps their own hearts and little HUD', `display:${two.heartsHidden} hearts:${two.pl.map(p => p.hearts)}`);
+ok(two.pl[1].menu && !two.pl[0].menu,
+  'the new hero lands with their own menu open while P1 plays on', JSON.stringify(two.pl.map(p => p.menu)));
+// the world does not stop for shopping: P1 roams while P2 browses dinosaurs
+const p1a = await mp.evaluate(() => window.__probe.playersInfo()[0]);
+await mp.keyboard.down('KeyW'); await wait(900); await mp.keyboard.up('KeyW');
+const p1b = await mp.evaluate(() => window.__probe.playersInfo()[0]);
+ok(Math.hypot(p1b.x - p1a.x, p1b.z - p1a.z) > 1.5, 'the shared world keeps turning while a hero picks a dinosaur',
+  `P1 moved ${Math.hypot(p1b.x - p1a.x, p1b.z - p1a.z).toFixed(1)}`);
+// P2 taps a dinosaur inside their very own panel
+await mp.click('.pmenu[data-o="1"] .pstrip .pcard[data-k="trike"]');
+await wait(700);
+const swapped = await mp.evaluate(() => window.__probe.playersInfo()[1]);
+ok(swapped.key === 'trike' && !swapped.menu,
+  'every menu belongs to its hero: P2 taps a card there and becomes it',
+  `P2 is now a ${swapped.key}, menu closed: ${!swapped.menu}`);
+// P2 roams with IJKL (the new continent may park them badly: try each way, wake, retry)
 const p2a0 = await mp.evaluate(() => window.__probe.playersInfo()[1]);
-// the new continent may park P2 with a hill, the sea or a bad nap in the way: try each way, wake, retry
 let p2b = p2a0, moved2 = 0;
 for (let round = 0; round < 2 && moved2 <= 1.5; round++) {
   for (const key of ['KeyI', 'KeyJ', 'KeyL', 'KeyK']) {
@@ -624,28 +646,101 @@ for (let round = 0; round < 2 && moved2 <= 1.5; round++) {
 }
 ok(moved2 > 1.5, 'P2 roams the island with IJKL',
   `moved ${moved2.toFixed(1)}${p2b.ko ? ', napping' : ''}`);
-const p1a = await mp.evaluate(() => window.__probe.playersInfo()[0]);
-await mp.keyboard.down('KeyW'); await wait(900); await mp.keyboard.up('KeyW');
-const p1b = await mp.evaluate(() => window.__probe.playersInfo()[0]);
-ok(Math.hypot(p1b.x - p1a.x, p1b.z - p1a.z) > 1.5, 'while P1 still roams with WASD',
-  `moved ${Math.hypot(p1b.x - p1a.x, p1b.z - p1a.z).toFixed(1)}`);
+// each menu is personal: Y opens P2's own menu, and it carries a way out of the game
+await mp.keyboard.press('KeyY'); await wait(600);
+const p2menu = await mp.evaluate(() => ({ menu: window.__probe.playersInfo()[1].menu,
+  panel: !!document.querySelector('.pmenu[data-o="1"]'),
+  p1menu: window.__probe.playersInfo()[0].menu }));
+ok(p2menu.menu && p2menu.panel && !p2menu.p1menu,
+  'Y opens exactly one menu — the one that belongs to P2', JSON.stringify(p2menu));
+ok(await mp.evaluate(() => !!document.querySelector('.pmenu[data-o="1"] .leaveB')),
+  'the menu carries the exit: a LEAVE GAME button per hero', 'leaveB present');
+await mp.keyboard.press('KeyX'); await wait(900);
+const back = await mp.evaluate(() => ({ n: window.__probe.pcount(),
+  panes: document.querySelectorAll('.vp').length,
+  heartsBack: getComputedStyle(document.getElementById('hearts')).display }));
+ok(back.n === 1 && back.panes === 0 && back.heartsBack !== 'none',
+  'LEAVE GAME: P2 walks out and the screen un-splits itself', JSON.stringify(back));
 await mp.close();
-const mp4 = await open({ viewport: { width: 1280, height: 800 } });
+// ---------- gamepads: every fresh controller is one button away from the brawl ----------
+const pads = await open({ viewport: { width: 1280, height: 800 } });
 await wait(1800);
-await mp4.evaluate(() => window.__probe.setPlayers(4));
-await mp4.click('#playB');
-await mp4.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
+await pads.evaluate(() => window.__probe.fakePad(2));   // two controllers waiting for heroes
+await pads.click('#playB');
+await pads.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
 await wait(1200);
-const four = await mp4.evaluate(() => {
+await pads.evaluate(async () => {
+  const pr = window.__probe, sleep = ms => new Promise(r => setTimeout(r, ms));
+  pr.padBtn(0, true, 0); await sleep(250); pr.padBtn(0, false, 0);   // pad one presses A
+  await sleep(800);
+  pr.padBtn(0, true, 1); await sleep(250); pr.padBtn(0, false, 1);   // pad two presses A
+  await sleep(800);
+  pr.padBtn(0, true, 0); await sleep(250); pr.padBtn(0, false, 0);   // pad one knocks again
+  await sleep(500);
+});
+const padRoster = await pads.evaluate(() => {
   const pr = window.__probe, pl = pr.playersInfo();
   return { n: pr.pcount(), panes: document.querySelectorAll('.vp').length,
-    corners: [...new Set(pl.map(p => p.vp.x + ',' + p.vp.y))].length, w: pl[0].vp.w,
-    kinds: new Set(pl.map(p => p.key)).size };
+    corners: [...new Set(pl.map(p => p.vp.x + ',' + p.vp.y))].length,
+    kinds: new Set(pl.map(p => p.key)).size, ctl: pl.map(p => p.ctl) };
 });
-ok(four.n === 4 && four.panes === 4 && four.corners === 4 && four.w <= 640 && four.kinds >= 3,
-  'all four heroes get their own corner of the island',
-  `${four.n} heroes, ${four.corners} corners, ${four.kinds} species`);
-await mp4.close();
+ok(padRoster.n === 3 && padRoster.panes === 3 && padRoster.corners === 3,
+  'one button per new gamepad — three heroes, three corners of one island',
+  `${padRoster.n} heroes, ${padRoster.corners} corners`);
+ok(padRoster.kinds >= 3, 'no two heroes wear the same face', `${padRoster.kinds} species`);
+ok(padRoster.ctl.join(',') === 'kbd1,pad,pad',
+  'a controller claims its hero once and never joins twice', padRoster.ctl.join(','));
+// the pad hero closes their join menu with B and roams with the stick
+const padHero = await pads.evaluate(() => window.__probe.playersInfo()[1]);
+await pads.evaluate(async () => {
+  const pr = window.__probe, sleep = ms => new Promise(r => setTimeout(r, ms));
+  pr.padBtn(1, true, 0); await sleep(250); pr.padBtn(1, false, 0);   // B — back to the fight
+  await sleep(500);
+  pr.wakeP(1);                                                       // a wild swipe may have napped them
+  pr.padAxis(1, -1, 0); await sleep(1400); pr.padAxis(1, 0, 0);      // stick forward
+});
+const padMoved = await pads.evaluate(() => window.__probe.playersInfo()[1]);
+ok(Math.hypot(padMoved.x - padHero.x, padMoved.z - padHero.z) > 1.2,
+  'a pad hero roams with the stick',
+  `moved ${Math.hypot(padMoved.x - padHero.x, padMoved.z - padHero.z).toFixed(1)}`);
+// leaving with the controller: Select opens your menu, Start leaves the game
+await pads.evaluate(async () => {
+  const pr = window.__probe, sleep = ms => new Promise(r => setTimeout(r, ms));
+  pr.padBtn(8, true, 0); await sleep(250); pr.padBtn(8, false, 0);   // Select — own menu
+  await sleep(600);
+  pr.padBtn(9, true, 0); await sleep(250); pr.padBtn(9, false, 0);   // Start — LEAVE GAME
+  await sleep(800);
+});
+const padLeft = await pads.evaluate(() => window.__probe.playersInfo().map(p => p.ctl).join(','));
+ok(padLeft === 'kbd1,pad', 'Start in a pad hero menu means LEAVE GAME — the roster shrinks', padLeft);
+// pad two's hero out too (B first, in case the join menu still floats there), then P1 to the title
+await pads.evaluate(async () => {
+  const pr = window.__probe, sleep = ms => new Promise(r => setTimeout(r, ms));
+  pr.padBtn(1, true, 1); await sleep(250); pr.padBtn(1, false, 1);   // B — close if still open
+  await sleep(500);
+  pr.padBtn(8, true, 1); await sleep(250); pr.padBtn(8, false, 1);   // Select — own menu
+  await sleep(600);
+  pr.padBtn(9, true, 1); await sleep(250); pr.padBtn(9, false, 1);   // Start — LEAVE GAME
+  await sleep(800);
+});
+const soloAgain = await pads.evaluate(() => window.__probe.pcount());
+ok(soloAgain === 1, 'every controller hero can walk out again', `${soloAgain} left`);
+await pads.keyboard.press('Escape'); await wait(500);
+const p1menu = await pads.evaluate(() => window.__probe.playersInfo()[0].menu);
+await pads.keyboard.press('KeyX'); await wait(1100);
+const atTitle = await pads.evaluate(() => ({
+  overlay: !document.getElementById('overlay').classList.contains('hidden'),
+  n: window.__probe.playersInfo().length }));
+ok(p1menu && atTitle.n === 0 && atTitle.overlay,
+  'when the last hero leaves, the game walks back to the map table', JSON.stringify(atTitle));
+await pads.click('#playB');
+await pads.waitForFunction(() => window.__probe && window.__probe.ready, null, { timeout: 60000 });
+await wait(1200);
+const fresh = await pads.evaluate(() => ({ n: window.__probe.pcount(),
+  enemies: window.__probe.state().enemies.filter(e => e.alive).length }));
+ok(fresh.n === 1 && fresh.enemies > 0, 'and a brand-new solo expedition boots straight off that title',
+  JSON.stringify(fresh));
+await pads.close();
 
 // ---------- bait: the Mosasaurus lures the whole island to the beach ----------
 const baitp = await open({ viewport: { width: 1280, height: 800 } });
