@@ -3452,9 +3452,17 @@ function stepCamera(dt){
   const wantBias=napC?(1-2*clamp(room*0.5+0.02,0.08,0.55))*dd*Math.tan(C.fov*Math.PI/360):0;
   napBias+=(wantBias-napBias)*Math.min(1,dt*2.4);
   const fx=napC?napC.x:player.x, fz=napC?napC.z:player.z;
-  C.position.set(fx+Math.sin(camYaw)*dd,(napC?napC.y:player.y)+CAM.h*camZ*szK+1.1*camB,fz+Math.cos(camYaw)*dd);
-  const ch2=terrainH(C.position.x,C.position.z);
-  if(C.position.y<ch2+1.6)C.position.y=ch2+1.6;
+  const tx=fx+Math.sin(camYaw)*dd, ty=(napC?napC.y:player.y)+CAM.h*camZ*szK+1.1*camB, tz=fz+Math.cos(camYaw)*dd;
+  const ch2=terrainH(tx,tz), gy=ty<ch2+1.6?ch2+1.6:ty;   // keep the VIEW target over ground too
+  // real frame gaps are never even (33/50 ms beats etc.), and a camera welded to
+  // the sim plays every scheduler hiccup back as lurching — most of all when a
+  // giant mount carries you: big body, far views, huge screen motion. Ease the
+  // lens toward its spot: velocity noise washes out, turns and framing stay crisp.
+  const leap=Math.hypot(C.position.x-tx,C.position.y-gy,C.position.z-tz);
+  if(leap>4)C.position.set(tx,gy,tz);                    // teleports: snap, don't fly
+  else{const kC=Math.min(0.55,dt*14);                    // capped: keeps the glide alive
+    C.position.x+=(tx-C.position.x)*kC;C.position.y+=(gy-C.position.y)*kC;  // even on bad frames
+    C.position.z+=(tz-C.position.z)*kC;}
   C.lookAt(fx,(napC?napC.y:player.y+(q?1.5:2.4)*szK)-napBias,fz);
 }
 
@@ -3768,6 +3776,11 @@ window.__probe={
     return h?{host:h.key,tamed:!!h.tamed,controlled:!!h.controlled,
       x:+h.x.toFixed(1),z:+h.z.toFixed(1),yaw:+h.yaw.toFixed(2),spd:+(h.speed||0).toFixed(1),
       riders:h.riders.length}:null;},
+  mountRaw(){const h=player.riding;                 // full precision: jitter sleuthing
+    return h?{x:h.x,z:h.z,y:h.y,yaw:h.yaw,spd:h.speed,state:h.state,fear:h.fear,
+      riders:h.riders.length,tamed:!!h.tamed,controlled:!!h.controlled}:null;},
+  camRaw(){const C=player.pm?player.pm.cam:camera;
+    return{x:C.position.x,y:C.position.y,z:C.position.z};},
   spearTest(){                            // tests: a spear-hunter goes to work on a plant-eater
     for(const h of enemies)if(h.alive&&h.sp.kind==='human'&&!h.sp.villager&&h.riding)unmountRider(h,false);
     const spot=findSpot(terrainH,(x,z,h)=>h>1,[rand(-140,140),rand(-140,140)],90);
