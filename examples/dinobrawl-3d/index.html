@@ -240,7 +240,9 @@
      peck it while it bucks and thunders trying to shake you off!
       Every island has a <b>human village</b> — and you can play as one of them: pick the
       <b>Human</b>, hold <b>GRAB</b> beside any dinosaur to <b>tame and ride</b> it, and its spears
-      will even defend the village from hungry dinosaurs… who happily eat the villagers too.
+      will even defend the village from hungry dinosaurs… who happily <b>swallow the villagers
+      whole</b> — one chomp from any meat-eater and an islander is gone down the hatch (play a
+      carnivore yourself and your own bite does it too).
      Dinosaurs wade into water — but too deep drowns them, for you and for them (unless you ARE
      the Mosasaurus — the sea is your dinner plate).
      Hold <b>GRAB</b> next to a smaller dinosaur to clamp onto it and drag it around.
@@ -313,39 +315,54 @@ function actx(){if(!AU.ctx){const C=window.AudioContext||window.webkitAudioConte
 function noiseBuf(c){if(!AU.noise){const b=c.createBuffer(1,c.sampleRate*2,c.sampleRate),d=b.getChannelData(0);
   for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;AU.noise=b;}return AU.noise;}
 function master(){if(!AU.mg){AU.mg=actx().createGain();AU.mg.gain.value=muted?0:0.5;AU.mg.connect(actx().destination);}return AU.mg;}
+/* Every world sound is heard FROM SOMEWHERE: it fades with the distance to the
+   nearest hero (split-screen heroes all count), so an island brawling on the
+   far side of its mountains is a faint rumble, not a full-volume cacophony.
+   No position given = menu/UI sound: always at full level. */
+function sndAt(p){
+  if(!p||!players||!players.length)return 1;
+  const x=p.x!==undefined?p.x:p[0],z=p.z!==undefined?p.z:p[2];
+  let d=1e9;
+  for(const pl of players){if(!pl)continue;const dd=Math.hypot(pl.x-x,pl.z-z);if(dd<d)d=dd;}
+  if(d<18)return 1;                                  // your own fight stays loud
+  const a=Math.pow(18/d,1.8);                         // a far roar is a far roar
+  return a<0.015?0:a;
+}
 function env(g,t,a,pk,d){g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(pk,t+a);
   g.gain.exponentialRampToValueAtTime(1e-4,t+a+d);}
-function tone(type,f0,f1,dur,pk,delay=0,fl=0){const c=actx(),t=c.currentTime+delay;
+function tone(type,f0,f1,dur,pk,delay=0,fl=0,att=1){
+  if(pk*att<=0)return;const c=actx(),t=c.currentTime+delay;
   const o=c.createOscillator(),g=c.createGain();o.type=type;
   o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur);
   let node=o;if(fl){const bq=c.createBiquadFilter();bq.type='lowpass';bq.frequency.value=fl;o.connect(bq);node=bq;}
-  node.connect(g);g.connect(master());env(g,t,0.01,pk,dur);o.start(t);o.stop(t+dur+0.05);}
-function hiss(f0,f1,dur,pk,delay=0,q=1){const c=actx(),t=c.currentTime+delay;
+  node.connect(g);g.connect(master());env(g,t,0.01,pk*att,dur);o.start(t);o.stop(t+dur+0.05);}
+function hiss(f0,f1,dur,pk,delay=0,q=1,att=1){
+  if(pk*att<=0)return;const c=actx(),t=c.currentTime+delay;
   const s=c.createBufferSource();s.buffer=noiseBuf(c);const bq=c.createBiquadFilter();
   bq.type='bandpass';bq.Q.value=q;bq.frequency.setValueAtTime(f0,t);
   bq.frequency.exponentialRampToValueAtTime(Math.max(20,f1),t+dur);
-  const g=c.createGain();s.connect(bq);bq.connect(g);g.connect(master());env(g,t,0.01,pk,dur);
+  const g=c.createGain();s.connect(bq);bq.connect(g);g.connect(master());env(g,t,0.01,pk*att,dur);
   s.start(t);s.stop(t+dur+0.05);}
-const SFX={
-  bite(){hiss(2400,600,0.12,0.25);},
-  chomp(){tone('square',180,60,0.09,0.3);tone('square',120,40,0.12,0.25,0.05);hiss(900,300,0.1,0.2,0,0.7);},
-  clang(){tone('triangle',1900,1500,0.25,0.25);tone('triangle',2600,1900,0.3,0.18,0.01);hiss(5000,3000,0.15,0.12);},
-  hurt(){tone('sawtooth',300,120,0.25,0.3,0,600);hiss(1200,300,0.2,0.2);},
+const SFX={                       // every one takes an optional source: entity or [x,z]
+  bite(at){hiss(2400,600,0.12,0.25,0,1,sndAt(at));},
+  chomp(at){const g=sndAt(at);tone('square',180,60,0.09,0.3,0,0,g);tone('square',120,40,0.12,0.25,0.05,0,g);hiss(900,300,0.1,0.2,0,0.7,g);},
+  clang(at){const g=sndAt(at);tone('triangle',1900,1500,0.25,0.25,0,0,g);tone('triangle',2600,1900,0.3,0.18,0.01,0,g);hiss(5000,3000,0.15,0.12,0,1,g);},
+  hurt(at){const g=sndAt(at);tone('sawtooth',300,120,0.25,0.3,0,600,g);hiss(1200,300,0.2,0.2,0,1,g);},
   pickup(){tone('sine',660,990,0.09,0.25);tone('sine',990,1320,0.12,0.22,0.08);},
-  splash(){hiss(700,2200,0.3,0.18,0,0.5);},
-  gulp(){hiss(500,140,0.4,0.3,0,1.2);tone('sawtooth',260,90,0.35,0.2,0,900);},
-  stomp(){tone('sine',90,30,0.5,0.5,0,120);hiss(400,80,0.4,0.3,0,0.6);},
-  spit(){hiss(1800,600,0.18,0.22,0,0.8);tone('sine',900,240,0.16,0.13,0,300);},
-  poison(){tone('sine',420,170,0.5,0.16,0,240);hiss(600,160,0.5,0.1,0,0.4);},
-  die(){tone('sawtooth',400,60,0.6,0.3,0,500);hiss(900,150,0.6,0.15,0.05,0.5);},
+  splash(at){hiss(700,2200,0.3,0.18,0,0.5,sndAt(at));},
+  gulp(at,delay=0){const g=sndAt(at);hiss(500,140,0.4,0.3,delay,1.2,g);tone('sawtooth',260,90,0.35,0.2,delay,900,g);},
+  stomp(at){const g=sndAt(at);tone('sine',90,30,0.5,0.5,0,120,g);hiss(400,80,0.4,0.3,0,0.6,g);},
+  spit(at){const g=sndAt(at);hiss(1800,600,0.18,0.22,0,0.8,g);tone('sine',900,240,0.16,0.13,0,300,g);},
+  poison(at){const g=sndAt(at);tone('sine',420,170,0.5,0.16,0,240,g);hiss(600,160,0.5,0.1,0,0.4,g);},
+  die(at){const g=sndAt(at);tone('sawtooth',400,60,0.6,0.3,0,500,g);hiss(900,150,0.6,0.15,0.05,0.5,g);},
   win(){[523,659,784,1047].forEach((f,i)=>tone('triangle',f,f,0.25,0.25,i*0.14));},
-  roar(kind='trex'){const P={trex:[200,90,0.7,0.45,300],allo:[340,150,0.5,0.35,500],spino:[160,240,0.6,0.3,400],
+  roar(kind='trex',at){const g=sndAt(at);if(!g)return;const P={trex:[200,90,0.7,0.45,300],allo:[340,150,0.5,0.35,500],spino:[160,240,0.6,0.3,400],
     ankylo:[120,70,0.4,0.3,200],im:[150,60,0.9,0.5,260],dr:[90,45,1.1,0.55,180],
     raptor:[520,300,0.3,0.25,900],dilopho:[300,150,0.5,0.3,620],trike:[140,80,0.5,0.35,220],
     stego:[110,60,0.5,0.3,180],diplodocus:[85,48,0.8,0.35,150],brachiosaurus:[58,34,1.3,0.4,100],
     human:[620,380,0.35,0.22,1100],hunter:[560,330,0.4,0.25,950]}[kind]||[200,90,0.7,0.4,300];
-    tone('sawtooth',P[0],P[1],P[2],P[3],0,P[4]);tone('sawtooth',P[0]*1.02,P[1]*0.97,P[2],P[3]*0.8,0.02,P[4]);
-    hiss(P[1]*3,P[1],P[2]*0.8,P[3]*0.4,0,0.6);},
+    tone('sawtooth',P[0],P[1],P[2],P[3],0,P[4],g);tone('sawtooth',P[0]*1.02,P[1]*0.97,P[2],P[3]*0.8,0.02,P[4],g);
+    hiss(P[1]*3,P[1],P[2]*0.8,P[3]*0.4,0,0.6,g);},
 };
 function ambient(){try{const c=actx(),t=c.currentTime;const s=c.createBufferSource();s.buffer=noiseBuf(c);
   s.loop=true;const bq=c.createBiquadFilter();bq.type='lowpass';bq.frequency.value=320;
@@ -1715,7 +1732,7 @@ function switchSpecies(key){
   invulnT=Math.max(invulnT,1.5);
   if(CAST.includes(old)&&!players.some(p=>p.key!==player.key&&p.key===old))
     spawnWild(old,0);                      // your old dino goes back to the wild (unless a hero owns it)
-  SFX.roar(key);startRoar(player,0.9);
+  SFX.roar(key,player);startRoar(player,0.9);
   toast(`You are now a ${SPECIES[key].name}!`);
   if(goalLeft()===0&&!won){won=true;setTimeout(winGame,900);}
 }
@@ -1929,7 +1946,7 @@ const poisK=ch=>ch.poisonT>0?0.72:1;
 const flare=(ch,t)=>{ch.flareT=Math.max(ch.flareT||0,t);};   // Dilophosaurus fans its frill
 function goreHit(e){                                        // Triceratops ends a charge with the horns
   if(!player.alive||invulnT>0)return;
-  SFX.stomp();
+  SFX.stomp(e);
   hurt(player,e.sp.dmg,e.x,e.z);
   const a=Math.atan2(-(player.z-e.z),player.x-e.x);
   player.x+=Math.cos(a)*2.6;player.z-=Math.sin(a)*2.6;      // tossed clean across the island
@@ -1969,7 +1986,7 @@ function mountHost(host,rider,tame){
     if(rider.isPlayer)toast(`You leapt onto the ${host.sp.name}'s back! BITE to hurt it!`,2400);
     else if(host.isPlayer)toast(`A raptor leapt onto your back! Run and buck to shake it off!`,2400);
   }
-  SFX.bite();flare(rider,0.7);
+  SFX.bite(rider);flare(rider,0.7);
   return true;
 }
 function unmountRider(rider,flung){
@@ -2033,7 +2050,7 @@ function stepRider(r,dt){                                    // hard-saddled to 
   r.yaw+=angDiff(h.yaw,r.yaw)*Math.min(1,dt*12);              // follow the host's bucking, smoothly
   r.peckCd-=dt;
   if(!r.isPlayer&&r.peckCd<=0){
-    r.peckCd=1.15;SFX.bite();r.strikeT=0.2;
+    r.peckCd=1.15;SFX.bite(r);r.strikeT=0.2;
     hurt(h,1,r.x,r.z);
     if(r.sp.venom&&Math.random()<0.25)poison(h);
   }
@@ -2048,7 +2065,7 @@ function shakeStep(h,dt){                                    // the giant tries 
   const nx=h.x+Math.cos(a)*spd*dt,nz=h.z-Math.sin(a)*spd*dt;
   if(terrainH(nx,nz)>WATER-drownLimit(h)*0.7&&Math.hypot(nx,nz)<EDGE){h.x=nx;h.z=nz;h.speed=spd;}
   h.yaw+=Math.sin(h.buckT*4.5)*dt*3;
-  if(Math.random()<dt*2.2){SFX.stomp();ripple(h.x,h.y+0.2,h.z);}
+  if(Math.random()<dt*2.2){SFX.stomp(h);ripple(h.x,h.y+0.2,h.z);}
   if(h.shakeT<=0){
     h.shakeT=0;
     for(const r of[...h.riders])unmountRider(r,true);
@@ -2076,7 +2093,7 @@ function spit(ch,target){
   const ts=(target.sp&&target.sp.scale)||1,ty=target.y+1.45*ts,g=15;
   venom.push({m,x:ox,y:oy,z:oz,vx:(target.x-ch.x)/tt,vy:(ty-oy+0.5*g*tt*tt)/tt,
     vz:(target.z-ch.z)/tt,t:0,trail:0,from:ch});
-  SFX.spit();flare(ch,1.0);startRoar(ch,0.42);
+  SFX.spit(ch);flare(ch,1.0);startRoar(ch,0.42);
   return venom.length;
 }
 function splat(x,y,z){
@@ -2086,7 +2103,7 @@ function splat(x,y,z){
   ripples.push({m,t:0,splat:true});
 }
 function poison(ch){
-  ch.poisonT=7;SFX.poison();
+  ch.poisonT=7;SFX.poison(ch);
   ch.mats.forEach(m=>m.color.setRGB(0.52,0.92,0.42));
   if(ch.isPlayer){toast('YUCK! Venom! You feel slow and gooey — it wears off!');invulnT=Math.max(invulnT,0.6);}
   else{ch.fear=Math.max(ch.fear,1.2);toast('SPLAT! The venom made it slow and silly!');}
@@ -2143,7 +2160,7 @@ function hurtInner(ch,dmg,fromX,fromZ){
   const a=Math.atan2(-(ch.z-fromZ),ch.x-fromX);
   ch.x+=Math.cos(a)*0.7;ch.z-=Math.sin(a)*0.7;
   if(ch.isPlayer){
-    invulnT=1.4;SFX.hurt();
+    invulnT=1.4;SFX.hurt(player);
     hearts=Math.max(0,hearts-dmg);setHearts();
     if(hearts<=0)knockOut();
     else toast('Ouch! Find a snack!');
@@ -2155,7 +2172,7 @@ let invulnT=0;
 function kill(ch){
   if(ch.isPlayer){knockOut();return;}            // the hero never just vanishes: it naps
   if(ch.riders&&ch.riders.length)for(const r of[...ch.riders])unmountRider(r,false);   // riders hop free
-  ch.alive=false;ch.state='die';SFX.die();
+  ch.alive=false;ch.state='die';SFX.die(ch);
   if(!ch.isPlayer){
     confettiBurst(ch.x,ch.y+2.2,ch.z);
     if(!ch.counted){ch.counted=true;
@@ -2185,13 +2202,13 @@ function knockOut(){
     const s=shoreNear(player.x,player.z);
     if(s){player.x=s[0];player.z=s[1];}else{player.x=CAMP[0];player.z=CAMP[1];}
     player.y=terrainH(player.x,player.z);
-    SFX.gulp();
+    SFX.gulp(player);
   }
   player.hp=0;player.alive=false;player.state='die';player.deadT=0;
   player.windup=0;player.atkT=0;player.strikeT=0;player.fear=0;
   player.fallSide=Math.random()<.5?-1:1;
   player.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
-  SFX.die();
+  SFX.die(player);
   camManual=false;                                 // frame the nap freshly each time
   if(players.length>1){                            // split-screen: a little NAP card in THEIR pane
     if(player.pm.hud){const w=player.pm.slot===0?'SPACE':player.pm.slot===1?'O':'A';
@@ -2224,7 +2241,7 @@ function wakeUp(force){
   if(player.pm&&player.pm.hud)player.pm.hud.down.style.opacity=0;
   respawnPlayer();
   invulnT=Math.max(invulnT,2);
-  startRoar(player,1.1);SFX.roar(player.key);
+  startRoar(player,1.1);SFX.roar(player.key,player);
   confettiBurst(player.x,player.y+3,player.z);
   return true;
 }
@@ -2247,9 +2264,13 @@ function respawnPlayer(){
 function resetEnemy(e){
   e.hp=e.sp.hp;e.alive=true;e.deadT=0;e.state='idle';e.respawnAt=0;
   e.riding=null;e.riders=[];e.shakeT=0;
+  e.swallowed=false;e.eater=null;                    // digested or not: back on duty at the fire
   e.x=e.home.x;e.z=e.home.z;e.y=terrainH(e.x,e.z);e.fear=0;e.windup=0;e.cool=0;
   e.model.rotation.set(0,0,0);e.model.position.y=0;e.strikeT=0;e.roarT=0;e.bob=0;e.prevAgg=0;
+  const ss=e.sp.scale;e.model.scale.set(ss,ss,ss);    // a swallowed meal was shrunk out of sight
+  e.root.rotation.set(0,e.yaw,0);
   e.mats.forEach(m=>{m.transparent=false;m.opacity=1;});
+  if(!e.root.parent)scene.add(e.root);
 }
 function winGame(){
   for(const pl of players){                        // champions don't nap: everyone wakes for the win
@@ -2334,18 +2355,23 @@ function playerBite(){
       let hit=false;
       for(const e of enemies){
         if(!e.alive||e===h||e.tamed||!strikeHits(h,e,move))continue;
-        hit=true;hurt(e,h.sp.dmg,h.x,h.z);
+        hit=true;
+        if(h.sp.kind==='thero'&&e.sp.kind==='human'){
+          swallow(h,e);                             // your mount gulps the islander down
+          return;
+        }
+        hurt(e,h.sp.dmg,h.x,h.z);
         if(move==='gore'){const a=Math.atan2(-(e.z-h.z),e.x-h.x);
           e.x+=Math.cos(a)*2.4;e.z-=Math.sin(a)*2.4;}
       }
-      if(hit){SFX.chomp();roarGauge=clamp(roarGauge+0.09,0,1);
+      if(hit){SFX.chomp(h);roarGauge=clamp(roarGauge+0.09,0,1);
         if(Math.random()<0.16&&performance.now()-lastPraise>4200){lastPraise=performance.now();
           toast(PRAISE[Math.floor(Math.random()*PRAISE.length)],1400);}}
-      else SFX.bite();
+      else SFX.bite(h);
       return;
     }
     // pecking the giant's back from up top
-    player.atkT=0.35;player.strikeT=0.2;player.state='attack';SFX.chomp();
+    player.atkT=0.35;player.strikeT=0.2;player.state='attack';SFX.chomp(player);
     hurt(h,player.sp.dmg,player.x,player.z);
     roarGauge=clamp(roarGauge+0.05,0,1);
     return;
@@ -2370,15 +2396,19 @@ function playerBite(){
   // assist: snap-aim at the nearest prey within striking distance
   if(aid&&move!=='spin'&&move!=='sweep'){const a=Math.atan2(-(aid.z-player.z),aid.x-player.x);
     player.yaw+=clamp(angDiff(a,player.yaw),-0.7,0.7);}
-  SFX.bite();
+  SFX.bite(player);
   let hit=false;
   for(const e of enemies){
     if(!e.alive||!strikeHits(player,e,move))continue;
     hit=true;
+    if(!sp.sea&&sp.kind==='thero'&&e.sp.kind==='human'){
+      swallow(player,e);                            // a carnivore hero eats islanders whole
+      return;
+    }
     if(e.sp.armor&&move!=='sweep'&&move!=='spin'){
       const facing=angDiff(Math.atan2(-(player.z-e.z),player.x-e.x),e.yaw);
       if(Math.abs(facing)<1.1){
-        SFX.clang();toast('CLANG! Bite the tail or sides!');
+        SFX.clang(player);toast('CLANG! Bite the tail or sides!');
         const ba=Math.atan2(-(player.z-e.z),player.x-e.x);
         player.x+=Math.cos(ba)*0.8;player.z-=Math.sin(ba)*0.8; // bounce off the armor
         e.windup=0.3;e.windupMax=0.3; // tail club counter
@@ -2390,13 +2420,13 @@ function playerBite(){
       const a=Math.atan2(-(e.z-player.z),e.x-player.x);
       e.x+=Math.cos(a)*2.4;e.z-=Math.sin(a)*2.4;}
     if(move==='stomp')ripple(player.x,player.y+0.3,player.z);
-    if(sp.sea&&e.alive&&!e.sp.huge&&!e.sp.armor&&e.sp.scale<1&&player.riding===null){
-      swallow(player,e);                            // the sea king gulps small dinos whole
+    if(sp.sea&&e.alive&&!e.sp.huge&&!e.sp.armor&&(e.sp.scale<1||e.sp.kind==='human')&&player.riding===null){
+      swallow(player,e);                            // the sea king gulps small things whole
       return;
     }
   }
   if(hit){
-    if(quad||move==='stomp')SFX.stomp();else SFX.chomp();
+    if(quad||move==='stomp')SFX.stomp(player);else SFX.chomp(player);
     roarGauge=clamp(roarGauge+0.09,0,1);
     if(Math.random()<0.16&&performance.now()-lastPraise>4200){
       lastPraise=performance.now();toast(PRAISE[Math.floor(Math.random()*PRAISE.length)],1400);}
@@ -2406,9 +2436,9 @@ function playerRoar(){
   if(!player.alive||roarCd>0)return;
   if(player.sp.sea){                                    // sea king: ROAR = haul a bait fish ashore
     const s=curMap&&!curMap.noSea?shoreNear(player.x,player.z):null;
-    if(s&&dropBait(s[0],s[1])){roarCd=8;SFX.roar('trex');
+    if(s&&dropBait(s[0],s[1])){roarCd=8;SFX.roar('trex',player);
       toast('You dragged a fat fish onto the beach — the whole island can smell it now!');}
-    else{SFX.roar('trex');roarCd=4;toast('ROOOAR! Nothing but open water or ice to land a bait on.');}
+    else{SFX.roar('trex',player);roarCd=4;toast('ROOOAR! Nothing but open water or ice to land a bait on.');}
     return;
   }
   if(player.sp.venom){                                  // for a Dilophosaurus the roar IS a venom spit
@@ -2426,7 +2456,7 @@ function playerRoar(){
     return;
   }
   if(roarGauge<0.35){toast('The roar is still rumbling — hit something to fill the bar!');return;}
-  roarGauge=0;roarCd=1.2;SFX.roar(player.key);startRoar(player,1.0);
+  roarGauge=0;roarCd=1.2;SFX.roar(player.key,player);startRoar(player,1.0);
   ripple(player.x,player.y+0.25,player.z);
   for(const e of enemies){
     if(!e.alive)continue;
@@ -2463,7 +2493,7 @@ function tryGrab(){
   if(!best){return false;}
   grabTarget=best;grabT=0;grabCd=1.2;best.grabbed=true;best.windup=0;best.fear=0;best.crushCd=1.0;
   hurt(best,0,player.x,player.z);                  // they notice — and notice YOU
-  SFX.bite();flare(player,0.6);
+  SFX.bite(player);flare(player,0.6);
   toast(`CHOMP! You've got the ${best.sp.name} by the face! Hold GRAB and drag!`,1800);
   return true;
 }
@@ -2518,7 +2548,7 @@ function stepGrab(dt,want){
     if(v.poisonT>0){v.poisonT-=dt;if(v.poisonT<=0){v.poisonT=0;unpoison(v);}}
     // every crunch is another bite taken while dragging
     v.crushCd-=dt;
-    if(v.crushCd<=0){v.crushCd=1.4;SFX.chomp();hurt(v,player.sp.dmg,player.x,player.z);}
+    if(v.crushCd<=0){v.crushCd=1.4;SFX.chomp(v);hurt(v,player.sp.dmg,player.x,player.z);}
   }
 }
 const ripples=[];
@@ -2560,7 +2590,7 @@ function dropBait(x,z){
   scene.add(m);
   const b={m,x,z,hp:7,t:100};
   baits.push(b);
-  ripple(x,WATER+0.1,z);SFX.splash();
+  ripple(x,WATER+0.1,z);SFX.splash([x,z]);
   if(player&&Math.hypot(x-player.x,z-player.z)<130)
     toast('The Mosasaurus dragged something out onto the beach... the animals can smell it!');
   return b;
@@ -2703,12 +2733,12 @@ function stepEnemyAI(e,dt){
       const lunge=(move==='gore'?1.4:hitR?1.0:0.55)*Math.max(1,e.sp.scale*0.8);
       e.x+=Math.cos(e.yaw)*lunge;e.z-=Math.sin(e.yaw)*lunge;
       const stompR=Math.max(9.5,strikeR(e)*1.4);
-      if(e.sp.stomp&&dp<stompR){SFX.stomp();if(dp<stompR*0.95)hurt(player,e.sp.dmg,e.x,e.z);ripple(e.x,e.y+0.3,e.z);}
+      if(e.sp.stomp&&dp<stompR){SFX.stomp(e);if(dp<stompR*0.95)hurt(player,e.sp.dmg,e.x,e.z);ripple(e.x,e.y+0.3,e.z);}
       else if(hitR){
         // an Ankylosaurus player: front bites clang off the armor — bite enemies from the side!
         const toE=Math.atan2(-(e.z-player.z),e.x-player.x);
         if(player.sp.armor&&move!=='spin'&&move!=='sweep'&&Math.abs(angDiff(toE,player.yaw))<1.15){
-          SFX.clang();toast('CLANG! Your armor — bonk their sides!');
+          SFX.clang(player);toast('CLANG! Your armor — bonk their sides!');
           e.x+=Math.cos(toE)*1.1;e.z+=Math.sin(toE)*1.1;e.cool=Math.max(e.cool,1.0);
         }
         else{
@@ -2717,17 +2747,17 @@ function stepEnemyAI(e,dt){
             const a=Math.atan2(-(player.z-e.z),player.x-e.x);
             player.x+=Math.cos(a)*2.6;player.z-=Math.sin(a)*2.6;
             toast('OH NO — the Triceratops gored you!');}
-          if(move==='spin'){toast('WHUMP! That tail goes right around!');SFX.stomp();}
-          else if(!e.sp.armor)SFX.chomp();else SFX.clang();
+          if(move==='spin'){toast('WHUMP! That tail goes right around!');SFX.stomp(e);}
+          else if(!e.sp.armor)SFX.chomp(e);else SFX.clang(e);
         }
       }
-      else SFX.bite();
+      else SFX.bite(e);
       e.cool=e.sp.stomp?2.6:(e.sp.armor?1.8:1.2);e.state='chase';
     }
   } else if(player.alive&&!giantBlind(e)&&dp<aggroR(e)){
     e.state='chase';
     if(!e.prevAgg){e.prevAgg=1;                            // fresh spotting: announce it
-      if(e.key!=='ankylo'&&Math.random()<0.7){SFX.roar(e.key);startRoar(e,0.7);}
+      if(e.key!=='ankylo'&&Math.random()<0.7){SFX.roar(e.key,e);startRoar(e,0.7);}
       else e.dispT=1.4;}                                  // Ankylosaurus warns with the club
     const trn=(e.sp.turn||3);
     const toP=Math.atan2(-(player.z-e.z),player.x-e.x);
@@ -2735,7 +2765,7 @@ function stepEnemyAI(e,dt){
     const atkD=e.sp.reach*0.9;
     if(e.sp.charge&&e.chargeT<=0&&e.cool<=0&&dp>10&&dp<34&&Math.abs(angDiff(toP,e.yaw))<0.5){
       e.chargeT=1.7;                                      // Triceratops: lower the horns and go
-      if(Math.random()<0.75){SFX.roar(e.key);toast('The Triceratops CHARGES!');}
+      if(Math.random()<0.75){SFX.roar(e.key,e);toast('The Triceratops CHARGES!');}
     }
     if(e.chargeT>0){
       e.chargeT-=dt;
@@ -2766,8 +2796,8 @@ function stepEnemyAI(e,dt){
     } else if(e.cool<=0&&(!e.sp.pack||(lastAtkT[e.key]||0)<performance.now()-1000)){
       e.windup=e.sp.atk;e.windupMax=e.sp.atk;e.state='attack';
       lastAtkT[e.key]=performance.now();
-      if(e.sp.armor&&Math.random()<0.3)SFX.roar(e.key);
-      if(e.sp.camo)SFX.roar(e.key);                      // the ambush reveals itself!
+      if(e.sp.armor&&Math.random()<0.3)SFX.roar(e.key,e);
+      if(e.sp.camo)SFX.roar(e.key,e);                      // the ambush reveals itself!
     }
   } else if(e.sp.rider&&!giantBlind(e)&&(e.shakeCd||0)<=0&&nearestGiant(e,44)){
     // a wild raptor with no human handy finds a dinosaur-sized mount of its own
@@ -2795,7 +2825,7 @@ function stepEnemyAI(e,dt){
         e.yaw+=clamp(angDiff(Math.atan2(-(bb.z-e.z),bb.x-e.x),e.yaw),-1.4*dt,1.4*dt);
         e.grazeT=Math.max(e.grazeT,0.8);      // the munch animation everyone already has
         e.baitCd=(e.baitCd||0)-dt;
-        if(e.baitCd<=0){e.baitCd=rand(0.9,1.6);bb.hp--;e.bites=(e.bites||0)+1;SFX.chomp();
+        if(e.baitCd<=0){e.baitCd=rand(0.9,1.6);bb.hp--;e.bites=(e.bites||0)+1;SFX.chomp(e);
           if(bb.hp<=0)toast('They got every last bite of the Mosasaurus\'s bait!');}
       }
     } else {
@@ -2816,10 +2846,10 @@ function stepEnemyAI(e,dt){
       if(e.sp.kind==='quad'){e.dispT=rand(1,2);
         if(e.joints.neck1&&r<0.6)e.grazeT=rand(1.8,3.4);   // the long-necks crop at the canopy
         else if(e.sp.herb&&e.joints.head)e.grazeT=rand(1.5,3.0);   // plant-eaters just graze
-        if(r<0.35)SFX.roar(e.key);}
+        if(r<0.35)SFX.roar(e.key,e);}
       else if(r<0.55){e.grazeT=rand(1.4,2.6);
-        if(e.sp.fisher&&terrainH(e.x+Math.cos(e.yaw)*2,e.z-Math.sin(e.yaw)*2)<1.4&&Math.random()<0.5)SFX.splash();}
-      else if(r<0.7){startRoar(e,0.55);if(Math.random()<0.5)SFX.roar(e.key);}
+        if(e.sp.fisher&&terrainH(e.x+Math.cos(e.yaw)*2,e.z-Math.sin(e.yaw)*2)<1.4&&Math.random()<0.5)SFX.splash(e);}
+      else if(r<0.7){startRoar(e,0.55);if(Math.random()<0.5)SFX.roar(e.key,e);}
     }
     }
   }
@@ -2899,7 +2929,7 @@ function stepHumanAI(e,dt){
     e.windup-=dt;
     if(e.windup<=0){e.windup=0;e.strikeT=0.26;e.cool=1.4;
       const tg=e.huntTg;
-      SFX.bite();
+      SFX.bite(e);
       if(tg&&tg.alive&&Math.hypot(tg.x-e.x,tg.z-e.z)<e.sp.reach+bodyR(tg)+1.6)
         hurt(tg,e.sp.dmg,e.x,e.z);}
   }
@@ -2911,7 +2941,7 @@ function stepHumanAI(e,dt){
     let tx,tz;
     if(dh>30){tx=base[0];tz=base[1];}                // the village fire is the safest place out here
     else{tx=e.x+(e.x-threat.x)*3;tz=e.z+(e.z-threat.z)*3;}
-    if(Math.random()<dt*1.2)SFX.roar(e.key);         // shrieking at the top of their lungs
+    if(Math.random()<dt*1.2)SFX.roar(e.key,e);         // shrieking at the top of their lungs
     walkToward(e,e.sp.run*1.02,tx,tz,dt);            // …but nobody swims for a living
     poseAndPlace(e,dt);return;
   }
@@ -2953,7 +2983,7 @@ function stepHumanAI(e,dt){
     if(rr>ISLE-55){wx*=(ISLE-55)/rr;wz*=(ISLE-55)/rr;}
     e.wander={x:wx,z:wz};}
   if(terrainH(e.wander.x,e.wander.z)>0.6)walkToward(e,e.sp.speed*0.55,e.wander.x,e.wander.z,dt);
-  if(Math.random()<dt*0.1)SFX.roar(e.key);
+  if(Math.random()<dt*0.1)SFX.roar(e.key,e);
   poseAndPlace(e,dt);
 }
 /* dinosaurs eating people: hungry carnivores that have nothing better to do
@@ -2983,13 +3013,18 @@ function stepPredatorHunts(dt){
     e.yaw+=clamp(angDiff(toT,e.yaw),-(e.sp.turn||3)*dt,(e.sp.turn||3)*dt);
     if(d>atkR){
       walkToward(e,e.sp.run*1.15,tg.x,tg.z,dt,d>48);   // a burst no islander quite matches
-      if(Math.random()<dt*0.3)SFX.roar(e.key);
+      if(Math.random()<dt*0.3)SFX.roar(e.key,e);
     } else if(e.cool<=0){
       e.cool=e.sp.stomp?2.6:1.4;
-      SFX.bite();
-      hurt(tg,e.sp.dmg+1,e.x,e.z);
-      if(!tg.alive){e.huntCd=rand(30,70);           // one human keeps a hunter busy a good while
-        toast(`The ${e.sp.name} caught a ${tg.sp.name.toLowerCase()}!`,2200);}
+      if(tg.sp.kind==='human'){                    // one chomp, one person: swallowed whole
+        swallow(e,tg);
+        e.huntCd=rand(30,70);                      // a full belly keeps this hunter busy a while
+      } else{
+        SFX.bite(e);
+        hurt(tg,e.sp.dmg+1,e.x,e.z);
+        if(!tg.alive){e.huntCd=rand(30,70);        // one human keeps a hunter busy a good while
+          toast(`The ${e.sp.name} caught a ${tg.sp.name.toLowerCase()}!`,2200);}
+      }
     }
   }
 }
@@ -3066,7 +3101,7 @@ function stepMosasaur(e,dt){
     bd=Math.hypot(player.x-e.x,player.z-e.z);}    // whoever hurt it is the main course
   if(tg&&bd<e.sp.aggro){
     e.state='chase';
-    if(!e.prevAgg){e.prevAgg=1;SFX.splash();
+    if(!e.prevAgg){e.prevAgg=1;SFX.splash(e);
       if(tg.isPlayer||Math.random()<0.5)toast('SOMETHING HUGE MOVES UNDER THE WATER...');}
     const lead=Math.min(3.5,(tg.speed||0)*0.45);  // intercept, don't chase the tail
     // inside strike range but no bite yet: creep, don't thunder past — full speed
@@ -3074,7 +3109,7 @@ function stepMosasaur(e,dt){
     const creep=bd<e.sp.reach*1.7&&(e.cool>0||!inFront(e,tg,e.sp.reach*1.7));
     swimToward(e,creep?e.sp.speed*0.5:e.sp.run,tg.x+Math.cos(tg.yaw)*lead,tg.z-Math.sin(tg.yaw)*lead,dt);
     if(bd<e.sp.reach*1.25&&e.cool<=0&&inFront(e,tg,e.sp.reach*1.7)){
-      e.windup=0.4;e.windupMax=0.4;e.state='attack';e.snatchT=tg;SFX.bite();}
+      e.windup=0.4;e.windupMax=0.4;e.state='attack';e.snatchT=tg;SFX.bite(e);}
   } else if(tg&&bd<e.sp.aggro*1.7){
     e.state='watch';e.prevAgg=0;                  // something is paddling: eyes on it
     const a=Math.atan2(-(tg.z-e.z),tg.x-e.x);
@@ -3098,21 +3133,21 @@ function stepMosasaur(e,dt){
       e.wander={x:wx,z:wz};}
     swimToward(e,e.sp.speed*0.55,e.wander.x,e.wander.z,dt);
     }
-    if(Math.random()<dt*0.15)SFX.splash();
+    if(Math.random()<dt*0.15)SFX.splash(e);
   }
   poseSea(e,dt);
 }
 function snatch(e,tg){
-  if(!tg||!tg.alive||tg.swallowed||tg.riding){SFX.bite();return;}
+  if(!tg||!tg.alive||tg.swallowed||tg.riding){SFX.bite(e);return;}
   const d=Math.hypot(tg.x-e.x,tg.z-e.z);
-  if(d>e.sp.reach*2){SFX.bite();return;}          // missed: snap at bubbles
+  if(d>e.sp.reach*2){SFX.bite(e);return;}          // missed: snap at bubbles
   ripple(e.x,WATER+0.1,e.z);
   if(tg.isPlayer){                                // you get chomped and washed to shore
     const back=tg!==player;                       // make sure the chomp lands on THIS hero's hearts
     if(back)enterP(tg);
     if(invulnT>0){if(back)exitP(tg);return;}
     releaseGrab('You dropped it!');
-    SFX.gulp();
+    SFX.gulp(e);
     hurt(tg,e.sp.dmg,e.x,e.z);
     if(tg.alive){
       const s=shoreNear(tg.x,tg.z);
@@ -3123,35 +3158,115 @@ function snatch(e,tg){
     return;
   }
   if(tg.sp.huge){                                 // too big to swallow: a mauling instead
-    hurt(tg,3,e.x,e.z);SFX.chomp();
+    hurt(tg,3,e.x,e.z);SFX.chomp(e);
     toast(`The Mosasaurus bites at the ${tg.sp.name} — far too big to swallow!`);
     return;}
   swallow(e,tg);
 }
-function swallow(e,v){                            // whole. down the hatch.
+/* whole. down the hatch. The sea king has always done it; now every
+   carnivore on the island eats an islander the same way — one chomp,
+   one person, gone. Land meals get the full devouring animation.       */
+function swallow(e,v){
+  if(v.alive===false||v.swallowed)return;
   if(v.riding)unmountRider(v,false);
-  SFX.gulp();
-  ripple(e.x,WATER+0.06,e.z);ripple(v.x,WATER+0.12,v.z);
+  const sea=e.sp.sea;
+  if(sea){SFX.gulp(e);ripple(e.x,WATER+0.06,e.z);ripple(v.x,WATER+0.12,v.z);}
+  else{                                              // on land: crunch, gulp, gulp
+    SFX.chomp(e);SFX.gulp(e,0.5);SFX.gulp(e,0.95);
+    e.strikeT=Math.max(e.strikeT||0,0.24);           // jaws snap shut on the meal
+    startRoar(e,1.0);                                // head high, meal going down
+    confettiBurst(v.x,v.y+1.1,v.z);
+  }
   v.alive=false;v.state='eaten';v.swallowed=true;v.eater=e;v.deadT=0;v.cool=99;
   if(grabTarget===v)releaseGrab(null);
   if(!v.counted){v.counted=true;
     if(CAST.includes(v.key))defeated.add(v.key);}
+  if(v.sp.kind==='human'){                           // the village mourns briefly, then regrows
+    v.respawnAt=performance.now()+45000;v.remove=()=>{};
+    if(e.isPlayer)toast(`GULP! You swallowed the ${v.sp.name} whole!`,2400);
+    else toast(`GULP! The ${e.sp.name} swallowed a ${v.sp.name} whole!`,2400);
+    e.cool=Math.max(e.cool,6);return;
+  }
   const left=goalLeft();
   if(left===0&&!won){won=true;setTimeout(winGame,1800);}
   else if(e.isPlayer)toast(`GULP! You swallowed the ${v.sp.name} whole! ${left} challenger${left===1?'':'s'} to go!`,2800);
-  else toast(`GULP! The Mosasaurus swallowed the ${v.sp.name} whole! ${left} challenger${left===1?'':'s'} to go!`,2800);
-  e.cool=6;
+  else toast(`GULP! The ${e.sp.name} swallowed the ${v.sp.name} whole! ${left} challenger${left===1?'':'s'} to go!`,2800);
+  e.cool=Math.max(e.cool,6);
 }
+/* The meal hangs where the jaws actually clamp: the head joint sits at the
+   skull, so walk from it toward the snout, by how far the jaw joint hangs
+   open below. Scales itself — a raptor skull needs a smaller step than a
+   T-Rex's. Same maths in Blender for the pose reviews.                     */
+const _dvT=new THREE.Vector3(),_dvQ=new THREE.Quaternion(),
+      _dvF=new THREE.Vector3(),_dvJ=new THREE.Vector3();
+function devourAnchor(E,v){
+  const J=E.joints;
+  if(J&&J.head){
+    J.head.getWorldPosition(v);J.head.getWorldQuaternion(_dvQ);
+    _dvF.set(1,0,0).applyQuaternion(_dvQ);            // glTF models face +x
+    let f=0.6,dn=0.42;
+    if(J.jaw){J.jaw.getWorldPosition(_dvJ);
+      const d=v.distanceTo(_dvJ);                     // skull hinge spread
+      f=Math.max(0.34,1.9*d);dn=Math.max(0.24,1.25*d);}
+    v.addScaledVector(_dvF,f);v.y-=dn;
+  }else v.set(E.x,E.y+(E.tall||2)*0.62,E.z);
+  return v;
+}
+/* Being eaten, read from the meal's eyes: snapped into the jaws, held
+   crosswise flailing arms and legs, then tossed head-first and slid down
+   the gullet as the eater lifts its head. Small dinos taken by the sea
+   keep their quick shrink into the deep.                                    */
 function poseSwallowed(e,dt){
   e.deadT+=dt;
-  const t=Math.min(1,e.deadT/0.9),s=e.sp.scale*(1-t*0.92);
-  const head=e.eater&&e.eater.joints.head;
+  if(e.holdD!=null)e.deadT=e.holdD;                  // probe: freeze the meal at one pose
+  const d=e.deadT,E=e.eater;
+  const devoured=E&&!E.sp.sea&&e.sp.kind==='human';
+  let hx=e.x,hy=e.y-0.5,hz=e.z,yaw=e.yaw;
+  if(E)yaw=E.yaw;
+  if(devoured){
+    devourAnchor(E,_dvT);
+    hx=_dvT.x;hy=_dvT.y;hz=_dvT.z;
+    const fl=clamp(1-Math.max(0,d-0.62)/0.4,0,1);     // struggling stops once it's down
+    const tilt=0.16+0.5*clamp(1.05-(E.sp.scale||1),0,0.7);   // small jaws hold dinner flatter
+    const D=Math.min(0.85,hy-terrainH(hx,hz)-0.18);   // don't drag feet through the ground
+    const J=e.joints,M=e.model;
+    const w=Math.sin(d*24),w2=Math.cos(d*21);         // limb flail, fading as the gulp takes over
+    if(J){
+      if(J.armL){J.armL.rotation.z=2.15+0.7*w*fl;J.armR.rotation.z=2.15-0.7*w*fl;
+        J.armL.rotation.x=0.35+0.35*w2*fl;J.armR.rotation.x=0.35-0.35*w2*fl;}
+      if(J.legL){J.legL.rotation.z=-0.5+0.45*w2*fl;J.legR.rotation.z=-0.5-0.45*w2*fl;}
+      if(J.head)J.head.rotation.z=Math.sin(d*17)*0.25*fl;
+    }
+    if(d<0.62){                                       // clamped in the jaws: thrash
+      e.root.position.set(hx,hy-D+Math.sin(d*13)*0.05,hz);
+      e.root.rotation.y=yaw+Math.PI/2;
+      M.rotation.z=tilt+Math.sin(d*19)*0.28;
+      M.rotation.x=Math.sin(d*15)*0.12;
+    }else{                                            // tossed up — head-first down the hatch
+      const u=clamp((d-0.62)/0.55,0,1);
+      const ins=0.55*u*u;                             // dragged back down the throat as it goes
+      e.root.position.set(hx-_dvF.x*ins,hy-D+Math.sin(u*Math.PI)*0.42+(D-0.08)*u-_dvF.y*ins,hz-_dvF.z*ins);
+      e.root.rotation.y=yaw+Math.PI/2;
+      M.rotation.z=tilt*(1-u);
+      M.rotation.x=-1.45*easeOut(u);                  // pitch over the jaw: head-first
+    }
+    const gone=Math.max(0,1-Math.max(0,d-1.0)/0.25);  // swallowed: shrinking out of sight
+    const s=e.sp.scale*gone;
+    M.scale.set(s,s*(1+0.18*(1-gone)),s);
+    e.shadow.scale.set(0,0,0);
+    if(d>1.35){e.remove();scene.remove(e.root);}      // off stage; the village regrows at the fire
+    return;
+  }
+  const head=E&&E.joints&&E.joints.head;              // the sea way: one gulp, no ceremony
   if(head){const v=new THREE.Vector3();head.getWorldPosition(v);
-    e.root.position.set(v.x,v.y-0.1,e.z);
-    e.root.rotation.y=e.eater.yaw;}
+    hx=v.x;hy=v.y;hz=v.z;}
+  else if(E){hx=E.x;hz=E.z;hy=E.y+(E.tall||2)*0.62;}
+  const t=Math.min(1,d/0.9),s=e.sp.scale*(1-t*0.92);
+  e.root.position.set(hx,hy-0.1,hz);e.root.rotation.y=yaw;
   e.model.scale.set(s,s,s);
   e.shadow.scale.set(0,0,0);
-  if(e.deadT>1.05)e.remove();
+  if(d>1.05){e.remove();                     // small dinos vanish from the world entirely...
+    if(e.sp.kind==='human')scene.remove(e.root);}   // ...islanders vanish from sight and regrow at the fire
 }
 
 /* ============================== player update ======================== */
@@ -3180,7 +3295,7 @@ function stepPlayer(dt){
   }
   if(player.riders&&player.riders.length){             // a raptor on YOUR back: buck and run it off
     player.buckT=(player.buckT||0)+dt;
-    if(Math.random()<dt*2)SFX.stomp();
+    if(Math.random()<dt*2)SFX.stomp(player);
     player.shakeT=Math.max(0,(player.shakeT||0)-(Math.hypot(IN.move.x,IN.move.y)>0.12?1.6:0.65)*dt);
     if(player.shakeT<=0){for(const r of[...player.riders])unmountRider(r,true);}
   }
@@ -3241,7 +3356,7 @@ function stepDrown(ch,dt,isPlayer){
   const h=terrainH(ch.x,ch.z),d=h<WATER?WATER-h:0,lim=drownLimit(ch);
   if(d>lim){
     ch.drownT=(ch.drownT||0)+dt;
-    if(Math.random()<dt*3){SFX.gulp();ripple(ch.x,WATER+0.05,ch.z);}
+    if(Math.random()<dt*3){SFX.gulp(ch);ripple(ch.x,WATER+0.05,ch.z);}
     if(ch.drownT>1.3){ch.drownT=0;
       if(isPlayer){
         toast('GLOOP! Too deep — you drowned!',2200);
@@ -3801,7 +3916,37 @@ window.__probe={
     player.x=CAMP[0];player.z=CAMP[1];player.y=terrainH(player.x,player.z);  // hero minds his own business
     return{ok:true,hp:+vil.hp.toFixed(1)};
   },
-  chompHp(){return chompVic?{hp:+chompVic.hp.toFixed(1),alive:!!chompVic.alive}:null;},
+  chompHp(){return chompVic?{hp:+chompVic.hp.toFixed(1),alive:!!chompVic.alive,
+    swallowed:!!chompVic.swallowed,eater:chompVic.eater?chompVic.eater.key:null}:null;},
+  eatTest(){                              // tests: a carnivore hero gulps an islander in one bite
+    if(!player.sp||player.sp.kind!=='thero')return{ok:false,why:'hero is not a carnivore'};
+    const vil=enemies.find(e=>e.alive&&e.sp.kind==='human'&&e.sp.villager&&!e.riding&&!e.swallowed);
+    if(!vil)return{ok:false,why:'no villagers'};
+    chompVic=vil;
+    // invite the islander to the camp clearing, where no rival body blocks the chomp
+    vil.x=CAMP[0]+6;vil.z=CAMP[1]+6;vil.y=terrainH(vil.x,vil.z);
+    player.x=vil.x+1.6;player.z=vil.z;player.y=terrainH(player.x,player.z);
+    player.yaw=Math.atan2(-(vil.z-player.z),vil.x-player.x);
+    player.atkT=0;player.windup=0;player.cool=0;player.strikeT=0;
+    if(grabTarget)releaseGrab(null);
+    playerBite();
+    return{ok:true,swallowed:!!vil.swallowed,byHero:vil.eater===player,
+      eater:vil.eater?vil.eater.key:null,species:player.key};},
+  gainAt(x,z){return +sndAt({x:+x,z:+z}).toFixed(3);},
+  holdMeal(d){                                // tests: freeze the meal at deadT=d (null resumes)
+    const v=enemies.find(e=>e.swallowed&&e.alive===false);if(!v)return{ok:false};
+    v.holdD=(d==null)?null:+d;return{ok:true,deadT:+v.deadT.toFixed(2)};},
+  victimAnim(){                             // tests: per-frame look at the animation of a meal
+    const v=enemies.find(e=>e.swallowed&&e.alive===false);if(!v)return null;
+    let hd=null;
+    if(v.eater&&v.eater.joints&&v.eater.joints.head){
+      const T=new THREE.Vector3();v.eater.joints.head.getWorldPosition(T);
+      hd=[+T.x.toFixed(2),+T.y.toFixed(2),+T.z.toFixed(2)];}
+    const P=v.root.position,M=v.model;
+    return {d:+v.deadT.toFixed(2),root:[+P.x.toFixed(2),+P.y.toFixed(2),+P.z.toFixed(2)],
+      scl:+M.scale.y.toFixed(2),mrot:[+M.rotation.x.toFixed(2),+M.rotation.z.toFixed(2)],
+      ry:+v.root.rotation.y.toFixed(2),head:hd,inScene:!!v.root.parent};},
+  playerPos(){return{x:+player.x.toFixed(1),z:+player.z.toFixed(1)};},
   pk(key){                              // challengers answer first — ambient herds are just scenery
     return enemies.find(e=>e.alive&&!e.counted&&e.key===key)||enemies.find(e=>e.alive&&e.key===key);
   },

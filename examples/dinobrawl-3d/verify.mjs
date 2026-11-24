@@ -165,11 +165,32 @@ for (let t = 0; t < 3 && !bitten; t++) {
   if (!chomp.ok) break;
   await wait(8000);
   const b = await page.evaluate(() => window.__probe.chompHp());
-  if (b && (b.hp < chomp.hp || !b.alive)) bitten = b;
+  if (b && b.swallowed) bitten = b;
 }
-ok(chomp.ok && bitten && (bitten.hp < chomp.hp || !bitten.alive),
-  'dinosaurs hunt and eat the islanders too',
-  `${chomp.hp} → ${bitten ? bitten.hp : '?'}${bitten && !bitten.alive ? ' (eaten)' : ''}`);
+ok(chomp.ok && bitten && bitten.swallowed,
+  'a carnivore that catches an islander swallows it whole — one chomp, one person',
+  `hp ${chomp && chomp.hp} → eaten by ${bitten ? bitten.eater : '?'}`);
+
+// ---------- the hero does it too: one bite and the islander is down the hatch ----------
+const heroEat = await page.evaluate(async () => {
+  const pr = window.__probe;
+  pr.switchTo('trex');                 // swap into the biggest jaws on the menu
+  await new Promise(s => setTimeout(s, 700));
+  const r = pr.eatTest();
+  if (r.ok) await new Promise(s => setTimeout(s, 400));
+  return Object.assign(r, (await pr.chompHp()) || {});
+});
+ok(heroEat.ok && heroEat.swallowed && heroEat.byHero && heroEat.eater === 'trex',
+  'a player dinosaur gulps a villager down in a single bite', JSON.stringify(heroEat));
+
+// ---------- sound: distant dinos stay distant ----------
+const snd = await page.evaluate(() => {
+  const pr = window.__probe, p = pr.playerPos();
+  return { near: pr.gainAt(p.x + 5, p.z), mid: pr.gainAt(p.x + 60, p.z), far: pr.gainAt(p.x + 220, p.z) };
+});
+ok(snd.near === 1 && snd.mid < 0.35 && snd.mid > 0.05 && snd.far < 0.06,
+  'world sound fades with distance — near fights stay loud, a far roar is a far roar',
+  JSON.stringify(snd));
 
 // ---------- every world has people ----------
 const worldPacks = await page.evaluate(async () => {
