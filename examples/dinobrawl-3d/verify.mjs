@@ -337,6 +337,50 @@ ok(menu.after.map !== menu.before.map && menu.after.sp === 'trike',
   'one press grows a new island and changes your dinosaur together',
   `${menu.before.map}/${menu.before.sp} -> ${menu.after.map}/${menu.after.sp}`);
 
+// ---------- gamepad menu: d-pad selects, A applies, and the panel gets out of the way ----------
+const padTap = async b => {
+  await page.evaluate(b => window.__probe.padBtn(b, true), b); await wait(150);
+  await page.evaluate(b => window.__probe.padBtn(b, false), b); await wait(150);
+};
+await page.evaluate(() => window.__probe.fakePad(1));
+await wait(300);
+await padTap(8); await wait(600);      // a pad nobody claimed: Select joins P2, whose menu opens itself
+const padOpen = await page.evaluate(() => ({ n: document.querySelectorAll('.pmenu').length,
+  heroes: window.__probe.pcount(), own: !!document.querySelector('.pmenu[data-o="1"]') }));
+ok(padOpen.n === 1 && padOpen.heroes === 2 && padOpen.own,
+  'a fresh controller joins the brawl and its menu springs open', JSON.stringify(padOpen));
+for (let i = 0; i < 6; i++) await padTap(15);            // d-pad right six times
+const padStage = await page.evaluate(() => {
+  const p = document.querySelector('.pmenu[data-o="1"] .pstrip'), c = p.querySelector('.pcard.sel');
+  const pr = p.getBoundingClientRect(), cr = c.getBoundingClientRect();
+  return { label: document.querySelector('.pmenu[data-o="1"] .growB').textContent,
+    visible: cr.left >= pr.left - 1 && cr.right <= pr.right + 1, sel: c.dataset.k };
+});
+ok(/BE A .*!/.test(padStage.label) && padStage.visible,
+  'pad d-pad steps the dinosaur strip and the selection stays in view',
+  `${padStage.label} / ${padStage.sel}`);
+await padTap(0); await wait(900);                        // A applies
+const padApply = await page.evaluate(() => ({ n: document.querySelectorAll('.pmenu').length,
+  p2: window.__probe.playersInfo()[1].key }));
+ok(padApply.n === 0 && padApply.p2 === padStage.sel,
+  'A applies the staged dinosaur and the menu actually vanishes', JSON.stringify(padApply));
+await padTap(8); await wait(500); await padTap(1); await wait(500);   // Select opens, B closes
+ok(await page.evaluate(() => document.querySelectorAll('.pmenu').length) === 0,
+  'B hands the pad back to the fight', '');
+await padTap(8); await wait(500); await padTap(9); await wait(1200);  // Start leaves the game
+const padOut = await page.evaluate(() => ({ heroes: window.__probe.pcount(),
+  n: document.querySelectorAll('.pmenu').length }));
+ok(padOut.heroes === 1 && padOut.n === 0,
+  'and Start from the pad menu walks P2 out of the brawl', JSON.stringify(padOut));
+
+// the mouse wheel slides card strips sideways too
+await page.keyboard.press('Escape'); await wait(500);
+await page.hover('.pmenu .pstrip');
+await page.mouse.wheel(0, 400); await wait(400);
+ok(await page.evaluate(() => document.querySelector('.pmenu .pstrip').scrollLeft) > 50,
+  'a wheel spin slides the menu card strip sideways', '');
+await page.keyboard.press('Escape'); await wait(300);
+
 // ---------- plant-eaters graze peacefully until you hurt them ----------
 const calm = await page.evaluate(async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));

@@ -2137,7 +2137,12 @@ function setPick(k){pickKey=k;
 const ovLabel=()=>{const el=document.getElementById('ovPick');if(!el)return;
   el.textContent=(mapPick==='surprise'?'SURPRISE ISLAND':MAPNAME[mapPick]||'AN ISLAND')+
     '  \u2022  '+SPECIES[pickKey].name.toUpperCase();};
+/* a vertical wheel spin should slide a card strip sideways, like a touch pan */
+function wheelStrip(el){el.addEventListener('wheel',e=>{
+  if(Math.abs(e.deltaY)<=Math.abs(e.deltaX)||el.scrollWidth<=el.clientWidth)return;
+  el.scrollLeft+=e.deltaY;e.preventDefault();},{passive:false});}
 function buildPicker(el,mode){
+  wheelStrip(el);
   el.innerHTML='';
   for(const k of PICKABLE){const sp=SPECIES[k];
     const b=document.createElement('button');
@@ -2155,8 +2160,16 @@ function menuLayer(){let l=document.getElementById('menulayer');
   if(!l){l=document.createElement('div');l.id='menulayer';document.body.appendChild(l);}return l;}
 const stageSpOf=pl=>pl===players[0]?pickKey:(pl.pm.mPick||pl.key);
 const stageMapOf=pl=>pl===players[0]?mapPick:(pl.pm.mMap||previewMap);
-function panelOf(pl){return menuLayer().querySelector(`.pmenu[data-o="${players.indexOf(pl)}"]`);}
-function killPanel(pl){const el=panelOf(pl);if(el)el.remove();}
+/* panels outlive a species swap: the hero object is replaced but its pm rides
+   along, so the panel element hangs on the pm, not on the object it was built for */
+function panelOf(pl){const p=pl&&pl.pm&&pl.pm.panelEl;
+  if(p&&p.isConnected)return p;
+  const i=players.indexOf(pl);
+  return i<0?null:menuLayer().querySelector(`.pmenu[data-o="${i}"]`);}
+function killPanel(pl){const el=panelOf(pl);if(pl&&pl.pm)pl.pm.panelEl=null;
+  if(el)el.remove();
+  const i=players.indexOf(pl);      // sweep any stray duplicate stacked at this slot
+  if(i>=0)menuLayer().querySelectorAll(`.pmenu[data-o="${i}"]`).forEach(x=>x.remove());}
 function openMenuP(pl){
   const pm=pl.pm;
   if(!started||!pm||pm.menu||winOpen||pm.knockedOut)return;
@@ -2191,8 +2204,10 @@ function panelHTML(pl){
 function buildPanel(pl){
   killPanel(pl);
   const el=document.createElement('div');el.className='pmenu';el.dataset.o=players.indexOf(pl);
+  if(pl.pm)pl.pm.panelEl=el;                          // survive the swaps this panel will cause
   el.innerHTML=panelHTML(pl);
   const strip=el.querySelector('.pstrip');
+  wheelStrip(strip);
   for(const k of PICKABLE){const sp=SPECIES[k];
     const b=document.createElement('button');b.className='pcard';b.dataset.k=k;
     b.innerHTML=`<img src="assets/select/${ASSET[k]||k}.png" alt="${sp.name}" draggable="false"><b>${sp.name}</b>`;
@@ -2229,9 +2244,8 @@ function refreshPanel(pl){
   el.querySelector('.spcapN').textContent=SPECIES[stageSpOf(pl)].name.toUpperCase();
   el.querySelector('.spcapT').textContent='\u2014 '+PICKTAG[stageSpOf(pl)];
   el.querySelectorAll('.pstrip .pcard').forEach(b=>b.classList.toggle('sel',b.dataset.k===stageSpOf(pl)));
-  const cur=el.querySelector('.pstrip .pcard.sel');   // open with your current kind centred
-  if(cur&&!el.dataset.scrolled&&cur.scrollIntoView){cur.scrollIntoView({block:'nearest',inline:'center'});
-    el.dataset.scrolled='1';}
+  const cur=el.querySelector('.pstrip .pcard.sel');
+  if(cur&&cur.scrollIntoView)cur.scrollIntoView({block:'nearest',inline:'center'});  // the cursor stays centre stage
   buildMiniMap(el.querySelector('.minimap'),pl);
 }
 function refreshPanels(){for(const pl of players)if(pl.pm&&pl.pm.menu)refreshPanel(pl);}
@@ -2271,6 +2285,11 @@ function menuInput(pl){
   if(pin.back)closeMenuP(pl);
   if(pin.start||(ctl==='kbd1'||ctl==='kbd2')&&tap('KeyX'))
     {pm.wantLeave=true;return;}                 // the roster shifts — leave after the frame's loop
+  // pad d-pad/stick steps: a pad hero may still speak "kbd1" (P1's pad rides the keyboard rig)
+  if(pin.dR)stageSpStep(pl,1);
+  if(pin.dL)stageSpStep(pl,-1);
+  if(pin.dU)stageMapStep(pl,-1);
+  if(pin.dD)stageMapStep(pl,1);
   if(ctl==='kbd1'){
     if(tap('ArrowRight')||tap('KeyD'))stageSpStep(pl,1);
     if(tap('ArrowLeft')||tap('KeyA'))stageSpStep(pl,-1);
@@ -2286,10 +2305,6 @@ function menuInput(pl){
     if(tap('KeyY')||tap('Escape'))closeMenuP(pl);
     if(pin.bite||tap('KeyO')||tap('Enter')||tap('NumpadEnter'))menuConfirm(pl);
   }else{                                        // pad hero: taps arrived as pin flags
-    if(pin.dR)stageSpStep(pl,1);
-    if(pin.dL)stageSpStep(pl,-1);
-    if(pin.dU)stageMapStep(pl,-1);
-    if(pin.dD)stageMapStep(pl,1);
     if(pin.bite)menuConfirm(pl);
   }
 }
