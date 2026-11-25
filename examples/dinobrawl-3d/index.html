@@ -3121,7 +3121,7 @@ function playerBite(){
 function playerRoar(){
   if(!player.alive||roarCd>0)return;
   if(player.sp.sea){                                    // sea king: ROAR = haul a bait fish ashore
-    const s=curMap&&!curMap.noSea?shoreNear(player.x,player.z):null;
+    const s=curMap&&(!curMap.noSea||curMap.seaWorld)?shoreNear(player.x,player.z):null;
     if(s&&dropBait(s[0],s[1])){roarCd=8;SFX.roar('trex',player);
       toast('You dragged a fat fish onto the beach — the whole island can smell it now!');}
     else{SFX.roar('trex',player);roarCd=4;toast('ROOOAR! Nothing but open water or ice to land a bait on.');}
@@ -3269,7 +3269,7 @@ function baitMesh(){
   return g;
 }
 function dropBait(x,z){
-  if(curMap&&curMap.noSea)return null;                  // frozen seas keep their fish to themselves
+  if(frozenSea())return null;                  // frozen seas keep their fish to themselves
   while(baits.length>=3){scene.remove(baits[0].m);baits.shift();}   // a beach only holds so much
   const m=baitMesh(),h=terrainH(x,z);
   m.position.set(x,h+0.42,z);m.rotation.y=rand(0,6.283);
@@ -3343,7 +3343,7 @@ function stepEnemy(e,dt){
   if(tg&&tg.pm)exitP(tg);
 }
 function stepEnemyAI(e,dt){
-  e.y=terrainH(e.x,e.z);
+  e.y=landOrSwim(e);
   if(!e.alive){
     if(e.respawnAt&&performance.now()>e.respawnAt)resetEnemy(e);
     if(e.swallowed){poseSwallowed(e,dt);return;}   // going down the Mosasaurus's gullet
@@ -4009,7 +4009,7 @@ function stepPlayer(dt){
   collideSolids(player);
   stepDrown(player,dt,true);
   if(Math.hypot(player.x,player.z)>EDGE){const k=Math.hypot(player.x,player.z);player.x*=EDGE/k;player.z*=EDGE/k;}
-  player.y=player.sp.sea?seaFloat(player):terrainH(player.x,player.z);
+  player.y=player.sp.sea?seaFloat(player):landOrSwim(player);
   player.root.position.set(player.x,player.y+player.bob,player.z);
   player.root.rotation.y=player.yaw;
   // snacks
@@ -4037,9 +4037,16 @@ function shoreNear(x,z){
     const a=k/16*6.283,nx=x+Math.cos(a)*r,nz=z+Math.sin(a)*r,h=terrainH(nx,nz);
     if(h>-0.1&&h<3.5)return[nx,nz];}
   return null;}
+/* land legs run out of seabed: past your chest-deep limit the water is not
+   ground any more, it is a swim — you bob at the surface until you drown.
+   Frozen worlds keep their walk-ice.                                        */
+const frozenSea=()=>!!(curMap&&curMap.noSea&&!curMap.seaWorld);
+function landOrSwim(ch){const h=terrainH(ch.x,ch.z);
+  if(h>=WATER-drownLimit(ch)||frozenSea())return h;
+  return WATER-0.62*ch.sp.scale+Math.sin(performance.now()/280+ch.x+ch.z)*0.07;}
 let lastDeepW=0;
 function stepDrown(ch,dt,isPlayer){
-  if(curMap&&curMap.noSea){ch.drownT=0;return;}   // frozen seas are walk-ice: nobody drowns in winter
+  if(frozenSea()){ch.drownT=0;return;}          // frozen seas are walk-ice: nobody drowns in winter
   const h=terrainH(ch.x,ch.z),d=h<WATER?WATER-h:0,lim=drownLimit(ch);
   if(d>lim){
     ch.drownT=(ch.drownT||0)+dt;
