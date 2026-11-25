@@ -568,6 +568,33 @@ const tWon = await page.evaluate(() => window.__probe.state().won);
 ok(tKill.n >= 5 && tKill.left === 0 && tWon, `the whole brood falls (${tKill.n} down) — the trench is yours`, JSON.stringify(tKill));
 await page.evaluate(() => window.__probe.closeWin && window.__probe.closeWin());
 
+// the trench sea is law for land-legs too: a Human swims, drowns and washes ashore
+const twater = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe;
+  pr.newExpedition('mosatrench', 717, false, 'hunter');
+  await sleep(2400);
+  let spot = null;
+  for (let r = 10; r < 280 && !spot; r += 6) for (let k = 0; k < 16 && !spot; k++) {
+    const a = k / 16 * 6.283, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (pr.ground(x, z) < -16) { spot = [x, z]; pr.teleport(x, z); }
+  }
+  await sleep(400);
+  const swim = { y: +pr.state().player.y.toFixed(2), h: pr.state().hearts };
+  const t0 = Date.now();                       // drowning runs on frames, not wall clock
+  while (pr.state().hearts === swim.h && Date.now() - t0 < 6000) await sleep(200);
+  const after = { y: +pr.state().player.y.toFixed(2), h: pr.state().hearts };
+  pr.newExpedition('mosatrench', 717, false, 'trex');   // the valley block expects a plain hero
+  await sleep(2400);
+  return { bed: pr.ground(spot[0], spot[1]), swim, after };
+});
+ok(twater.bed < -16 && twater.swim.y > -2 && twater.swim.y < 0.5,
+  'a Human in the trench deep floats at the surface, not a seabed stroll',
+  `seabed ${twater.bed} / swim y ${twater.swim.y}`);
+ok(twater.after.h < twater.swim.h,
+  'and the sea takes them in the end — drowning works in the trench',
+  `hearts ${twater.swim.h} -> ${twater.after.h}`);
+
 // ---------- GREAT VALLEY: villages, giants, and a house you can walk into ----------
 await page.evaluate(() => { window.__probe.setCast(null); window.__probe.newExpedition('valley', 99); });
 await wait(2600);
