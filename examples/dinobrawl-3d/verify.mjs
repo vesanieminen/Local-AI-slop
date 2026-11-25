@@ -557,6 +557,36 @@ const door = await page.evaluate(async () => {
 });
 ok(door.far === false && door.open === true, 'BITE at the threshold swings the great doors open', JSON.stringify(door));
 ok(door.inside && door.roof < 0.5, 'step inside and the roof gets out of the way', JSON.stringify(door));
+
+// shut doors are doors: they hold you out until you bite them open
+const gateIn = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe, h = pr.houseInfo();
+  pr.placeAt(h.door[0] + 6, h.door[1], Math.PI);       // six metres off the porch
+  pr.setCam(Math.PI / 2);                              // camera looks due west, so W walks due west
+  await sleep(400);
+  if (pr.houseInfo().open) pr.doorBite();              // slam the great doors shut again
+  await sleep(400);
+  return { x0: pr.state().player.x, dx: h.door[0], open: pr.houseInfo().open };
+});
+ok(gateIn.open === false, 'the great doors hang shut again', String(gateIn.open));
+await page.keyboard.down('KeyW'); await wait(1700); await page.keyboard.up('KeyW');
+await wait(250);
+const gateHold = await page.evaluate(() => window.__probe.state().player.x);
+ok(gateHold < gateIn.x0 - 1 && gateHold > gateIn.dx,
+  'a shut great door stops you dead at the threshold', `x=${gateHold.toFixed(1)}, door x=${gateIn.dx.toFixed(1)}, from ${gateIn.x0.toFixed(1)}`);
+const gateOpen = await page.evaluate(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const pr = window.__probe, h = pr.houseInfo();
+  pr.doorBite(); await sleep(500);                     // shoulder them open
+  return h.door[0];
+});
+await page.keyboard.down('KeyW'); await wait(1700); await page.keyboard.up('KeyW');
+await wait(250);
+const gateThrough = await page.evaluate(() => window.__probe.state());
+ok(gateThrough.player.x < gateOpen && gateThrough.insideHouse !== false,
+  'bite them open and the very same steps walk you into the hall',
+  `x=${gateThrough.player.x.toFixed(1)} past door x=${gateOpen.toFixed(1)}`);
 const vKill = await page.evaluate(() => {
   const pr = window.__probe; let n = 0;
   while ((pr.kill('brachiosaurus') || pr.kill('diplodocus')) && n < 12) n++;
