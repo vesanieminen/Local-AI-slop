@@ -527,6 +527,12 @@ function buildGreatHouse(height){
     worldGroup.add(g);
     H.doors.push({g,a:0,open:false,dir:-dir});}
   H.doorX=hx+15.3;H.doorZ=hz;
+  // while the doors hang shut they hold like the wall they are — three
+  // invisible posts across the gap, gone the moment they swing open
+  const dgates=[];
+  for(const dz of[-2.4,0,2.4]){const s={x:hx+15.3,z:hz+dz,r:1.0};
+    solids.push(s);dgates.push(s);}
+  H.dgates=dgates;
   // gable roof: two slate sheets and stacked-timber gable ends (faded indoors)
   const sheet=new THREE.BoxGeometry(33,0.4,15.6);
   for(const s of[1,-1]){
@@ -2981,6 +2987,7 @@ function tryDoor(ch){
   if(!H||!ch||!ch.alive||ch.sp.sea)return false;
   if(Math.hypot(ch.x-H.doorX,ch.z-H.doorZ)>7)return false;
   for(const d of H.doors)d.open=!d.open;
+  for(const s of H.dgates)s.r=H.doors[0].open?-1:1.0;   // shut doors hold, open doors don't
   if(ch.isPlayer){SFX.clang(ch);
     toast(H.doors[0].open?'You shoulder the great doors open — they weigh a ton.':
       'You haul the great doors shut. The hall glows behind you.',2200);}
