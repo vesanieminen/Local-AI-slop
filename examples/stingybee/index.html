@@ -1643,9 +1643,10 @@ function drawCritter(e, t) {
       ctx.fillStyle = '#fbfbfb'; ell(0, -44, 36, 24); ctx.fill();
       ctx.fillStyle = '#3a3a3a'; ell(-12, -50, 12, 9); ctx.fill(); ell(14, -36, 10, 7); ctx.fill();
       circle(30, -60, 14); ctx.fill(); // head
-      ctx.fillStyle = '#f5e2e2'; ell(38, -56, 8, 7); ctx.fill();
-      ctx.fillStyle = '#333'; circle(41, -57, 1.6); ctx.fill(); circle(43, -55, 1.6); ctx.fill();
-      circle(31, -64, 2.4); ctx.fill();
+      ctx.fillStyle = '#f5e2e2'; ell(38, -56, 8, 7); ctx.fill(); // muzzle
+      ctx.fillStyle = '#333'; circle(41, -57, 1.6); ctx.fill(); circle(43, -55, 1.6); ctx.fill(); // nostrils
+      ctx.fillStyle = '#fff'; circle(26, -66, 3.4); ctx.fill(); circle(37, -66, 3.4); ctx.fill(); // eye whites — the head is black, so dark-on-dark eyes vanish
+      ctx.fillStyle = '#222'; circle(27.3, -66, 1.65); ctx.fill(); circle(38.3, -66, 1.65); ctx.fill(); // pupils, gazing forward
       ctx.strokeStyle = '#d8d8d8'; ctx.lineWidth = 4; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(24, -72); ctx.quadraticCurveTo(19, -80, 22, -84); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(36, -72); ctx.quadraticCurveTo(41, -80, 38, -84); ctx.stroke();
