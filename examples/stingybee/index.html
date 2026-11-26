@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Stingy Bee 🐝 — Garden Mayhem</title>
+<title>Stingy Bee 🐝 — Endless Garden Mayhem</title>
 <style>
   :root {
     --sat: env(safe-area-inset-top, 0px);
@@ -22,11 +22,17 @@
 <script>
 "use strict";
 /* ============================================================
-   STINGY BEE — Garden Mayhem
+   STINGY BEE — Endless Garden Mayhem
    A cozy open-meadow sting-'em-up for very small humans.
    Fly a bee from a busy hive, buzz the picnic, sting the cows
    until they wander off, dodge grumpy Gerald the bear, and
    fill the honey bar to recruit your own buzzing possé.
+
+   Every world is procedurally generated from a seed: bigger
+   than before, with a glowing MAGIC DANDELION that blows you
+   off to a brand-new world — meadows, sunflower fields,
+   autumn woods, firefly nights, beaches and snowy gardens.
+   There are endless worlds. Just keep finding dandelions.
 
    Controls
      🎮 gamepad  left stick / d-pad = fly    A ✕ RT RB = STING
@@ -70,20 +76,111 @@ function resize() {
 }
 window.addEventListener('resize', resize); resize();
 
-// ------------------------------------------------------------------ world constants
-const WW = 3800, WH = 2600;                 // world size
-const ZONES = {
-  hive:   { x: 1900, y: 1300, r: 300, name: 'HOME' },
-  picnic: { x: 720,  y: 1960, r: 400, name: 'PICNIC' },
-  barn:   { x: 3150, y: 780,  r: 430, name: 'FARM' },
-  pond:   { x: 3060, y: 2020, r: 340, name: 'POND' },
-};
-const ZONE_ICON = { hive: 'hive', picnic: 'basket', barn: 'barn', pond: 'pond' };
+// ------------------------------------------------------------------ world state (regenerated per seed)
+// Every world is built by genWorld() from its world number, so world
+// #48271 always blooms the same — and there is no highest world.
+let WW = 6400, WH = 4400;                        // current world size (set per world by genWorld)
+let worldNum = 1, worldName = 'SOME MEADOW';
+let THEME = null;
+let ZONES = { hive: { x: 3200, y: 2200, r: 300, name: 'HOME' }, picnic: { x: 0, y: 0, r: 400, name: 'PICNIC' }, barn: { x: 0, y: 0, r: 430, name: 'FARM' }, pond: { x: 0, y: 0, r: 340, name: 'POND' } };
+let TABLE = { x: 0, y: 0 };                      // key props placed against zones
+let BARN = { x: 0, y: 0 };
+let HIVE = { x: 3200, y: 2200 };
+let POND_E = { x: 0, y: 0, rx: 1, ry: 1 };       // pond ellipse for critter clamping
+let fencePts = [];
+let portal = { x: 0, y: 0 };                     // the magic dandelion → next world
+let portalCd = 0, flash = 0;
 
-// key props placed against zones
-const TABLE = { x: ZONES.picnic.x - 20, y: ZONES.picnic.y + 60 };
-const BARN = { x: ZONES.barn.x + 160, y: ZONES.barn.y - 140 };
-const HIVE = { x: ZONES.hive.x, y: ZONES.hive.y };
+// ------------------------------------------------------------------ biomes (the flavour of each world)
+const BIOMES = [
+  { id: 'meadow', tag: 'FLOWER MEADOW',
+    ground: { h: 97, s: 46, l: 31 },
+    trunk: '#7a4f28', trunkD: '#63401f', leaf: '#2f7d32', leafL: '#3f9841',
+    stem: '#3c8a34', grassA: '#5aa845', grassB: '#4b9640', moss: '#5d9c48',
+    water: ['#3f86b8', '#5fb6e4', '#8fd4f2'], frozen: false, amb: 'fluff',
+    treeKinds: ['round'], dandies: 1, tuftMul: 1, snowCaps: false,
+    pathCols: ['rgba(120,88,52,.10)', 'rgba(160,122,74,.22)', 'rgba(176,138,86,.30)'],
+    zoneNames: { picnic: 'PICNIC', barn: 'FARM', pond: 'POND' },
+    spawns: {
+      picnic: [['picnicker', 2], ['kid', 1], ['dog', 1], ['cat', 1], ['goose', 1]],
+      barn: [['cow', 2], ['horse', 1], ['pig', 2], ['sheep', 2], ['rooster', 2], ['farmer', 1]],
+      pond: [['duck', 3], ['frog', 2]],
+      wild: [['bunny', 2]],
+    } },
+  { id: 'sunfield', tag: 'SUNFLOWER FIELDS',
+    ground: { h: 74, s: 45, l: 36 },
+    trunk: '#8a5a33', trunkD: '#6e4626', leaf: '#4c8f27', leafL: '#69ad3a',
+    stem: '#3f7f26', grassA: '#7fae3e', grassB: '#6b9a34', moss: '#79a03c',
+    water: ['#3f9ab8', '#5fc8e4', '#a5e6f2'], frozen: false, amb: 'fluff',
+    treeKinds: ['round'], dandies: 1.5, tuftMul: .9, snowCaps: false,
+    pathCols: ['rgba(140,104,52,.10)', 'rgba(178,138,74,.22)', 'rgba(196,158,90,.30)'],
+    zoneNames: { picnic: 'PICNIC', barn: 'FARM', pond: 'POND' },
+    spawns: {
+      picnic: [['kid', 2], ['picnicker', 1], ['dog', 1], ['bunny', 2]],
+      barn: [['goat', 3], ['cow', 1], ['rooster', 2], ['goose', 2], ['farmer', 1]],
+      pond: [['duck', 2], ['frog', 3]],
+      wild: [['horse', 1], ['sheep', 1]],
+    } },
+  { id: 'autumn', tag: 'AUTUMN WOODS',
+    ground: { h: 40, s: 38, l: 34 },
+    trunk: '#6e4322', trunkD: '#553319', leaf: '#c96f1f', leafL: '#e59a35',
+    stem: '#7f6a2f', grassA: '#9a8f3e', grassB: '#857b33', moss: '#8a7f3a',
+    water: ['#4a6f92', '#69a0be', '#a3cfe0'], frozen: false, amb: 'leaf',
+    treeKinds: ['round'], dandies: .6, tuftMul: .8, snowCaps: false,
+    pathCols: ['rgba(110,74,40,.12)', 'rgba(146,100,52,.24)', 'rgba(168,120,64,.30)'],
+    zoneNames: { picnic: 'HARVEST', barn: 'BARN', pond: 'POND' },
+    spawns: {
+      picnic: [['picnicker', 1], ['jogger', 1], ['kid', 1], ['dog', 1], ['hedgehog', 2]],
+      barn: [['sheep', 3], ['goat', 2], ['rooster', 2], ['farmer', 1]],
+      pond: [['goose', 3], ['duck', 2], ['frog', 2]],
+      wild: [['raccoon', 2], ['owl', 1]],
+    } },
+  { id: 'night', tag: 'FIREFLY NIGHT',
+    ground: { h: 155, s: 32, l: 16 },
+    trunk: '#4a3a2c', trunkD: '#372a1f', leaf: '#1e5741', leafL: '#2b7054',
+    stem: '#2b6a4f', grassA: '#35755a', grassB: '#2c634d', moss: '#3d6f55',
+    water: ['#1d4260', '#2f6f96', '#59a8c6'], frozen: false, amb: 'firefly',
+    treeKinds: ['round'], dandies: 1, tuftMul: .9, snowCaps: false,
+    pathCols: ['rgba(90,70,45,.12)', 'rgba(120,95,60,.22)', 'rgba(140,115,75,.28)'],
+    zoneNames: { picnic: 'CAMPFIRE', barn: 'OLD BARN', pond: 'MOON POND' },
+    spawns: {
+      picnic: [['picnicker', 1], ['kid', 1], ['cat', 2], ['owl', 1]],
+      barn: [['sheep', 2], ['hedgehog', 2], ['farmer', 1], ['rooster', 1]],
+      pond: [['duck', 2], ['frog', 3]],
+      wild: [['raccoon', 2], ['owl', 2], ['bunny', 1]],
+    } },
+  { id: 'beach', tag: 'SUNNY BEACH',
+    ground: { h: 46, s: 48, l: 62 },
+    trunk: '#9a6b3f', trunkD: '#7c5430', leaf: '#3f9552', leafL: '#57ae66',
+    stem: '#5f9a48', grassA: '#c9b26a', grassB: '#b8a25c', moss: '#7fae6b',
+    water: ['#1f9fb8', '#3fd0dd', '#a8f0ec'], frozen: false, amb: 'twinkle',
+    treeKinds: ['palm', 'palm', 'round'], dandies: 0, tuftMul: .35, snowCaps: false,
+    pathCols: ['rgba(210,180,120,.12)', 'rgba(230,200,140,.20)', 'rgba(245,220,160,.26)'],
+    zoneNames: { picnic: 'BEACH PICNIC', barn: 'BEACH HUT', pond: 'LAGOON' },
+    spawns: {
+      picnic: [['picnicker', 2], ['kid', 2], ['dog', 1], ['jogger', 1]],
+      barn: [['goat', 2], ['rooster', 1], ['farmer', 1]],
+      pond: [['duck', 3], ['flamingo', 2]],
+      wild: [['flamingo', 1], ['bunny', 1]],
+    } },
+  { id: 'snow', tag: 'SNOWY GARDEN',
+    ground: { h: 205, s: 30, l: 78 },
+    trunk: '#5d4530', trunkD: '#463423', leaf: '#274f43', leafL: '#37685a',
+    stem: '#6d7f60', grassA: '#c2d2c9', grassB: '#aebfc0', moss: '#9fb8ae',
+    water: ['#7fb0c8', '#aed4e6', '#e2f2fa'], frozen: true, amb: 'snow',
+    treeKinds: ['pine', 'pine', 'round'], dandies: 0, tuftMul: .35, snowCaps: true,
+    pathCols: ['rgba(150,170,190,.10)', 'rgba(170,190,210,.16)', 'rgba(190,210,230,.22)'],
+    zoneNames: { picnic: 'SNOW PLAY', barn: 'RED BARN', pond: 'ICE LAKE' },
+    spawns: {
+      picnic: [['kid', 2], ['picnicker', 1], ['jogger', 1]],
+      barn: [['sheep', 2], ['goat', 2], ['farmer', 1], ['penguin', 3]],
+      pond: [['penguin', 3], ['duck', 2], ['frog', 1]],
+      wild: [['bunny', 2], ['owl', 1]],
+    } },
+];
+
+const WORLD_ADJ = ['SUNNY', 'COZY', 'WINDY', 'FUZZY', 'JIGGLY', 'BOUNCY', 'STICKY', 'SLEEPY', 'GIGGLY', 'HONEY', 'DAISY', 'FIDDLE', 'TIPPY', 'TUMBLE', 'WOBBLE', 'MARIGOLD', 'DUSKY', 'SUGAR', 'PUDDLE', 'WICKET'];
+const WORLD_NOUN = ['MEADOW', 'CLOVER', 'THISTLE', 'PETAL', 'GARDEN', 'ACRES', 'GLEN', 'HOLLOW', 'DALE', 'WOLD', 'COMMON', 'FIELD', 'HOLME', 'BROOK', 'GROVE', 'MERE', 'DOWN', 'PARK', 'WICK', 'FEN'];
 
 // ------------------------------------------------------------------ audio (all synthesized)
 const A = {
@@ -143,6 +240,7 @@ const A = {
   },
   // --- sfx
   whoosh() { const t = this.ctx.currentTime; this.tone('sine', 300, 900, t, 0.09, 0.10); },
+  travel() { const t = this.ctx.currentTime; [523, 659, 784, 1047].forEach((f, i) => this.tone('triangle', f, f * 1.01, t + i * 0.08, 0.22, 0.14, this.busic)); this.tone('sine', 1400, 2800, t + 0.2, 0.4, 0.08); },
   stingHit() { const t = this.ctx.currentTime; this.tone('square', 500, 1400, t, 0.09, 0.14); this.tone('sine', 900, 1800, t, 0.12, 0.10); this.noise(t, 0.06, 0.10, 3000, 'highpass'); },
   bigHit() { const t = this.ctx.currentTime; this.tone('square', 300, 900, t, 0.12, 0.18); this.noise(t, 0.1, 0.14, 1500); },
   flee() { const t = this.ctx.currentTime; [660, 830, 990, 1320].forEach((f, i) => this.tone('triangle', f, f, t + i * 0.09, 0.16, 0.16)); this.noise(t + 0.2, 0.3, 0.05, 900); },
@@ -251,153 +349,313 @@ function pollMove() { // returns {x,y} normalized with strength
   return { x, y, m: Math.min(1, m) };
 }
 
-// ------------------------------------------------------------------ world state
+// ------------------------------------------------------------------ game state
 let started = false, tPlay = 0;
-const cam = { x: ZONES.hive.x, y: ZONES.hive.y - 100 };
+const cam = { x: 0, y: 0 };
 let shake = 0, freeze = 0;
 let stars = 0, honey = 0, level = 1;
 const RANKS = ['BABY BEE', 'BUSY BEE', 'SUPER BEE', 'MEGA BEE', 'TURBO BEE', 'STINGER', 'HIVE HERO', 'ROYAL FLUFFER', 'MEGAQUEEN', 'GALAXY BEE'];
 let rankOf = lv => RANKS[Math.min(RANKS.length - 1, lv - 1)];
 
 const player = {
-  x: ZONES.hive.x, y: ZONES.hive.y - 160, vx: 0, vy: 0, r: 15,
+  x: 0, y: 0, vx: 0, vy: 0, r: 15,
   face: 1, bobT: 0, wingT: 0, cd: 0, lungeT: 0, lungeSet: null,
   dizzy: 0, squash: 0, trail: [],
 };
-const buddies = [];   // friendly follow-bees
+const buddies = [];   // friendly follow-bees (they travel between worlds with you)
 const hiveBees = [];  // ambient bees at the hive
-const particles = [], pops = [], toasts = [], confetti = [], dandelions = [], clouds = [];
+const particles = [], pops = [], toasts = [], confetti = [], clouds = [], ambient = [];
 const hitSpark = [];
 
-// ---- flowers (nectar)
-const fields = [
-  { x: 1450, y: 880, rx: 420, ry: 260 },
-  { x: 2450, y: 1850, rx: 380, ry: 300 },
-  { x: 900, y: 900, rx: 300, ry: 240 },
-  { x: 3350, y: 1450, rx: 260, ry: 260 },
-  { x: 1600, y: 2300, rx: 400, ry: 200 },
-  { x: 900, y: 1700, rx: 230, ry: 150 },   // picnic fringe
-  { x: 2850, y: 620, rx: 240, ry: 160 },   // farm gate
-  { x: 1900, y: 1650, rx: 260, ry: 120 },  // below the hive
-];
+// per-world scenery — all filled by genWorld()
+const fields = [];
 const flowers = [];
-{
-  const cols = [['#ff7eb6', '#ffd93d'], ['#b388ff', '#ffeb3b'], ['#7ee8fa', '#ff8fab'], ['#ffffff', '#ffca28'], ['#ffab40', '#fff176'], ['#f06292', '#fff59d']];
-  for (const f of fields) {
-    for (let i = 0; i < 16; i++) {
-      const a = rng() * TAU, d = Math.sqrt(rng());
-      flowers.push({ x: f.x + Math.cos(a) * f.rx * d, y: f.y + Math.sin(a) * f.ry * d, col: pick(cols), ready: rng() < .8, grow: rand(0, 3), sway: rng() * TAU });
+const tufts = [], bushes = [], rocks = [], dandelionSpots = [];
+let trees = [];
+const inPond = (x, y, pad = 0) => { const p = ZONES.pond; return dist2(x, y, p.x, p.y) < (p.r + pad) * (p.r + pad) * 1.2; };
+
+// ------------------------------------------------------------------ critters
+// Every critter: side-view cartoon, feet at y=0, drawn facing +x.
+const WELT_OFF = [[.2, -.8], [-.3, -1], [.5, -.5], [-.1, -.5], [.3, -1.2], [-.5, -.7]];
+
+const CRITTER_S = {
+  dog:      { r: 26, hp: 3, spd: 55 },
+  cat:      { r: 25, hp: 3, spd: 60 },
+  duck:     { r: 22, hp: 2, spd: 40, amphib: true },
+  pig:      { r: 34, hp: 4, spd: 45 },
+  cow:      { r: 48, hp: 5, spd: 30 },
+  horse:    { r: 50, hp: 5, spd: 38 },
+  rooster:  { r: 20, hp: 2, spd: 70 },
+  sheep:    { r: 30, hp: 3, spd: 42 },
+  goose:    { r: 21, hp: 2, spd: 88 },
+  bunny:    { r: 16, hp: 2, spd: 95 },
+  frog:     { r: 15, hp: 1, spd: 55, amphib: true },
+  goat:     { r: 32, hp: 3, spd: 55 },
+  raccoon:  { r: 24, hp: 3, spd: 65 },
+  hedgehog: { r: 16, hp: 2, spd: 40 },
+  owl:      { r: 24, hp: 2, spd: 58 },
+  penguin:  { r: 26, hp: 3, spd: 45, amphib: true },
+  flamingo: { r: 28, hp: 3, spd: 62 },
+  picnicker:{ r: 32, hp: 3, spd: 130, human: true },
+  jogger:   { r: 30, hp: 3, spd: 150, human: true },
+  kid:      { r: 24, hp: 3, spd: 120, human: true },
+  farmer:   { r: 36, hp: 4, spd: 110, human: true },
+};
+const CRITTER_NAMES = {
+  picnicker: ['GREG', 'HANK', 'BRENDA', 'EARL'],
+  jogger: ['PAMELA', 'RALPH', 'SUSAN', 'DENNIS'],
+  kid: ['MILO', 'ZOE', 'LEO', 'MAIA'],
+  farmer: ['ERNE', 'MO', 'JEBB', 'CLEM'],
+  goose: ['HONK'],
+  penguin: ['PIP'],
+  flamingo: ['FLAMINGO'],
+  owl: ['PROFESSOR HOOT'],
+};
+
+function makeCritter(type, x, y, home) {
+  const s = CRITTER_S[type];
+  return {
+    type, x, y, home, r: s.r, hp: s.hp, maxhp: s.hp, spd: s.spd,
+    dir: rng() < .5 ? -1 : 1, phase: rng() * TAU, angryT: 0,
+    state: 'wander', wt: rand(0, 3), tx: x, ty: y, welts: [], hurtT: 0,
+    human: !!s.human, amphib: !!s.amphib,
+    name: s.name || (CRITTER_NAMES[type] ? pick(CRITTER_NAMES[type]) : ''),
+    spawnT: 0, swatT: rand(0.5, 2), seed: rng(),
+  };
+}
+const animals = [];
+
+// Gerald the bear — big honey thief (his home moves to a new corner in every world)
+const bear = {
+  type: 'bear', x: 0, y: 0, home: { x: 0, y: 0, r: 420 }, r: 60,
+  hp: 12, maxhp: 12, spd: 55, dir: 1, phase: 0, angryT: 0, state: 'wander',
+  wt: 0, tx: 0, ty: 0, welts: [], hurtT: 0, human: false, amphib: false, name: 'GERALD',
+  spawnT: 0, seed: .42, enraged: false,
+};
+
+// ------------------------------------------------------------------ world generator (the infinite bit)
+function genWorld(num) {
+  worldNum = Math.max(1, num | 0);
+  rng = mulberry32((worldNum * 1103515245 + 12345) >>> 0);
+  THEME = BIOMES[(worldNum - 1) % BIOMES.length];
+  WW = Math.round(rand(6200, 7000) / 50) * 50;
+  WH = Math.round(rand(4200, 4800) / 50) * 50;
+  worldName = pick(WORLD_ADJ) + ' ' + pick(WORLD_NOUN);
+
+  // --- zones: hive at heart, picnic/farm/pond scattered around it
+  const cx = WW / 2, cy = WH / 2;
+  ZONES = { hive: { x: cx, y: cy, r: 300, name: 'HOME' } };
+  const zoneR = { picnic: 400, barn: 430, pond: 340 };
+  const a0 = rng() * TAU;
+  for (let i = 0; i < 3; i++) {
+    const k = ['picnic', 'barn', 'pond'][i];
+    const a = a0 + i * (TAU / 3) + rand(-.45, .45);
+    const d = rand(.32, .42) * Math.min(WW, WH);
+    ZONES[k] = {
+      x: clamp(cx + Math.cos(a) * d * 1.28, 700, WW - 700),
+      y: clamp(cy + Math.sin(a) * d, 560, WH - 560),
+      r: zoneR[k], name: THEME.zoneNames[k],
+    };
+  }
+  HIVE = { x: cx, y: cy };
+  TABLE = { x: ZONES.picnic.x - 20, y: ZONES.picnic.y + 60 };
+  BARN = { x: ZONES.barn.x + 160, y: ZONES.barn.y - 140 };
+  POND_E = { x: ZONES.pond.x, y: ZONES.pond.y, rx: ZONES.pond.r * .92, ry: ZONES.pond.r * .64 };
+  ZONES.pond.cracks = [];
+  for (let i = 0; i < 7; i++) ZONES.pond.cracks.push({ a: rng() * TAU, b: rand(-.5, .5) });
+
+  // fences around the farm pen
+  fencePts = [];
+  {
+    const R = 330, bx = ZONES.barn.x, by = ZONES.barn.y;
+    for (let a = 0; a < 12; a++) {
+      const a0f = a / 12 * TAU;
+      fencePts.push({ x: bx + Math.cos(a0f) * R, y: by + Math.sin(a0f) * R * .8 });
     }
   }
-  for (let i = 0; i < 26; i++) flowers.push({ x: rand(60, WW - 60), y: rand(60, WH - 60), col: pick(cols), ready: rng() < .7, grow: rand(0, 3), sway: rng() * TAU });
+
+  // --- the magic dandelion: fly into it and a fresh world blooms
+  {
+    const a = rng() * TAU;
+    let px = clamp(cx + Math.cos(a) * rand(1500, 2100), 300, WW - 300);
+    let py = clamp(cy + Math.sin(a) * rand(1100, 1500), 340, WH - 300);
+    if (inPond(px, py, 160)) { px = clamp(px + 620, 300, WW - 300); py = clamp(py + 320, 340, WH - 300); }
+    portal = { x: px, y: py };
+  }
+
+  // --- flowers (nectar): scattered fields + loose blooms
+  fields.length = 0; flowers.length = 0;
+  {
+    for (let i = 0; i < 10; i++) fields.push({
+      x: rand(WW * .12, WW * .88), y: rand(WH * .12, WH * .88),
+      rx: rand(260, 430), ry: rand(150, 300),
+    });
+    const cols = [['#ff7eb6', '#ffd93d'], ['#b388ff', '#ffeb3b'], ['#7ee8fa', '#ff8fab'], ['#ffffff', '#ffca28'], ['#ffab40', '#fff176'], ['#f06292', '#fff59d']];
+    for (const f of fields) {
+      for (let i = 0; i < 16; i++) {
+        const a = rng() * TAU, d = Math.sqrt(rng());
+        flowers.push({ x: f.x + Math.cos(a) * f.rx * d, y: f.y + Math.sin(a) * f.ry * d, col: pick(cols), ready: rng() < .8, grow: rand(0, 3), sway: rng() * TAU });
+      }
+    }
+    const nScatter = Math.round(34 * (WW * WH) / (3800 * 2600));
+    for (let i = 0; i < nScatter; i++) flowers.push({ x: rand(60, WW - 60), y: rand(60, WH - 60), col: pick(cols), ready: rng() < .7, grow: rand(0, 3), sway: rng() * TAU });
+  }
+
+  // --- decor
+  tufts.length = 0; bushes.length = 0; rocks.length = 0; dandelionSpots.length = 0; trees = [];
+  {
+    const ar = (WW * WH) / (3800 * 2600); // area ratio vs the original meadow
+    for (let i = 0; i < 700 * THEME.tuftMul * ar; i++) tufts.push({ x: rand(0, WW), y: rand(0, WH), h: rand(5, 11), lean: rand(-.4, .4), c: rand(0, 1) });
+    for (let i = 0; i < 40 * ar; i++) trees.push({ x: rand(80, WW - 80), y: rand(80, WH - 80), s: rand(.8, 1.35), sway: rng() * TAU, kind: pick(THEME.treeKinds) });
+    trees = trees.filter(tr => dist2(tr.x, tr.y, ZONES.hive.x, ZONES.hive.y) > 320 * 320 && dist2(tr.x, tr.y, ZONES.picnic.x, ZONES.picnic.y) > 260 * 260);
+    for (let i = 0; i < 30 * ar; i++) bushes.push({ x: rand(60, WW - 60), y: rand(60, WH - 60), s: rand(.7, 1.2) });
+    for (let i = 0; i < 16 * ar; i++) rocks.push({ x: rand(60, WW - 60), y: rand(60, WH - 60), s: rand(.6, 1.1), seed: rng() * 10 });
+    // border trees so the world feels enclosed
+    for (let x = 30; x < WW; x += 120) {
+      trees.push({ x: x + rand(-25, 25), y: rand(10, 60), s: rand(1.1, 1.5), sway: rng() * TAU, kind: pick(THEME.treeKinds) });
+      trees.push({ x: x + rand(-25, 25), y: rand(WH - 60, WH - 10), s: rand(1.1, 1.5), sway: rng() * TAU, kind: pick(THEME.treeKinds) });
+    }
+    for (let y = 60; y < WH - 60; y += 130) {
+      trees.push({ x: rand(10, 60), y: y + rand(-20, 20), s: rand(1.1, 1.5), sway: rng() * TAU, kind: pick(THEME.treeKinds) });
+      trees.push({ x: rand(WW - 60, WW - 10), y: y + rand(-20, 20), s: rand(1.1, 1.5), sway: rng() * TAU, kind: pick(THEME.treeKinds) });
+    }
+    for (let i = 0; i < 60 * THEME.dandies * ar; i++) dandelionSpots.push({ x: rand(40, WW - 40), y: rand(40, WH - 40), s: rand(.8, 1.3) });
+  }
+  // keep decor out of the pond
+  for (const a of [trees, bushes, rocks, flowers, tufts, dandelionSpots]) {
+    for (let i = a.length - 1; i >= 0; i--) { const o = a[i]; if (inPond(o.x, o.y, 30)) a.splice(i, 1); }
+  }
+  for (let i = trees.length - 1; i >= 0; i--) { // also keep picnic lawn & farm pen clearish
+    const tr = trees[i];
+    if (dist2(tr.x, tr.y, ZONES.picnic.x, ZONES.picnic.y) < 210 * 210) trees.splice(i, 1);
+  }
   // keep flowers clear of the hive and barn buildings
   for (let i = flowers.length - 1; i >= 0; i--) {
     const f = flowers[i];
     if (dist2(f.x, f.y, HIVE.x, HIVE.y) < 110 * 110) flowers.splice(i, 1);
     if (Math.abs(f.x - BARN.x) < 170 && Math.abs(f.y - BARN.y) < 110) flowers.splice(i, 1);
   }
-}
 
-// ---- decor
-const tufts = [], bushes = [], rocks = [], dandelionSpots = [];
-let trees = [];
-{
-  for (let i = 0; i < 700; i++) tufts.push({ x: rand(0, WW), y: rand(0, WH), h: rand(5, 11), lean: rand(-.4, .4), c: rand(0, 1) });
-  for (let i = 0; i < 26; i++) trees.push({ x: rand(80, WW - 80), y: rand(80, WH - 80), s: rand(.8, 1.35), sway: rng() * TAU });
-  trees = trees.filter(tr => dist2(tr.x, tr.y, ZONES.hive.x, ZONES.hive.y) > 320 * 320 && dist2(tr.x, tr.y, ZONES.picnic.x, ZONES.picnic.y) > 260 * 260);
-  for (let i = 0; i < 30; i++) bushes.push({ x: rand(60, WW - 60), y: rand(60, WH - 60), s: rand(.7, 1.2) });
-  for (let i = 0; i < 16; i++) rocks.push({ x: rand(60, WW - 60), y: rand(60, WH - 60), s: rand(.6, 1.1), seed: rng() * 10 });
-  // border trees so the world feels enclosed
-  for (let x = 30; x < WW; x += 120) { trees.push({ x: x + rand(-25, 25), y: rand(10, 60), s: rand(1.1, 1.5), sway: rng() * TAU }); trees.push({ x: x + rand(-25, 25), y: rand(WH - 60, WH - 10), s: rand(1.1, 1.5), sway: rng() * TAU }); }
-  for (let y = 60; y < WH - 60; y += 130) { trees.push({ x: rand(10, 60), y: y + rand(-20, 20), s: rand(1.1, 1.5), sway: rng() * TAU }); trees.push({ x: rand(WW - 60, WW - 10), y: y + rand(-20, 20), s: rand(1.1, 1.5), sway: rng() * TAU }); }
-  for (let i = 0; i < 60; i++) dandelionSpots.push({ x: rand(40, WW - 40), y: rand(40, WH - 40), s: rand(.8, 1.3) });
-}
-// keep decor out of the pond
-const inPond = (x, y, pad = 0) => dist2(x, y, ZONES.pond.x, ZONES.pond.y) < (ZONES.pond.r + pad) * (ZONES.pond.r + pad) * 1.2;
-for (const a of [trees, bushes, rocks, flowers, tufts, dandelionSpots]) {
-  for (let i = a.length - 1; i >= 0; i--) { const o = a[i]; if (inPond(o.x, o.y, 30)) a.splice(i, 1); }
-}
-for (let i = trees.length - 1; i >= 0; i--) { // also keep picnic lawn & farm pen clearish
-  const tr = trees[i];
-  if (dist2(tr.x, tr.y, ZONES.picnic.x, ZONES.picnic.y) < 210 * 210) trees.splice(i, 1);
-}
+  // clouds (drifting shadows)
+  clouds.length = 0;
+  for (let i = 0, n = Math.min(26, Math.round(9 * (WW * WH) / (3800 * 2600))); i < n; i++) clouds.push({ x: rand(0, WW), y: rand(0, WH), rx: rand(180, 340), ry: rand(90, 160), v: rand(6, 14) });
 
-// clouds (drifting shadows)
-for (let i = 0; i < 7; i++) clouds.push({ x: rand(0, WW), y: rand(0, WH), rx: rand(180, 340), ry: rand(90, 160), v: rand(6, 14) });
+  // hive bees
+  hiveBees.length = 0;
+  for (let i = 0; i < 14; i++) hiveBees.push({ a: rng() * TAU, rad: rand(30, 90), spd: rand(0.5, 1.3) * (rng() < .5 ? -1 : 1), bob: rng() * TAU, phase: rng() * TAU });
 
-// hive bees
-for (let i = 0; i < 14; i++) hiveBees.push({ a: rng() * TAU, rad: rand(30, 90), spd: rand(0.5, 1.3) * (rng() < .5 ? -1 : 1), bob: rng() * TAU, phase: rng() * TAU });
-
-// ------------------------------------------------------------------ critters
-// Every critter: side-view cartoon, feet at y=0, drawn facing +x.
-const WELT_OFF = [[.2, -.8], [-.3, -1], [.5, -.5], [-.1, -.5], [.3, -1.2], [-.5, -.7]];
-
-function makeCritter(type, x, y, home) {
-  const S = {
-    dog:      { r: 26, hp: 3, spd: 55 },
-    cat:      { r: 25, hp: 3, spd: 60 },
-    duck:     { r: 22, hp: 2, spd: 40 },
-    pig:      { r: 34, hp: 4, spd: 45 },
-    cow:      { r: 48, hp: 5, spd: 30 },
-    horse:    { r: 50, hp: 5, spd: 38 },
-    rooster:  { r: 20, hp: 2, spd: 70 },
-    picnicker:{ r: 32, hp: 3, spd: 130, human: true, name: 'GREG' },
-    jogger:   { r: 30, hp: 3, spd: 150, human: true, name: 'PAMELA' },
-    kid:      { r: 24, hp: 3, spd: 120, human: true, name: 'MILO' },
-    farmer:   { r: 36, hp: 4, spd: 110, human: true, name: 'ERNE' },
+  // --- animals: the biome's own menagerie, grouped around the zones
+  animals.length = 0;
+  const spawnAt = (key, type) => {
+    const z = ZONES[key], s = CRITTER_S[type];
+    let x, y;
+    if (key === 'pond' && s.amphib) {
+      const a = rng() * TAU, d = Math.sqrt(rng()) * .55;
+      x = z.x + Math.cos(a) * POND_E.rx * d; y = z.y + Math.sin(a) * POND_E.ry * d;
+    } else {
+      const a = rng() * TAU, d = .45 + rng() * .55;
+      x = z.x + Math.cos(a) * z.r * d; y = z.y + Math.sin(a) * z.r * d * .8;
+    }
+    animals.push(makeCritter(type, x, y, z));
   };
-  const s = S[type];
-  return {
-    type, x, y, home, r: s.r, hp: s.hp, maxhp: s.hp, spd: s.spd,
-    dir: rng() < .5 ? -1 : 1, phase: rng() * TAU, angryT: 0,
-    state: 'wander', wt: rand(0, 3), tx: x, ty: y, welts: [], hurtT: 0,
-    human: !!s.human, name: s.name || '', spawnT: 0, swatT: rand(0.5, 2), seed: rng(),
-  };
-}
-const animals = [];
-{
-  const P = ZONES.picnic, B = ZONES.barn, D = ZONES.pond;
-  animals.push(makeCritter('picnicker', P.x - 60, P.y + 40, P));
-  animals.push(makeCritter('jogger', P.x + 120, P.y - 120, P));
-  animals.push(makeCritter('kid', P.x - 140, P.y - 160, P));
-  animals.push(makeCritter('dog', P.x + 60, P.y + 140, P));
-  animals.push(makeCritter('picnicker', P.x + 190, P.y + 120, P));
-  animals.push(makeCritter('cat', P.x - 30, P.y - 60, P));
-
-  animals.push(makeCritter('cow', B.x - 120, B.y + 60, B));
-  animals.push(makeCritter('cow', B.x + 140, B.y - 80, B));
-  animals.push(makeCritter('pig', B.x + 40, B.y + 160, B));
-  animals.push(makeCritter('pig', B.x - 180, B.y - 100, B));
-  animals.push(makeCritter('horse', B.x + 100, B.y + 40, B));
-  animals.push(makeCritter('rooster', B.x - 40, B.y - 160, B));
-  animals.push(makeCritter('rooster', B.x + 200, B.y + 180, B));
-  animals.push(makeCritter('farmer', B.x, B.y, B));
-
-  animals.push(makeCritter('duck', D.x - 60, D.y - 30, D));
-  animals.push(makeCritter('duck', D.x + 70, D.y + 40, D));
-  animals.push(makeCritter('duck', D.x - 10, D.y + 80, D));
-  animals.push(makeCritter('dog', D.x + 220, D.y - 150, D));
-  animals.push(makeCritter('cat', D.x - 200, D.y - 180, D));
-  animals.push(makeCritter('kid', D.x - 240, D.y - 60, D));
-}
-
-// Gerald the bear — big honey thief
-const bear = {
-  type: 'bear', x: 1150, y: 480, home: { x: 1250, y: 520, r: 420 }, r: 60,
-  hp: 12, maxhp: 12, spd: 55, dir: 1, phase: 0, angryT: 0, state: 'wander',
-  wt: 0, tx: 1150, ty: 480, welts: [], hurtT: 0, human: false, name: 'GERALD',
-  spawnT: 0, seed: .42, enraged: false,
-};
-
-// picnic table & barn as static props
-// fences around the farm pen
-const fencePts = [];
-{
-  const R = 330, cx = ZONES.barn.x, cy = ZONES.barn.y;
-  for (let a = 0; a < 12; a++) {
-    const a0 = a / 12 * TAU;
-    fencePts.push({ x: cx + Math.cos(a0) * R, y: cy + Math.sin(a0) * R * .8 });
+  for (const key of ['picnic', 'barn', 'pond']) for (const [type, n] of THEME.spawns[key]) for (let i = 0; i < n; i++) spawnAt(key, type);
+  for (const [type, n] of THEME.spawns.wild) {
+    for (let i = 0; i < n; i++) {
+      let x, y, tries = 0;
+      do {
+        x = rand(WW * .15, WW * .85); y = rand(WH * .15, WH * .85);
+        tries++;
+      } while (tries < 30 && (dist2(x, y, HIVE.x, HIVE.y) < 800 * 800 || inPond(x, y, 120) || (Math.abs(x - BARN.x) < 220 && Math.abs(y - BARN.y) < 160)));
+      animals.push(makeCritter(type, x, y, { x, y, r: 360 }));
+    }
   }
+
+  // --- Gerald gets a fresh corner of the map to guard
+  {
+    let x, y, tries = 0;
+    do {
+      x = rand(400, WW - 400); y = rand(400, WH - 400);
+      tries++;
+    } while (tries < 40 && (dist2(x, y, HIVE.x, HIVE.y) < 1200 * 1200 || inPond(x, y, 150)));
+    bear.x = x; bear.y = y; bear.tx = x; bear.ty = y;
+    bear.home = { x, y, r: 420 };
+    bear.state = 'wander'; bear.hp = bear.maxhp; bear.welts = []; bear.angryT = 0; bear.enraged = false; bear.hurtT = 0; bear.spawnT = 0;
+  }
+
+  // --- ground texture + you, dropped at the new hive
+  buildGround();
+  ambient.length = 0;
+  player.x = HIVE.x; player.y = HIVE.y - 160; player.vx = player.vy = 0;
+  player.dizzy = 0; player.lungeT = 0; player.cd = 0; player.trail.length = 0;
+  cam.x = player.x; cam.y = player.y - 100;
+  portalCd = 1.6;
+  for (const b of buddies) { b.x = player.x + rand(-30, 30); b.y = player.y - rand(20, 60); b.vx = b.vy = 0; }
+  if (started) {
+    addToast('WORLD ' + worldNum + ' — ' + worldName + '!');
+    addToast(THEME.tag + '!');
+  }
+}
+
+// ---- grass base (offscreen texture at 1/3 world res, soft painterly speckle).
+// The canvas is allocated ONCE at max world size and reused by every world, so
+// travelling to a new world never churns GPU memory — we only paint and blit
+// the current world's sub-rect.
+const GS = 3; // ground supersample divisor
+const GWMAX = Math.ceil(7000 / GS), GHMAX = Math.ceil(4800 / GS);
+const groundCv = document.createElement('canvas');
+groundCv.width = GWMAX; groundCv.height = GHMAX;
+const groundG = groundCv.getContext('2d');
+function buildGround() {
+  const g = groundG;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, GWMAX, GHMAX);
+  const gh = THEME.ground.h, gs = THEME.ground.s, gl = THEME.ground.l;
+  g.scale(1 / GS, 1 / GS);
+  g.fillStyle = `hsl(${gh}, ${gs}%, ${gl}%)`;
+  g.fillRect(0, 0, WW, WH);
+  // broad sunlit patches
+  for (let i = 0; i < 90; i++) {
+    const x = rand(0, WW), y = rand(0, WH), r = rand(160, 420);
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `hsla(${gh + rand(-8, 12)}, ${gs + 8}%, ${clamp(gl + rand(2, 9), 4, 92)}%, .18)`);
+    grad.addColorStop(1, `hsla(${gh}, ${gs}%, ${gl}%, 0)`);
+    g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  }
+  // darker shade patches
+  for (let i = 0; i < 50; i++) {
+    const x = rand(0, WW), y = rand(0, WH), r = rand(140, 340);
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `hsla(${gh + 6}, ${gs}%, ${Math.max(4, gl - 12)}%, .14)`);
+    grad.addColorStop(1, `hsla(${gh + 6}, ${gs}%, ${Math.max(4, gl - 12)}%, 0)`);
+    g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  }
+  // fine grass flecks
+  const fleck = Math.round(40000 * (WW * WH) / (3800 * 2600));
+  const colA = `hsla(${gh - 4}, ${gs + 2}%, ${clamp(gl + 7, 0, 96)}%, .25)`;
+  const colB = `hsla(${gh + 8}, ${gs}%, ${Math.max(4, gl - 9)}%, .18)`;
+  for (let i = 0; i < fleck; i++) {
+    const x = rand(0, WW), y = rand(0, WH);
+    g.fillStyle = rng() < .5 ? colA : colB;
+    g.fillRect(x, y, rand(2.5, 4.5), rand(2.5, 5));
+  }
+  // dirt paths between POIs, feathered
+  const path = (a, b) => {
+    const mx = (a.x + b.x) / 2 + rand(-80, 80), my = (a.y + b.y) / 2 + rand(-80, 80);
+    const pc = THEME.pathCols;
+    g.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      g.strokeStyle = pc[i]; g.lineWidth = [64, 44, 26][i];
+      g.beginPath(); g.moveTo(a.x, a.y);
+      g.quadraticCurveTo(mx, my, b.x, b.y);
+      g.stroke();
+    }
+    // wheel ruts
+    g.strokeStyle = pc[1]; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(a.x, a.y); g.quadraticCurveTo(mx - 8, my - 8, b.x, b.y); g.stroke();
+    g.beginPath(); g.moveTo(a.x, a.y); g.quadraticCurveTo(mx + 8, my + 8, b.x, b.y); g.stroke();
+  };
+  path(ZONES.hive, ZONES.picnic); path(ZONES.hive, ZONES.barn); path(ZONES.hive, ZONES.pond);
+  path(ZONES.hive, portal);
 }
 
 // ------------------------------------------------------------------ feedback helpers
@@ -438,6 +696,7 @@ function addHoney(n) {
 
 // ------------------------------------------------------------------ sting logic
 const STING_RANGE = 300, STING_CD = 0.42;
+const FEATHERY = new Set(['duck', 'rooster', 'goose', 'owl', 'flamingo']);
 
 function nearestTarget(range) {
   let best = null, bd = range * range;
@@ -470,7 +729,7 @@ function stingTarget(e) {
   e.hp--;
   e.welts.push(WELTSN(e)); e.hurtT = 0.9;
   sparks(player.x, player.y);
-  burst(e.x, e.y - e.r, 8, e.type === 'duck' ? '#ffffff' : '#ffe27a', 160, .5, 4);
+  burst(e.x, e.y - e.r, 8, FEATHERY.has(e.type) ? '#ffffff' : '#ffe27a', 160, .5, 4);
   player.vx *= -0.35; player.vy = player.vy * -0.35 - 120;
   shake = Math.max(shake, 6); freeze = Math.max(freeze, 0.045);
   addStars(5); addHoney(0.34);
@@ -552,10 +811,10 @@ function update(dt) {
 
   // decor collisions (trees)
   for (const tr of trees) {
-    const rr = 26 * tr.s + player.r;
+    const rr2 = 26 * tr.s + player.r;
     const d2 = dist2(player.x, player.y, tr.x, tr.y - 20 * tr.s);
-    if (d2 < rr * rr && d2 > 1) {
-      const d = Math.sqrt(d2), push = (rr - d);
+    if (d2 < rr2 * rr2 && d2 > 1) {
+      const d = Math.sqrt(d2), push = (rr2 - d);
       player.x += (player.x - tr.x) / d * push; player.y += (player.y - (tr.y - 20 * tr.s)) / d * push;
       player.vx += (player.x - tr.x) / d * 200 * dt * 60;
       player.vy += (player.y - (tr.y - 20 * tr.s)) / d * 200 * dt * 60;
@@ -563,10 +822,10 @@ function update(dt) {
   }
   // hive is a solid little building
   {
-    const rr = 66 + player.r;
+    const rr2 = 66 + player.r;
     const d2 = dist2(player.x, player.y, HIVE.x, HIVE.y - 20);
-    if (d2 < rr * rr && d2 > 1) {
-      const d = Math.sqrt(d2), push = rr - d;
+    if (d2 < rr2 * rr2 && d2 > 1) {
+      const d = Math.sqrt(d2), push = rr2 - d;
       player.x += (player.x - HIVE.x) / d * push; player.y += (player.y - (HIVE.y - 20)) / d * push;
     }
   }
@@ -678,6 +937,15 @@ function update(dt) {
     }
   }
 
+  // the magic dandelion — fly into it and a whole new world blooms
+  if (portalCd > 0) portalCd -= dt;
+  else if (dist2(player.x, player.y, portal.x, portal.y - 24) < 62 * 62) {
+    travelTo(worldNum + 1);
+    return; // this frame's world just changed; start fresh next frame
+  }
+  if (flash > 0) flash = Math.max(0, flash - dt * 1.8);
+  updateAmbient(dt);
+
   // camera
   cam.x = lerp(cam.x, player.x, 1 - Math.pow(.02, dt));
   cam.y = lerp(cam.y, player.y - 100, 1 - Math.pow(.02, dt));
@@ -685,6 +953,39 @@ function update(dt) {
 
   // buzz audio tracks speed
   if (A.started) A.setBuzz(clamp(Math.hypot(player.vx, player.vy) / 520, 0, 1));
+}
+
+function travelTo(n) {
+  if (A.started) { A.travel(); A.whoosh(); }
+  genWorld(n);
+  flash = 1;
+  confettiBurst(player.x, player.y - 40, 80);
+}
+
+// biome weather: floating dander / leaves / snow / fireflies / sand glints
+function updateAmbient(dt) {
+  const type = THEME.amb;
+  if (type !== 'none') {
+    const want = type === 'twinkle' ? 34 : 60;
+    if (ambient.length < want && rng() < .8) {
+      const x = cam.x + rand(-cssW / SCALE * .6, cssW / SCALE * .6);
+      const y = cam.y + rand(-cssH / SCALE * .6, cssH / SCALE * .6);
+      if (x > 20 && x < WW - 20 && y > 20 && y < WH - 20) {
+        ambient.push({
+          type, x, y, t: 0, life: type === 'twinkle' ? rand(.8, 2) : rand(3, 7),
+          ph: rng() * TAU, s: rand(.7, 1.3), vx: rand(-12, 12),
+        });
+      }
+    }
+  }
+  for (let i = ambient.length - 1; i >= 0; i--) {
+    const p = ambient[i]; p.t += dt;
+    if (p.type === 'leaf') { p.y += 46 * p.s * dt; p.x += Math.sin(p.t * 1.6 + p.ph) * 24 * dt + p.vx * dt; }
+    else if (p.type === 'snow') { p.y += 30 * p.s * dt; p.x += Math.sin(p.t * 1.2 + p.ph) * 18 * dt + p.vx * .3 * dt; }
+    else if (p.type === 'fluff') { p.x += Math.sin(p.t * .9 + p.ph) * 16 * dt + 10 * dt; p.y -= 8 * dt + Math.sin(p.t * 2 + p.ph) * 8 * dt; }
+    else if (p.type === 'firefly') { p.x += Math.sin(p.t * 1.2 + p.ph) * 18 * dt; p.y += Math.cos(p.t * .9 + p.ph * 1.7) * 14 * dt; }
+    if (p.t > p.life) ambient.splice(i, 1);
+  }
 }
 
 function updateCritter(e, dt, others) {
@@ -706,7 +1007,6 @@ function updateCritter(e, dt, others) {
 
   if (e.state === 'fleeing') {
     // run toward world edge away from home, poof when far away
-    const ax = e.x < WW / 2 ? -1 : 1;
     const dx = e.x - e.home.x, dy = e.y - e.home.y;
     const d = Math.hypot(dx, dy) || 1;
     e.x += (dx / d) * e.spd * 1.8 * dt; e.y += (dy / d) * e.spd * 1.8 * dt;
@@ -731,7 +1031,7 @@ function updateCritter(e, dt, others) {
     e.tx = player.x + rand(-60, 60); e.ty = player.y + rand(-60, 60);
     stepToward(e, dt, 1.05);
     pondClamp(e);
-    if (rng() < .06 && e.type !== 'duck') addPop(e.x, e.y - e.r * 2.2, 'HMPF!', '#ff8a80', 16);
+    if (rng() < .06 && !FEATHERY.has(e.type) && !e.amphib) addPop(e.x, e.y - e.r * 2.2, 'HMPF!', '#ff8a80', 16);
     return;
   }
 
@@ -760,12 +1060,12 @@ function stepToward(e, dt, mul) {
   if (Math.abs(dx) > 6) e.dir = dx > 0 ? 1 : -1;
 }
 
-// nobody except ducks walks on water — and ducks don't waddle into the field
-const POND_E = { x: ZONES.pond.x, y: ZONES.pond.y, rx: ZONES.pond.r * .92, ry: ZONES.pond.r * .64 };
+// nobody except the water folk wades the pond — everyone else walks around it
 function pondClamp(e) {
+  if (e.type === 'bear') return; // Gerald wades wherever he pleases
   const nx = (e.x - POND_E.x) / POND_E.rx, ny = (e.y - POND_E.y) / POND_E.ry;
   const d = nx * nx + ny * ny;
-  if (e.type === 'duck') {
+  if (e.amphib) {
     if (d > .8) {
       const s = Math.sqrt(d);
       e.x = POND_E.x + nx / s * POND_E.rx * .78; e.y = POND_E.y + ny / s * POND_E.ry * .78;
@@ -787,81 +1087,46 @@ function rr(x, y, w, h, r) {
 function ell(x, y, rx, ry) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, TAU); ctx.closePath(); }
 function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.closePath(); }
 
-// ---- grass base (offscreen texture at half world res, soft painterly speckle)
-const GS = 2; // ground supersample divisor
-const groundCv = document.createElement('canvas');
-groundCv.width = Math.ceil(WW / GS); groundCv.height = Math.ceil(WH / GS);
-{
-  const g = groundCv.getContext('2d');
-  g.scale(1 / GS, 1 / GS);
-  g.fillStyle = 'hsl(97, 46%, 31%)';
-  g.fillRect(0, 0, WW, WH);
-  // broad sunlit patches
-  for (let i = 0; i < 90; i++) {
-    const x = rand(0, WW), y = rand(0, WH), r = rand(160, 420);
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, `hsla(${rand(88, 110)}, 55%, ${rand(33, 40)}%, .18)`);
-    grad.addColorStop(1, 'hsla(95, 50%, 30%, 0)');
-    g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-  }
-  // darker shade patches
-  for (let i = 0; i < 50; i++) {
-    const x = rand(0, WW), y = rand(0, WH), r = rand(140, 340);
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'hsla(105, 50%, 18%, .14)');
-    grad.addColorStop(1, 'hsla(105, 50%, 18%, 0)');
-    g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-  }
-  // fine grass flecks
-  for (let i = 0; i < 42000; i++) {
-    const x = rand(0, WW), y = rand(0, WH);
-    g.fillStyle = rng() < .5 ? 'hsla(95, 48%, 38%, .25)' : 'hsla(104, 50%, 22%, .18)';
-    g.fillRect(x, y, rand(2.5, 4.5), rand(2.5, 5));
-  }
-  // dirt paths between POIs, feathered
-  const path = (a, b) => {
-    const mx = (a.x + b.x) / 2 + rand(-80, 80), my = (a.y + b.y) / 2 + rand(-80, 80);
-    for (const [w, col] of [[64, 'rgba(120,88,52,.10)'], [44, 'rgba(160,122,74,.22)'], [26, 'rgba(176,138,86,.30)']]) {
-      g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round';
-      g.beginPath(); g.moveTo(a.x, a.y);
-      g.quadraticCurveTo(mx, my, b.x, b.y);
-      g.stroke();
-    }
-    // wheel ruts
-    g.strokeStyle = 'rgba(120,90,55,.18)'; g.lineWidth = 3;
-    g.beginPath(); g.moveTo(a.x, a.y); g.quadraticCurveTo(mx - 8, my - 8, b.x, b.y); g.stroke();
-    g.beginPath(); g.moveTo(a.x, a.y); g.quadraticCurveTo(mx + 8, my + 8, b.x, b.y); g.stroke();
-  };
-  path(ZONES.hive, ZONES.picnic); path(ZONES.hive, ZONES.barn); path(ZONES.hive, ZONES.pond);
-}
-
 // ---- draw world pieces
 function drawPond(t) {
-  const P = ZONES.pond;
+  const P = ZONES.pond, w = THEME.water, frozen = THEME.frozen;
   ctx.save(); ctx.translate(P.x, P.y);
-  ctx.fillStyle = '#3f86b8'; ell(0, 0, P.r * 1.02, P.r * .72 * 1.02); ctx.fill();
-  ctx.fillStyle = '#5fb6e4'; ell(0, 0, P.r, P.r * .72); ctx.fill();
-  ctx.fillStyle = '#8fd4f2'; ell(-P.r * .18, -P.r * .12, P.r * .55, P.r * .32); ctx.fill();
-  // shimmer arcs
-  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2.5;
-  for (let i = 0; i < 5; i++) {
-    const a = i * 1.3 + t * .4;
-    const rx = P.r * (.3 + .12 * i % 1), ox = Math.cos(i * 2.1) * P.r * .4, oy = Math.sin(i * 1.7) * P.r * .25;
-    ctx.beginPath(); ctx.arc(ox + Math.sin(a) * 4, oy, 10 + i * 4, .2, Math.PI - .2); ctx.stroke();
-  }
-  // lily pads
-  const lilies = [[-120, -60], [90, 70], [30, -100], [160, -20]];
-  for (const [lx, ly] of lilies) {
-    ctx.fillStyle = '#3e8f3a'; ell(lx, ly, 26, 17); ctx.fill();
-    ctx.fillStyle = '#4fae47'; ell(lx - 3, ly - 3, 22, 13); ctx.fill();
-    ctx.strokeStyle = '#376f2f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 20, ly + 10); ctx.stroke();
+  ctx.fillStyle = w[0]; ell(0, 0, P.r * 1.02, P.r * .72 * 1.02); ctx.fill();
+  ctx.fillStyle = w[1]; ell(0, 0, P.r, P.r * .72); ctx.fill();
+  ctx.fillStyle = w[2]; ell(-P.r * .18, -P.r * .12, P.r * .55, P.r * .32); ctx.fill();
+  if (frozen) {
+    // ice: snow rim + cracks
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 9; ell(0, 0, P.r, P.r * .72); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2.5;
+    for (const c of P.cracks) {
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(c.a) * P.r * .12, Math.sin(c.a) * P.r * .09);
+      ctx.lineTo(Math.cos(c.a + c.b) * P.r * .5, Math.sin(c.a + c.b) * P.r * .36);
+      ctx.lineTo(Math.cos(c.a + c.b * 2) * P.r * .9, Math.sin(c.a + c.b * 2) * P.r * .64);
+      ctx.stroke();
+    }
+  } else {
+    // shimmer arcs
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2.5;
+    for (let i = 0; i < 5; i++) {
+      const a = i * 1.3 + t * .4;
+      const ox = Math.cos(i * 2.1) * P.r * .4, oy = Math.sin(i * 1.7) * P.r * .25;
+      ctx.beginPath(); ctx.arc(ox + Math.sin(a) * 4, oy, 10 + i * 4, .2, Math.PI - .2); ctx.stroke();
+    }
+    // lily pads
+    const lilies = [[-120, -60], [90, 70], [30, -100], [160, -20]];
+    for (const [lx, ly] of lilies) {
+      ctx.fillStyle = '#3e8f3a'; ell(lx, ly, 26, 17); ctx.fill();
+      ctx.fillStyle = '#4fae47'; ell(lx - 3, ly - 3, 22, 13); ctx.fill();
+      ctx.strokeStyle = '#376f2f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 20, ly + 10); ctx.stroke();
+    }
   }
   // reeds
   for (let i = 0; i < 14; i++) {
     const a = i / 14 * TAU + .4;
     const x = Math.cos(a) * P.r * 1.02, y = Math.sin(a) * P.r * .74;
     const sway = Math.sin(t * 1.6 + i) * 3;
-    ctx.strokeStyle = '#4a8f3e'; ctx.lineWidth = 3;
+    ctx.strokeStyle = frozen ? 'rgba(255,255,255,.7)' : '#4a8f3e'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + sway, y - 18, x + sway * 2, y - 34); ctx.stroke();
   }
   ctx.restore();
@@ -886,6 +1151,10 @@ function drawHive(t) {
   // rim highlight on each band
   ctx.strokeStyle = 'rgba(255,240,190,.5)'; ctx.lineWidth = 2;
   for (const [w, y, h] of bands) { ctx.beginPath(); ctx.moveTo(-w * .82, y - 2); ctx.quadraticCurveTo(0, y - h * .95, w * .82, y - 2); ctx.stroke(); }
+  if (THEME.snowCaps) { // fresh snow on each shelf of the dome
+    ctx.fillStyle = 'rgba(255,255,255,.92)';
+    for (const [w, y, h] of bands) { ell(0, y - h * .82, w * .62, 4.5); ctx.fill(); }
+  }
   // top knob
   ctx.fillStyle = '#f6c34e'; circle(0, -84, 6); ctx.fill();
   ctx.strokeStyle = 'rgba(150,95,20,.55)'; ctx.lineWidth = 2; circle(0, -84, 6); ctx.stroke();
@@ -925,6 +1194,10 @@ function drawBarn(t) {
   ctx.beginPath(); ctx.moveTo(-160, -34); ctx.lineTo(0, -116); ctx.lineTo(160, -34); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#8f5642';
   ctx.beginPath(); ctx.moveTo(-150, -40); ctx.lineTo(0, -110); ctx.lineTo(150, -40); ctx.closePath(); ctx.fill();
+  if (THEME.snowCaps) {
+    ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 11; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-152, -40); ctx.lineTo(0, -110); ctx.lineTo(152, -40); ctx.stroke();
+  }
   // door
   ctx.fillStyle = '#f5e7c8'; rr(-46, -4, 92, 94, 4); ctx.fill();
   ctx.fillStyle = '#b5382e'; rr(-38, 4, 76, 86, 3); ctx.fill();
@@ -972,6 +1245,7 @@ function drawPicnic(t) {
   ctx.fillStyle = '#8a5a33'; rr(-60, -20, 8, 30, 2); ctx.fill(); rr(52, -20, 8, 30, 2); ctx.fill();
   ctx.fillStyle = '#c98f4f'; rr(-74, -30, 148, 14, 5); ctx.fill();
   ctx.fillStyle = '#b57e40'; rr(-74, -18, 148, 4, 2); ctx.fill();
+  if (THEME.snowCaps) { ctx.fillStyle = 'rgba(255,255,255,.88)'; ell(0, -30, 76, 6); ctx.fill(); }
   // bench
   ctx.fillStyle = '#c98f4f'; rr(-56, -2, 112, 8, 3); ctx.fill();
   // basket + food
@@ -987,20 +1261,52 @@ function drawPicnic(t) {
 
 function drawTree(tr, t) {
   const sway = Math.sin(t * 1.1 + tr.sway) * 3 * tr.s;
+  const P = THEME;
   ctx.save(); ctx.translate(tr.x, tr.y);
   ctx.fillStyle = 'rgba(0,0,0,.18)'; ell(6, 4, 34 * tr.s, 12 * tr.s); ctx.fill();
-  ctx.fillStyle = '#7a4f28'; rr(-6 * tr.s, -34 * tr.s, 12 * tr.s, 38 * tr.s, 3); ctx.fill();
-  ctx.fillStyle = '#63401f'; rr(-6 * tr.s, -34 * tr.s, 4 * tr.s, 38 * tr.s, 3); ctx.fill();
+
+  if (tr.kind === 'pine') {
+    ctx.fillStyle = P.trunk; rr(-5 * tr.s, -26 * tr.s, 10 * tr.s, 28 * tr.s, 3); ctx.fill();
+    const cy = -30 * tr.s;
+    ctx.fillStyle = P.leaf;
+    for (let i = 0; i < 3; i++) {
+      const w = (34 - i * 8) * tr.s, y = cy - i * 22 * tr.s, h = 30 * tr.s;
+      ctx.beginPath(); ctx.moveTo(-w + sway * .3 * i, y); ctx.lineTo(sway, y - h); ctx.lineTo(w + sway * .3 * i, y); ctx.closePath(); ctx.fill();
+    }
+    if (P.snowCaps) {
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      for (let i = 0; i < 3; i++) { const w = (30 - i * 8) * tr.s, y = cy - i * 22 * tr.s - 8 * tr.s; ell(sway * .6, y, w * .55, 4.5 * tr.s); ctx.fill(); }
+    }
+    ctx.restore(); return;
+  }
+  if (tr.kind === 'palm') {
+    ctx.strokeStyle = '#9a6b3f'; ctx.lineWidth = 9 * tr.s; ctx.lineCap = 'round';
+    const topX = sway * 2 + 14 * tr.s, topY = -78 * tr.s;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(10 * tr.s, -40 * tr.s, topX, topY); ctx.stroke();
+    ctx.strokeStyle = P.leaf; ctx.lineWidth = 7 * tr.s;
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI * .9 + i * Math.PI * .18;
+      ctx.beginPath(); ctx.moveTo(topX, topY);
+      ctx.quadraticCurveTo(topX + Math.cos(a) * 30 * tr.s, topY + Math.sin(a) * 20 * tr.s - 8, topX + Math.cos(a) * 52 * tr.s, topY + Math.sin(a) * 10 * tr.s + 14);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#8a5a33'; circle(topX - 6, topY + 8, 5 * tr.s); ctx.fill(); circle(topX + 6, topY + 10, 5 * tr.s); ctx.fill();
+    ctx.restore(); return;
+  }
+  // round leafy tree
+  ctx.fillStyle = P.trunk; rr(-6 * tr.s, -34 * tr.s, 12 * tr.s, 38 * tr.s, 3); ctx.fill();
+  ctx.fillStyle = P.trunkD; rr(-6 * tr.s, -34 * tr.s, 4 * tr.s, 38 * tr.s, 3); ctx.fill();
   const cx = sway, cy = -52 * tr.s;
-  ctx.fillStyle = '#2f7d32';
+  ctx.fillStyle = P.leaf;
   circle(cx, cy, 30 * tr.s); ctx.fill();
   circle(cx - 22 * tr.s, cy + 12 * tr.s, 20 * tr.s); ctx.fill();
   circle(cx + 22 * tr.s, cy + 12 * tr.s, 21 * tr.s); ctx.fill();
-  ctx.fillStyle = '#3f9841';
+  ctx.fillStyle = P.leafL;
   circle(cx - 8 * tr.s, cy - 12 * tr.s, 18 * tr.s); ctx.fill();
   circle(cx + 14 * tr.s, cy - 4 * tr.s, 14 * tr.s); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,.14)';
   circle(cx - 10 * tr.s, cy - 16 * tr.s, 8 * tr.s); ctx.fill();
+  if (P.snowCaps) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ell(cx, cy - 20 * tr.s, 18 * tr.s, 6 * tr.s); ctx.fill(); }
   ctx.restore();
 }
 
@@ -1008,10 +1314,10 @@ function drawFlower(f, t) {
   ctx.save(); ctx.translate(f.x, f.y);
   const sway = Math.sin(t * 2 + f.sway) * .08;
   ctx.rotate(sway);
-  ctx.strokeStyle = '#3c8a34'; ctx.lineWidth = 3;
+  ctx.strokeStyle = THEME.stem; ctx.lineWidth = 3;
   if (f.ready) {
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(2, -8, 0, -16); ctx.stroke();
-    ctx.fillStyle = '#49a53e'; ell(5, -8, 5, 3); ctx.fill();
+    ctx.fillStyle = THEME.stem; ell(5, -8, 5, 3); ctx.fill();
     const n = 6;
     ctx.fillStyle = f.col[0];
     for (let i = 0; i < n; i++) {
@@ -1023,14 +1329,14 @@ function drawFlower(f, t) {
     // droopy regrowing bud
     const g = clamp(f.grow / 4, 0, 1);
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(3, -6, 6, -4 - g * 8); ctx.stroke();
-    ctx.fillStyle = '#59b34c'; circle(6, -4 - g * 8, 3.5 + g * 2); ctx.fill();
+    ctx.fillStyle = THEME.leafL; circle(6, -4 - g * 8, 3.5 + g * 2); ctx.fill();
   }
   ctx.restore();
 }
 
 function drawTuft(tf, t) {
   const sway = Math.sin(t * 2.2 + tf.x * .05) * 1.5;
-  ctx.strokeStyle = tf.c > .5 ? '#5aa845' : '#4b9640';
+  ctx.strokeStyle = tf.c > .5 ? THEME.grassA : THEME.grassB;
   ctx.lineWidth = 2; ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(tf.x, tf.y); ctx.quadraticCurveTo(tf.x + sway * .5, tf.y - tf.h * .6, tf.x - 3 + sway, tf.y - tf.h);
@@ -1041,7 +1347,7 @@ function drawTuft(tf, t) {
 function drawDandelion(d, t) {
   const sway = Math.sin(t * 1.5 + d.x * .05) * 2;
   ctx.save(); ctx.translate(d.x, d.y);
-  ctx.strokeStyle = '#4c9440'; ctx.lineWidth = 2.5;
+  ctx.strokeStyle = THEME.stem; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(sway, -12, sway * 1.6, -22 * d.s); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,.85)';
   circle(sway * 1.6, -22 * d.s, 7 * d.s); ctx.fill();
@@ -1066,21 +1372,87 @@ function drawRock(r) {
   ell(-4 * s, -11 * s, 12 * s, 8 * s); ctx.fill();
   ctx.fillStyle = 'rgba(70,80,84,.35)';
   ell(7 * s, -4 * s, 8 * s, 5 * s); ctx.fill();
-  ctx.fillStyle = '#5d9c48'; ell(-14 * s, -2 * s, 5 * s, 2.4 * s); ctx.fill(); // moss
+  ctx.fillStyle = THEME.moss; ell(-14 * s, -2 * s, 5 * s, 2.4 * s); ctx.fill(); // moss
+  if (THEME.snowCaps) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ell(-2 * s, -13 * s, 10 * s, 4 * s); ctx.fill(); }
   ctx.restore();
 }
 
 function drawBush(b) {
   ctx.save(); ctx.translate(b.x, b.y);
   ctx.fillStyle = 'rgba(0,0,0,.14)'; ell(3, 3, 26 * b.s, 9 * b.s); ctx.fill();
-  ctx.fillStyle = '#39853a';
+  ctx.fillStyle = THEME.leaf;
   circle(-12 * b.s, -8 * b.s, 14 * b.s); ctx.fill();
   circle(12 * b.s, -8 * b.s, 15 * b.s); ctx.fill();
   circle(0, -14 * b.s, 15 * b.s); ctx.fill();
-  ctx.fillStyle = '#459d46'; circle(-4 * b.s, -16 * b.s, 10 * b.s); ctx.fill();
+  ctx.fillStyle = THEME.leafL; circle(-4 * b.s, -16 * b.s, 10 * b.s); ctx.fill();
   ctx.fillStyle = '#e5585d';
   circle(8 * b.s, -12 * b.s, 2.5); ctx.fill(); circle(-9 * b.s, -14 * b.s, 2.5); ctx.fill();
+  if (THEME.snowCaps) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ell(0, -22 * b.s, 14 * b.s, 5 * b.s); ctx.fill(); }
   ctx.restore();
+}
+
+// the magic dandelion: this world's exit to the next one
+function drawPortal(t) {
+  ctx.save(); ctx.translate(portal.x, portal.y);
+  const pulse = 1 + Math.sin(t * 2.4) * .08;
+  // glow
+  const g = ctx.createRadialGradient(0, -26, 4, 0, -26, 70 * pulse);
+  g.addColorStop(0, 'rgba(255,240,170,.55)'); g.addColorStop(1, 'rgba(255,240,170,0)');
+  ctx.fillStyle = g; circle(0, -26, 70 * pulse); ctx.fill();
+  // stem
+  ctx.strokeStyle = THEME.stem; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(6, -18, 0, -34); ctx.stroke();
+  // dandelion head
+  ctx.fillStyle = 'rgba(255,255,255,.92)'; circle(0, -40, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.4;
+  const r1 = 17 * pulse;
+  for (let i = 0; i < 14; i++) {
+    const a = i / 14 * TAU + t * .6;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * 6, -40 + Math.sin(a) * 6);
+    ctx.lineTo(Math.cos(a) * r1, -40 + Math.sin(a) * r1); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; circle(Math.cos(a) * r1, -40 + Math.sin(a) * r1, 1.6); ctx.fill();
+  }
+  // orbiting sparkles
+  for (let i = 0; i < 3; i++) {
+    const a = t * 1.8 + i / 3 * TAU;
+    drawStar(Math.cos(a) * 30, -40 + Math.sin(a) * 12, 4, 'rgba(255,220,120,.9)');
+  }
+  // label
+  ctx.font = '900 13px system-ui'; ctx.textAlign = 'center';
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(40,25,0,.55)';
+  ctx.strokeText('MAGIC DANDELION', 0, -74);
+  ctx.fillStyle = '#fff3b0'; ctx.fillText('MAGIC DANDELION', 0, -74);
+  ctx.restore();
+}
+
+function drawAmbient(t) {
+  for (const p of ambient) {
+    if (!visible(p.x, p.y, 40)) continue;
+    const a = clamp(Math.sin(clamp(p.t / p.life, 0, 1) * Math.PI) * 1.5, .05, 1);
+    ctx.globalAlpha = a;
+    if (p.type === 'leaf') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.t * 2 + p.ph);
+      ctx.fillStyle = p.s > 1 ? '#d97b2f' : '#e8a33d'; ell(0, 0, 6 * p.s, 3 * p.s); ctx.fill(); ctx.restore();
+    } else if (p.type === 'snow') {
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; circle(p.x, p.y, 2.2 * p.s + 1); ctx.fill();
+    } else if (p.type === 'fluff') {
+      ctx.fillStyle = 'rgba(255,255,255,.75)'; circle(p.x, p.y, 2.4 * p.s + 1); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const an = i / 4 * TAU + p.ph;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + Math.cos(an) * 4.5 * p.s, p.y + Math.sin(an) * 4.5 * p.s); ctx.stroke();
+      }
+    } else if (p.type === 'firefly') {
+      const g = .5 + .5 * Math.sin(t * 4 + p.ph);
+      ctx.fillStyle = `rgba(200,255,140,${.15 + .25 * g})`; circle(p.x, p.y, 6); ctx.fill();
+      ctx.fillStyle = 'rgba(240,255,180,.95)'; circle(p.x, p.y, 1.8); ctx.fill();
+    } else if (p.type === 'twinkle') {
+      ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.6;
+      const r = 5 * p.s * (.4 + .6 * Math.sin(t * 6 + p.ph));
+      ctx.beginPath(); ctx.moveTo(p.x - r, p.y); ctx.lineTo(p.x + r, p.y); ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x, p.y + r); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ---- critter drawing ------------------------------------------------------
@@ -1100,7 +1472,6 @@ function angryMarks(e) {
   ctx.beginPath();
   for (let i = 0; i < 12; i++) {
     const ang = i / 12 * TAU, R = i % 2 ? 7 : 13;
-    const x = e.r * .8, y = -e.r * 2.35 + Math.sin(ang) * R * .3;
     const px2 = e.r * .8 + Math.cos(ang) * R, py2 = -e.r * 2.35 + Math.sin(ang) * R;
     if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
   }
@@ -1165,6 +1536,58 @@ function drawCritter(e, t) {
       ctx.fillStyle = '#333'; circle(14, -22 + bob, 1.8); ctx.fill();
       break;
     }
+    case 'goose': {
+      const hiss = e.angryT > 0 || run;
+      const stretch = hiss ? Math.sin(t * 12) * 2 : 0;
+      ctx.strokeStyle = '#f4a63a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-3, -8); ctx.lineTo(-3, 0); ctx.moveTo(5, -8); ctx.lineTo(5, 0); ctx.stroke();
+      ctx.fillStyle = '#fbfbfb'; ell(0, -16, 14, 10); ctx.fill(); // body
+      ctx.beginPath(); ctx.moveTo(-12, -20); ctx.lineTo(-20, -26); ctx.lineTo(-10, -24); ctx.closePath(); ctx.fill(); // tail cocked up
+      ctx.strokeStyle = '#fbfbfb'; ctx.lineWidth = 6; // long hissing neck
+      ctx.beginPath(); ctx.moveTo(9, -20); ctx.quadraticCurveTo(15, -30 - stretch, 14, -38 - stretch); ctx.stroke();
+      circle(14, -41 - stretch, 6); ctx.fill();
+      ctx.fillStyle = '#f4a63a';
+      ctx.beginPath(); ctx.moveTo(19, -42 - stretch); ctx.lineTo(26, -40 - stretch + (hiss ? 3 : 0)); ctx.lineTo(19, -38 - stretch); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#222'; circle(16, -43 - stretch, 1.6); ctx.fill();
+      ctx.strokeStyle = '#d8d8d8'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(-4, -16); ctx.quadraticCurveTo(4, -12, 8, -18); ctx.stroke(); // wing line
+      break;
+    }
+    case 'bunny': {
+      const hop = run ? Math.abs(Math.sin(ph * .9)) * 8 : Math.abs(Math.sin(ph * .35)) * 2;
+      ctx.save(); ctx.translate(0, -hop);
+      const leg = Math.sin(ph) * 4;
+      ctx.strokeStyle = '#b8ada0'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-7, -10); ctx.lineTo(-7 + leg, 0); ctx.moveTo(7, -10); ctx.lineTo(7 - leg, 0); ctx.stroke();
+      ctx.fillStyle = '#d8cfc4'; ell(-2, -14, 13, 10); ctx.fill();
+      ctx.fillStyle = '#fff'; circle(-13, -16, 4.5); ctx.fill(); // fluffy tail
+      circle(11, -22, 8); ctx.fill(); // head
+      ctx.fillStyle = '#d8cfc4';
+      ell(9, -34, 3, 8); ctx.fill(); ell(14, -35, 3, 8); ctx.fill(); // ears
+      ctx.fillStyle = '#f2b8c6'; ell(9, -33, 1.5, 5); ctx.fill(); ell(14, -34, 1.5, 5); ctx.fill();
+      ctx.fillStyle = '#333'; circle(15, -23, 1.6); ctx.fill();
+      ctx.fillStyle = '#e88'; circle(18, -20, 1.4); ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'frog': {
+      const hop = run ? Math.abs(Math.sin(ph)) * 6 : 0;
+      ctx.save(); ctx.translate(0, -hop);
+      ctx.fillStyle = '#5fb03f'; ell(-7, -4, 5, 3.5); ctx.fill(); ell(7, -4, 5, 3.5); ctx.fill(); // feet
+      ctx.strokeStyle = '#4d9634'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(-8, -9, 6, -2.6, 1.2); ctx.stroke(); // folded legs
+      ctx.beginPath(); ctx.arc(8, -9, 6, -1.2, 2.6); ctx.stroke();
+      ctx.fillStyle = '#6cc24a'; ell(0, -10, 12, 8); ctx.fill(); // body
+      ctx.fillStyle = '#a8de8a'; ell(1, -7, 8, 4.5); ctx.fill();  // belly
+      circle(8, -16, 7); ctx.fill();                              // head
+      ctx.fillStyle = '#fff'; circle(5, -22, 3.2); ctx.fill(); circle(12, -22, 3.2); ctx.fill();
+      ctx.fillStyle = '#222'; circle(5.6, -22.4, 1.5); ctx.fill(); circle(12.6, -22.4, 1.5); ctx.fill();
+      ctx.strokeStyle = '#3f7a2a'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(9, -14, 4.5, .2, Math.PI - .2); ctx.stroke(); // wide smile
+      ctx.fillStyle = '#3f7a2a'; circle(2, -13, 1.2); ctx.fill(); circle(14, -13, 1.2); ctx.fill(); // cheek spots
+      ctx.restore();
+      break;
+    }
     case 'pig': {
       const leg = Math.sin(ph) * 5;
       ctx.strokeStyle = '#e39aa5'; ctx.lineWidth = 7; ctx.lineCap = 'round';
@@ -1179,6 +1602,38 @@ function drawCritter(e, t) {
       ctx.beginPath(); ctx.moveTo(12, -50); ctx.lineTo(9, -56); ctx.lineTo(17, -51); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = '#e58fa0'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(-24, -34, 5, .5, 4); ctx.stroke(); // curly tail
+      break;
+    }
+    case 'sheep': {
+      const leg = Math.sin(ph) * 5;
+      ctx.strokeStyle = '#4a3f38'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-12, -20); ctx.lineTo(-12 + leg, 0); ctx.moveTo(12, -20); ctx.lineTo(12 - leg, 0); ctx.stroke();
+      ctx.fillStyle = '#f4efe6'; // cloud of wool
+      circle(-14, -34, 14); ctx.fill(); circle(0, -42, 16); ctx.fill(); circle(14, -34, 14); ctx.fill();
+      circle(-6, -28, 13); ctx.fill(); circle(8, -28, 13); ctx.fill();
+      ctx.fillStyle = '#4a3f38'; circle(24, -42, 9); ctx.fill(); // dark face
+      ctx.fillStyle = '#f4efe6'; circle(21, -50, 6); ctx.fill(); // wool fringe
+      ctx.fillStyle = '#4a3f38'; ell(16, -44, 4, 5.5); ctx.fill(); // ear
+      ctx.fillStyle = '#fff'; circle(27, -44, 1.8); ctx.fill();
+      ctx.fillStyle = '#d9cfc0'; ell(30, -39, 4, 3); ctx.fill(); // snout
+      break;
+    }
+    case 'goat': {
+      const leg = Math.sin(ph) * 6;
+      ctx.strokeStyle = '#b3a38c'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-14, -22); ctx.lineTo(-14 + leg, 0); ctx.moveTo(14, -22); ctx.lineTo(14 - leg, 0); ctx.stroke();
+      ctx.fillStyle = '#d9cfc0'; ell(0, -34, 24, 15); ctx.fill();
+      ctx.fillStyle = '#c4b7a1'; ell(-10, -38, 10, 7); ctx.fill(); // patch
+      ctx.strokeStyle = '#c4b7a1'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(-22, -40); ctx.lineTo(-26, -44); ctx.stroke(); // stub tail up
+      ctx.fillStyle = '#cbb79c'; circle(24, -48, 9); ctx.fill(); // head
+      ctx.strokeStyle = '#8f7c60'; ctx.lineWidth = 3.5; // horns sweeping back
+      ctx.beginPath(); ctx.moveTo(20, -55); ctx.quadraticCurveTo(14, -66, 6, -64); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(26, -56); ctx.quadraticCurveTo(21, -68, 13, -68); ctx.stroke();
+      ctx.fillStyle = '#b3a38c'; ell(15, -48, 4, 6); ctx.fill(); // floppy ear
+      ctx.fillStyle = '#cbb79c'; ctx.beginPath(); ctx.moveTo(22, -42); ctx.lineTo(25, -33); ctx.lineTo(28, -42); ctx.closePath(); ctx.fill(); // beard
+      ctx.fillStyle = '#3a3026'; circle(28, -50, 1.8); ctx.fill(); // flat, judging eye
+      ctx.fillStyle = '#8f7c60'; ell(31, -45, 3, 2.4); ctx.fill();
       break;
     }
     case 'cow': {
@@ -1229,6 +1684,101 @@ function drawCritter(e, t) {
       ctx.beginPath(); ctx.moveTo(-12, -22); ctx.quadraticCurveTo(-24, -30, -18, -12); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = '#f4a63a'; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.moveTo(-2, -5); ctx.lineTo(-2, 0); ctx.moveTo(4, -5); ctx.lineTo(4, 0); ctx.stroke();
+      break;
+    }
+    case 'raccoon': {
+      const leg = Math.sin(ph) * 5;
+      ctx.strokeStyle = '#7d838c'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-9, -16); ctx.lineTo(-9 + leg, 0); ctx.moveTo(9, -16); ctx.lineTo(9 - leg, 0); ctx.stroke();
+      ctx.fillStyle = '#9aa0a8'; ell(0, -26, 18, 13); ctx.fill(); // body
+      // striped tail, flicking
+      const flick = Math.sin(t * 3 + e.seed * 9) * 5;
+      for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 ? '#3f4348' : '#9aa0a8';
+        circle(-20 - i * 5, -20 + i * 3 + flick * (i / 4), 6 - i * .7); ctx.fill();
+      }
+      circle(16, -38, 10); ctx.fill(); // head
+      ctx.fillStyle = '#3f4348';
+      ctx.beginPath(); ctx.moveTo(9, -46); ctx.lineTo(6, -54); ctx.lineTo(14, -48); ctx.closePath(); ctx.fill(); // ears
+      ctx.beginPath(); ctx.moveTo(20, -47); ctx.lineTo(25, -54); ctx.lineTo(26, -45); ctx.closePath(); ctx.fill();
+      ell(16, -38, 9.5, 5); ctx.fill(); // bandit mask
+      ctx.fillStyle = '#d8dce0'; ell(23, -34, 5, 3.5); ctx.fill(); // snout
+      ctx.fillStyle = '#222'; circle(27, -35, 1.6); ctx.fill();
+      ctx.fillStyle = '#fff'; circle(14, -39, 1.8); ctx.fill(); circle(21, -39, 1.8); ctx.fill(); // mask eyes
+      break;
+    }
+    case 'hedgehog': {
+      const leg = Math.sin(ph) * 3;
+      ctx.strokeStyle = '#7a5f48'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-6, -9); ctx.lineTo(-6 + leg, 0); ctx.moveTo(6, -9); ctx.lineTo(6 - leg, 0); ctx.stroke();
+      // spiny dome: zigzag of spike tips and valleys along the top arc
+      ctx.fillStyle = '#6b4f3a';
+      ctx.beginPath(); ctx.moveTo(-19, -8);
+      {
+        const cxS = -5, cyS = -9, rO = 15, rI = 10, spikes = 7;
+        for (let i = 0; i < spikes; i++) {
+          const aTip = Math.PI * (1 - (i + .5) / spikes), aVal = Math.PI * (1 - (i + 1) / spikes);
+          ctx.lineTo(cxS + Math.cos(aTip) * rO, cyS - Math.sin(aTip) * rO);
+          ctx.lineTo(cxS + Math.cos(aVal) * rI, cyS - Math.sin(aVal) * rI);
+        }
+      }
+      ctx.lineTo(5, -8); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8a6a4e'; ell(-4, -12, 10, 8); ctx.fill(); // soft wool between spines and belly
+      ctx.fillStyle = '#d9b89a'; // pointed face
+      ctx.beginPath(); ctx.moveTo(2, -18); ctx.lineTo(15, -12); ctx.lineTo(2, -8); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#222'; circle(15, -12, 1.8); ctx.fill(); circle(6, -14, 1.4); ctx.fill();
+      break;
+    }
+    case 'owl': {
+      const blink = Math.sin(t * .8 + e.seed * 9) > .97 ? .15 : 1;
+      ctx.fillStyle = '#8a6d4e'; ell(0, -20, 14, 17); ctx.fill(); // upright body
+      ctx.fillStyle = '#d9c9ae'; ell(3, -14, 9, 11); ctx.fill();  // belly
+      ctx.strokeStyle = '#6d533a'; ctx.lineWidth = 2.5;           // folded wing
+      ctx.beginPath(); ctx.arc(-5, -20, 9, -1.2, 1.6); ctx.stroke();
+      ctx.fillStyle = '#8a6d4e';
+      ctx.beginPath(); ctx.moveTo(-4, -34); ctx.lineTo(-7, -42); ctx.lineTo(0, -36); ctx.closePath(); ctx.fill(); // ear tufts
+      ctx.beginPath(); ctx.moveTo(8, -35); ctx.lineTo(11, -43); ctx.lineTo(13, -34); ctx.closePath(); ctx.fill();
+      circle(6, -32, 12); ctx.fill(); // head
+      const eh = 6 * blink;
+      ctx.fillStyle = '#f4ead6'; circle(2, -33, 5.4); ctx.fill(); circle(11, -33, 5.4); ctx.fill();
+      ctx.fillStyle = '#222'; ell(2.6, -33, 2.4, eh * .8); ctx.fill(); ell(11.6, -33, 2.4, eh * .8); ctx.fill();
+      ctx.fillStyle = '#f4a63a'; // beak
+      ctx.beginPath(); ctx.moveTo(5, -30); ctx.lineTo(8, -25); ctx.lineTo(11, -30); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#f4a63a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-4, -4); ctx.lineTo(-4, 0); ctx.moveTo(4, -4); ctx.lineTo(4, 0); ctx.stroke(); // feet
+      break;
+    }
+    case 'penguin': {
+      const waddle = Math.sin(ph * .8) * .06;
+      ctx.rotate(waddle);
+      ctx.fillStyle = '#f4a63a'; ell(-5, -2, 5, 2.6); ctx.fill(); ell(6, -2, 5, 2.6); ctx.fill(); // feet
+      ctx.fillStyle = '#26313a'; ell(0, -22, 15, 20); ctx.fill(); // body
+      ctx.fillStyle = '#f6f6f2'; ell(3, -18, 10, 15); ctx.fill(); // belly
+      ctx.strokeStyle = '#26313a'; ctx.lineWidth = 6; ctx.lineCap = 'round'; // flipper
+      const flap = run ? Math.sin(t * 14) * .5 : Math.sin(t * 2) * .12;
+      ctx.save(); ctx.translate(-6, -26); ctx.rotate(.5 + flap);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-2, 14); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = '#f6f6f2'; circle(9, -30, 5); ctx.fill(); // cheek
+      ctx.fillStyle = '#26313a'; circle(8, -33, 4); ctx.fill();
+      ctx.fillStyle = '#f4a63a'; // beak
+      ctx.beginPath(); ctx.moveTo(12, -31); ctx.lineTo(19, -28); ctx.lineTo(12, -27); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff'; circle(10, -33, 2.4); ctx.fill();
+      ctx.fillStyle = '#111'; circle(10.8, -33, 1.2); ctx.fill();
+      break;
+    }
+    case 'flamingo': {
+      const bob = Math.sin(t * 2 + e.seed * 9) * 2;
+      ctx.strokeStyle = '#e0799b'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-2, -26); ctx.lineTo(-2, 0); ctx.stroke(); // standing leg
+      ctx.beginPath(); ctx.moveTo(6, -26); ctx.lineTo(10, -14); ctx.lineTo(4, -8); ctx.stroke(); // tucked leg
+      ctx.fillStyle = '#f78fb3'; ell(0, -38 + bob, 15, 11); ctx.fill(); // body
+      ctx.fillStyle = '#fbb8d0'; ell(-6, -40 + bob, 9, 7); ctx.fill();  // folded wing
+      ctx.strokeStyle = '#f78fb3'; ctx.lineWidth = 5; ctx.lineCap = 'round'; // S-neck
+      ctx.beginPath(); ctx.moveTo(10, -44 + bob); ctx.quadraticCurveTo(22, -56 + bob, 15, -68 + bob); ctx.stroke();
+      ctx.fillStyle = '#f78fb3'; circle(14, -71 + bob, 6); ctx.fill(); // head
+      ctx.fillStyle = '#fdfdfd'; // beak, bent down
+      ctx.beginPath(); ctx.moveTo(19, -72 + bob); ctx.quadraticCurveTo(27, -70 + bob, 25, -63 + bob); ctx.quadraticCurveTo(21, -66 + bob, 18, -67 + bob); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#222'; circle(16, -73 + bob, 1.7); ctx.fill();
       break;
     }
     case 'bear': {
@@ -1296,6 +1846,11 @@ function drawCritter(e, t) {
       else if (e.type === 'farmer') { ctx.fillStyle = '#e2c36b'; ell(0, -80, 18, 5); ctx.fill(); rr(-8, -89, 16, 10, 3); ctx.fill(); }
       else if (e.type === 'kid') { ctx.fillStyle = '#4a2f1b'; ctx.beginPath(); ctx.arc(0, -72, 12, Math.PI * .9, Math.PI * 2.1); ctx.fill(); ctx.fillStyle = '#e23b3b'; circle(0, -82, 4); ctx.fill(); }
       else { ctx.fillStyle = '#8a6d3f'; ctx.beginPath(); ctx.arc(0, -79, 14, Math.PI, 0); ctx.fill(); ell(0, -79, 18, 4); ctx.fill(); } // straw hat
+      if (THEME.snowCaps && e.human) { // woolly hats in the snow, obviously
+        ctx.fillStyle = ['#e23b3b', '#3f7fd9', '#e8a33d', '#9b59d0'][(e.seed * 4 | 0) % 4];
+        ctx.beginPath(); ctx.arc(0, -76, 11, Math.PI, 0); ctx.fill();
+        rr(-12, -78, 24, 5, 2); ctx.fill(); circle(0, -87, 3.5); ctx.fill();
+      }
       // item
       if (e.type === 'kid' && !run) {
         ctx.fillStyle = '#f2c94c'; ctx.beginPath(); ctx.moveTo(12, -40); ctx.lineTo(18, -40); ctx.lineTo(15, -30); ctx.closePath(); ctx.fill();
@@ -1462,8 +2017,17 @@ function drawHUD() {
     ctx.strokeStyle = 'rgba(255,226,122,.6)'; ctx.lineWidth = 2; hexPath(cx, cy, rc * .62); ctx.stroke();
   }
 
+  // which world are we in?
+  if (started) {
+    ctx.font = `800 ${cssW < 560 ? 11 : 13}px system-ui`; ctx.textAlign = 'center';
+    const label = worldName + ' · WORLD ' + worldNum + ' · ' + THEME.tag;
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(30,20,0,.5)';
+    ctx.strokeText(label, cssW / 2, top + 52);
+    ctx.fillStyle = 'rgba(255,246,216,.9)'; ctx.fillText(label, cssW / 2, top + 52);
+  }
+
   // toasts
-  let ty = top + (gpToastT > 0 ? 104 : 60);
+  let ty = top + (gpToastT > 0 ? 104 : 76);
   for (const tt of toasts) {
     const a = tt.t < .15 ? tt.t / .15 : tt.t > 2.9 ? (3.4 - tt.t) / .5 : 1;
     ctx.globalAlpha = clamp(a, 0, 1) * (tt.t < .3 ? ease(tt.t / .3) : 1);
@@ -1523,23 +2087,20 @@ function drawTouchControls() {
   ctx.restore();
 }
 
-// ---- zone compass
+// ---- zone compass (points to every POI plus the portal to the next world)
 function drawCompass() {
-  ctx.save();
   const vwHalf = cssW / 2 / SCALE, vhHalf = cssH / 2 / SCALE;
   for (const key in ZONES) {
     const z = ZONES[key];
     const dx = z.x - player.x, dy = z.y - player.y;
-    const onScreen = Math.abs(dx) < vwHalf - 60 && Math.abs(dy) < vhHalf - 60;
-    if (onScreen) continue;
-    const a = Math.atan2(dy, dx);
+    if (Math.abs(dx) < vwHalf - 60 && Math.abs(dy) < vhHalf - 60) continue;
     const ex = clamp(z.x - cam.x, -vwHalf + 70, vwHalf - 70);
     const ey = clamp(z.y - cam.y, -vhHalf + 70, vhHalf - 70);
     ctx.save(); ctx.translate(ex, ey);
     ctx.fillStyle = 'rgba(20,40,15,.55)';
     hexPath(0, 0, 34); ctx.fill();
     ctx.strokeStyle = 'rgba(255,226,122,.35)'; ctx.lineWidth = 2; hexPath(0, 0, 34); ctx.stroke();
-    ctx.save(); ctx.rotate(a);
+    ctx.save(); ctx.rotate(Math.atan2(dy, dx));
     ctx.fillStyle = '#ffe27a';
     ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(12, -8); ctx.lineTo(12, 8); ctx.closePath(); ctx.fill();
     ctx.restore();
@@ -1550,7 +2111,29 @@ function drawCompass() {
     else if (key === 'pond') { ctx.fillStyle = '#5fb6e4'; ell(0, 2, 10, 7); ctx.fill(); }
     ctx.restore();
   }
-  ctx.restore();
+  // the magic dandelion gets its own compass hex — endless worlds, that way
+  {
+    const dx = portal.x - player.x, dy = portal.y - player.y;
+    if (!(Math.abs(dx) < vwHalf - 60 && Math.abs(dy) < vhHalf - 60)) {
+      const ex = clamp(portal.x - cam.x, -vwHalf + 70, vwHalf - 70);
+      const ey = clamp(portal.y - cam.y, -vhHalf + 70, vhHalf - 70);
+      ctx.save(); ctx.translate(ex, ey);
+      ctx.fillStyle = 'rgba(50,40,10,.6)';
+      hexPath(0, 0, 34); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,240,170,.55)'; ctx.lineWidth = 2; hexPath(0, 0, 34); ctx.stroke();
+      ctx.save(); ctx.rotate(Math.atan2(dy, dx));
+      ctx.fillStyle = '#fff3b0';
+      ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(12, -8); ctx.lineTo(12, 8); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,.9)'; circle(0, 0, 4); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.2;
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * TAU + tPlay * .8;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 11, Math.sin(a) * 11); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
 }
 
 // ------------------------------------------------------------------ main draw
@@ -1569,12 +2152,13 @@ function visible(x, y, pad) {
 
 function draw(t) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = '#4e9e44'; ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillStyle = THEME ? `hsl(${THEME.ground.h}, ${THEME.ground.s}%, ${Math.max(4, THEME.ground.l - 10)}%)` : '#4e9e44';
+  ctx.fillRect(0, 0, cssW, cssH);
   worldView();
 
   // ground
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(groundCv, 0, 0, groundCv.width, groundCv.height, 0, 0, WW, WH);
+  ctx.drawImage(groundCv, 0, 0, Math.ceil(WW / GS), Math.ceil(WH / GS), 0, 0, WW, WH);
 
   // cloud shadows
   ctx.fillStyle = 'rgba(20,50,10,.08)';
@@ -1594,6 +2178,7 @@ function draw(t) {
   for (const tf of tufts) if (visible(tf.x, tf.y, 30)) drawTuft(tf, t);
   for (const r of rocks) if (visible(r.x, r.y, 40)) drawRock(r);
   for (const dd of dandelionSpots) if (visible(dd.x, dd.y, 30)) drawDandelion(dd, t);
+  drawAmbient(t);
 
   // sort-able actors by y
   const actors = [];
@@ -1603,6 +2188,7 @@ function draw(t) {
   actors.push([HIVE.y, () => drawHive(t)]);
   actors.push([BARN.y + 80, () => drawBarn(t)]);
   actors.push([TABLE.y, () => drawPicnic(t)]);
+  if (visible(portal.x, portal.y, 140)) actors.push([portal.y, () => drawPortal(t)]);
   for (const e of animals) if (e.state !== 'gone' && visible(e.x, e.y, 140)) actors.push([e.y, () => drawCritter(e, t)]);
   if (bear.state !== 'gone' && visible(bear.x, bear.y, 180)) actors.push([bear.y, () => drawCritter(bear, t)]);
 
@@ -1667,6 +2253,12 @@ function draw(t) {
 
   drawHUD();
 
+  // world-travel flash
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(255,250,225,${(flash * .95).toFixed(3)})`;
+    ctx.fillRect(0, 0, cssW, cssH);
+  }
+
   if (!started) drawStart();
 }
 
@@ -1687,7 +2279,7 @@ function drawStart() {
   ctx.fillStyle = '#5b3a00'; ctx.font = '900 58px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('STINGY BEE', 0, -26);
   ctx.fillStyle = '#8a5a17'; ctx.font = '700 20px system-ui';
-  ctx.fillText('GAR-DEN MAY-HEM', 0, 26);
+  ctx.fillText('ENDLESS GARDEN MAY-HEM', 0, 26);
   // bouncing bee over the logo
   const bt = performance.now() / 1000;
   ctx.save(); ctx.translate(-172 + Math.sin(bt * 1.4) * 8, -90 + Math.sin(bt * 3) * 8);
@@ -1700,10 +2292,11 @@ function drawStart() {
   ctx.fillText('PRESS ANY KEY · ANY BUTTON · OR TAP', cx, cy + 60 * s);
   ctx.font = `700 ${15 * s}px system-ui`;
   ctx.fillStyle = 'rgba(255,246,216,.75)';
-  ctx.fillText('GAMEPAD: left stick flies · A or RT stings', cx, cy + 96 * s);
-  ctx.fillText('KEYBOARD: WASD / arrows fly · SPACE stings      TOUCH: drag to fly · big STING button', cx, cy + 122 * s);
-  ctx.fillText('sting the grumpy animals until they run away — or just FLY INTO them!', cx, cy + 150 * s);
-  ctx.fillText('fill honey, rank up, grow your own buzzing swarm — nobody gets hurt, they just run away', cx, cy + 178 * s);
+  ctx.fillText('GAMEPAD: left stick flies · A or RT stings      KEYBOARD: WASD flies · SPACE stings', cx, cy + 96 * s);
+  ctx.fillText('TOUCH: drag to fly · big STING button — or just FLY INTO things!', cx, cy + 122 * s);
+  ctx.fillText('sheep, geese, bunnies, frogs, goats, raccoons, owls, hedgehogs, penguins & flamingos await', cx, cy + 150 * s);
+  ctx.fillStyle = '#ffe9a3';
+  ctx.fillText('find the glowing MAGIC DANDELION — it blows you to a BRAND-NEW WORLD, forever & ever', cx, cy + 178 * s);
 }
 
 // ------------------------------------------------------------------ start & loop
@@ -1712,6 +2305,7 @@ function startGame() {
   started = true;
   A.ensure();
   addToast('FLY AROUND AND STING!');
+  addToast('FIND THE MAGIC DANDELION!');
 }
 
 let lastT = performance.now();
@@ -1738,6 +2332,13 @@ requestAnimationFrame(frame);
 
 document.addEventListener('visibilitychange', () => { lastT = performance.now(); });
 
+// first world: ?world=NN picks the seed, otherwise every visit starts at world 1
+// and marches onward through the magic dandelion. There are always more.
+genWorld((() => {
+  const w = parseInt(new URLSearchParams(location.search).get('world'), 10);
+  return Number.isFinite(w) ? clamp(w, 1, 99999) : 1;
+})());
+
 // expose probe + test hooks for headless verification
 let tickCount = 0;
 window.__probe = {
@@ -1751,10 +2352,12 @@ window.__probe = {
   get targets() { return animals.filter(a => a.state === 'wander' || a.state === 'angry').map(a => ({ x: a.x, y: a.y, n: a.name || a.type })); },
   get frame() { return tickCount; },
   get animals() { return animals.length + 1; },
+  get world() { return { num: worldNum, name: worldName, biome: THEME.id, size: [WW, WH], portal: { x: portal.x, y: portal.y } }; },
 };
 window.__tp = (x, y) => { player.x = x; player.y = y; cam.x = x; cam.y = y - 60; };
 window.__sting = () => { stingQueued = true; };
 window.__keys = keys;
+window.__goto = n => genWorld(n);
 window.__openSpot = () => {
   let best = null, bd = -1;
   for (let y = 500; y < WH - 400; y += 150) for (let x = 400; x < WW - 400; x += 150) {
